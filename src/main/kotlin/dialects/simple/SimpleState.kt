@@ -1,4 +1,4 @@
-package simple
+package dialects.simple
 
 import core.Coordinate
 import core.Figure

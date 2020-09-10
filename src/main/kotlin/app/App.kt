@@ -1,8 +1,10 @@
 package app
 
 import core.*
-import simple.SimpleRules
-import simple.SimpleState
+import dialects.GameCollection
+import dialects.GameKind
+import dialects.simple.SimpleRules
+import dialects.simple.SimpleState
 
 
 class ConsoleSimpleGameRunner <Figure, Player, StateType: State<Figure, Player>, RulesType: Rules<StateType, Player>>(
@@ -26,6 +28,6 @@ class ConsoleSimpleGameRunner <Figure, Player, StateType: State<Figure, Player>,
 
 
 fun main() {
-    val game = Game(SimpleState(), SimpleRules())
+    val game = GameCollection.create(GameKind.SIMPLE)
     ConsoleSimpleGameRunner(game).run()
 }
