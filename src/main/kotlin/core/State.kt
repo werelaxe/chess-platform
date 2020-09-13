@@ -1,10 +1,12 @@
 package core
 
-abstract class State<FigureType, Player>(
+abstract class State(
     startPlayer: Player
 ) {
-    abstract operator fun get(coord: Coordinate): Figure<FigureType, Player>?
-    abstract operator fun set(coord: Coordinate, figure: Figure<FigureType, Player>?)
+    abstract operator fun get(coord: Coordinate): Figure?
+    abstract operator fun set(coord: Coordinate, figure: Figure?)
+    abstract fun full(): Map<Coordinate, Figure?>
+
     var currentPlayer: Player = startPlayer
 
     fun move(from: Coordinate, to: Coordinate) {
@@ -14,11 +16,11 @@ abstract class State<FigureType, Player>(
 
     fun ro() = ReadOnlyState(this)
 
-    class ReadOnlyState<FigureType, Player, StateType : State<FigureType, Player>>(
-            private val state: StateType
+    class ReadOnlyState(
+            private val state: State
     ) {
-        operator fun get(coord: Coordinate): Figure<FigureType, Player>? = state[coord]
-
+        operator fun get(coord: Coordinate): Figure? = state[coord]
+        fun full() = state.full()
         override fun toString() = state.toString()
     }
 }

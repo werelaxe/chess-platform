@@ -1,6 +1,6 @@
 package core
 
-data class Result <Player> (
+data class Result (
         val isOver: Boolean,
         val winners: Set<Player>?,
         val losers: Set<Player?>

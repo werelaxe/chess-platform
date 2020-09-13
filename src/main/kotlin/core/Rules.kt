@@ -1,8 +1,8 @@
 package core
 
-interface Rules<StateType, Player> {
-    fun canMove(state: StateType, from: Coordinate, to: Coordinate): Boolean
-    fun nextPlayer(state: StateType, from: Coordinate, to: Coordinate): Player
-    fun isTerminateState(state: StateType): Boolean
-    fun winners(state: StateType): Result<Player>
+interface Rules {
+    fun canMove(state: State, from: Coordinate, to: Coordinate): Boolean
+    fun nextPlayer(state: State, from: Coordinate, to: Coordinate): Player
+    fun isTerminateState(state: State): Boolean
+    fun winners(state: State): Result
 }

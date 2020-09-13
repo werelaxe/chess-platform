@@ -1,9 +1,9 @@
 package core
 
 
-class Game<Figure, Player, StateType: State<Figure, Player>, RulesType: Rules<StateType, Player>> (
-    private val state: StateType,
-    private val rules: RulesType
+class Game (
+    private val state: State,
+    private val rules: Rules
 ) {
     fun isOver() = rules.isTerminateState(state)
 
@@ -22,7 +22,7 @@ class Game<Figure, Player, StateType: State<Figure, Player>, RulesType: Rules<St
         state.currentPlayer = rules.nextPlayer(state, from, to)
     }
 
-    fun result(): Result<Player> {
+    fun result(): Result {
         return rules.winners(state)
     }
 

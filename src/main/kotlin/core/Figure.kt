@@ -1,6 +1,13 @@
 package core
 
-data class Figure <Type, PlayerType> (
-    val owner: PlayerType,
-    val type: Type
-)
+import kotlinx.serialization.Serializable
+
+
+typealias Player = String
+typealias FigureType = String
+
+
+interface Figure {
+    val owner: Player
+    val type: FigureType
+}

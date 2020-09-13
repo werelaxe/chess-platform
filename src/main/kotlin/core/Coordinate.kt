@@ -1,5 +1,9 @@
 package core
 
+import kotlinx.serialization.Serializable
+
+
+@Serializable
 data class Coordinate (
         val nums: List<Int>
 ) {
