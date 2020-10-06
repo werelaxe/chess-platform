@@ -6,24 +6,24 @@ import core.State
 
 
 class SimpleState
-    : State<SimpleFigure, SimplePlayer>(SimplePlayer.FIRST) {
-    private var board: MutableList<Figure<SimpleFigure, SimplePlayer>?>
+    : State<SimpleFigure>(SimplePlayer.FIRST) {
+    private var board: MutableList<SimpleFigure?>
 
     init {
-        board = MutableList(10) { index ->
+        board = MutableList(SIZE) { index ->
             when {
-                index <= 1 -> Figure(SimplePlayer.FIRST, SimpleFigure.ONE)
-                index >= 8 -> Figure(SimplePlayer.SECOND, SimpleFigure.ONE)
+                index <= 1 -> SimpleFigure(SimplePlayer.FIRST, SimpleFigureType.ONE)
+                index >= 8 -> SimpleFigure(SimplePlayer.SECOND, SimpleFigureType.ONE)
                 else -> null
             }
         }
     }
 
-    override fun get(coord: Coordinate): Figure<SimpleFigure, SimplePlayer>? {
+    override fun get(coord: Coordinate): SimpleFigure? {
         return board[coord.nums[0]]
     }
 
-    override fun set(coord: Coordinate, figure: Figure<SimpleFigure, SimplePlayer>?) {
+    override fun set(coord: Coordinate, figure: SimpleFigure?) {
         board[coord.nums[0]] = figure
     }
 
@@ -36,5 +36,15 @@ class SimpleState
             }
         } + "\n" +
                 "Current player: $currentPlayer\n"
+    }
+
+    override fun full(): Map<Coordinate, SimpleFigure?> {
+        return (0 until SIZE).map {
+            Coordinate.of(it) to board[it]
+        }.toMap()
+    }
+
+    companion object {
+        const val SIZE = 10
     }
 }

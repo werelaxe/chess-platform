@@ -1,12 +1,10 @@
 package dialects.simple
 
-import core.Coordinate
-import core.Result
-import core.Rules
+import core.*
 import kotlin.math.abs
 
 
-class SimpleRules: Rules<SimpleState, SimplePlayer> {
+class SimpleRules: Rules<SimpleFigure, SimpleState> {
     override fun canMove(state: SimpleState, from: Coordinate, to: Coordinate): Boolean {
         val fromFig = state[from]
         val toFig = state[to]
@@ -32,6 +30,6 @@ class SimpleRules: Rules<SimpleState, SimplePlayer> {
             if (isTerminateState(state)) Result(true, setOf(SimplePlayer.FIRST, SimplePlayer.SECOND), emptySet())
             else Result(false, emptySet(), emptySet())
 
-    override fun nextPlayer(state: SimpleState, from: Coordinate, to: Coordinate): SimplePlayer =
+    override fun nextPlayer(state: SimpleState, from: Coordinate, to: Coordinate): Int =
             if (state.currentPlayer == SimplePlayer.FIRST) SimplePlayer.SECOND else SimplePlayer.FIRST
 }

@@ -2,8 +2,8 @@ package core
 
 data class Result (
         val isOver: Boolean,
-        val winners: Set<Player>?,
-        val losers: Set<Player?>
+        val winners: Set<Int>?,
+        val losers: Set<Int?>
 ) {
     init {
         winners?.intersect(losers)?.isNotEmpty()?.let {

@@ -1,13 +1,9 @@
 package core
 
-import kotlinx.serialization.Serializable
-
-
-typealias Player = String
-typealias FigureType = String
+import kotlinx.serialization.*
 
 
 interface Figure {
-    val owner: Player
-    val type: FigureType
+    val owner: Int
+    val type: Int
 }
