@@ -1,13 +1,14 @@
 package core
 
+import dialects.GameKind
 
-class Game (
-    private val state: State,
-    private val rules: Rules
+
+open class Game <FigureType: Figure, StateType: State<FigureType>> (
+    val kind: GameKind,
+    val state: StateType,
+    private val rules: Rules<FigureType, StateType>
 ) {
     fun isOver() = rules.isTerminateState(state)
-
-    val roState = state.ro()
 
     fun step(from: Coordinate, to: Coordinate) {
         if (isOver()) {
@@ -21,6 +22,8 @@ class Game (
         state.move(from, to)
         state.currentPlayer = rules.nextPlayer(state, from, to)
     }
+
+    fun canMove(from: Coordinate, to: Coordinate) = rules.canMove(state, from, to)
 
     fun result(): Result {
         return rules.winners(state)

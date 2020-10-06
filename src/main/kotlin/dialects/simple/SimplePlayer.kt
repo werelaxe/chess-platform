@@ -1,6 +1,8 @@
 package dialects.simple
 
-enum class SimplePlayer {
-    FIRST,
-    SECOND
+
+object SimplePlayer {
+    const val FIRST = 1
+    const val SECOND = 2
+    val players = listOf(FIRST, SECOND)
 }
