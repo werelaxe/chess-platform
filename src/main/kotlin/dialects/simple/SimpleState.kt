@@ -19,11 +19,11 @@ class SimpleState
         }
     }
 
-    override fun get(coord: Coordinate): SimpleFigure? {
+    override fun getEl(coord: Coordinate): SimpleFigure? {
         return board[coord.nums[0]]
     }
 
-    override fun set(coord: Coordinate, figure: SimpleFigure?) {
+    override fun setEl(coord: Coordinate, figure: SimpleFigure?) {
         board[coord.nums[0]] = figure
     }
 
@@ -38,13 +38,11 @@ class SimpleState
                 "Current player: $currentPlayer\n"
     }
 
-    override fun full(): Map<Coordinate, SimpleFigure?> {
-        return (0 until SIZE).map {
-            Coordinate.of(it) to board[it]
-        }.toMap()
-    }
-
     companion object {
         const val SIZE = 10
+    }
+
+    override fun contains(coord: Coordinate): Boolean {
+        return coord.single() in 0 until SIZE
     }
 }

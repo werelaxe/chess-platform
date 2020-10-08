@@ -3,9 +3,12 @@ package core
 abstract class State<FigureType: Figure>(
     startPlayer: Int
 ) {
-    abstract operator fun get(coord: Coordinate): FigureType?
-    abstract operator fun set(coord: Coordinate, figure: FigureType?)
-    abstract fun full(): Map<Coordinate, FigureType?>
+    abstract fun getEl(coord: Coordinate): FigureType?
+    abstract fun setEl(coord: Coordinate, figure: FigureType?)
+    abstract operator fun contains(coord: Coordinate): Boolean
+
+    operator fun get(coord: Coordinate) = if (coord in this) getEl(coord) else null
+    operator fun set(coord: Coordinate, figure: FigureType?) = setEl(coord, figure)
 
     var currentPlayer: Int = startPlayer
 

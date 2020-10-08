@@ -6,11 +6,11 @@ import dialects.GameKind
 open class Game <FigureType: Figure, StateType: State<FigureType>> (
     val kind: GameKind,
     val state: StateType,
-    private val rules: Rules<FigureType, StateType>
+    protected val rules: Rules<FigureType, StateType>
 ) {
     fun isOver() = rules.isTerminateState(state)
 
-    fun step(from: Coordinate, to: Coordinate) {
+    open fun preStepCheck(from: Coordinate, to: Coordinate) {
         if (isOver()) {
             throw Exception("Game is over")
         }
@@ -18,7 +18,10 @@ open class Game <FigureType: Figure, StateType: State<FigureType>> (
         if (!rules.canMove(state, from, to)) {
             throw Exception("Can not move")
         }
+    }
 
+    open fun step(from: Coordinate, to: Coordinate) {
+        preStepCheck(from, to)
         state.move(from, to)
         state.currentPlayer = rules.nextPlayer(state, from, to)
     }

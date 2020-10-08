@@ -3,6 +3,7 @@ package dialects
 import core.Figure
 import core.Game
 import core.State
+import dialects.checkers.CheckersGame
 import dialects.simple.*
 
 typealias GameType = Game<out Figure, out State<out Figure>>
@@ -23,6 +24,7 @@ object GameCollection {
     }
 
     init {
-        register(GameKind.SIMPLE, ::createSimpleGame)
+        register(GameKind.SIMPLE, SimpleGame.Companion::createSimpleGame)
+        register(GameKind.CHECKERS, CheckersGame.Companion::createCheckersGame)
     }
 }

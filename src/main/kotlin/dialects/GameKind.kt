@@ -1,5 +1,6 @@
 package dialects
 
 enum class GameKind {
-    SIMPLE
+    SIMPLE,
+    CHECKERS
 }
