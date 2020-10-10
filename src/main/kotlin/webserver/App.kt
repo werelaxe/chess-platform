@@ -96,7 +96,7 @@ suspend fun PipelineContext<Unit, ApplicationCall>.ensureGame(gameManager: GameM
 
 fun main(args: Array<String>) {
     val gameManager = GameManager()
-    gameManager.create(GameKind.CHECKERS)
+    gameManager.create(GameKind.CLASSIC_CHESS)
 
     val server = embeddedServer(Netty, port = 8080) {
         installFeatures()
@@ -122,10 +122,15 @@ fun main(args: Array<String>) {
                 call.respond(info)
             }
             get("/game/state") {
-                val id = ensureIntQueryParam("id") ?: return@get
-                val game = ensureGame(gameManager, id) ?: return@get
-                val state = StateSerializer.serialize(game)
-                call.respond(SerializableState(state, game.state.currentPlayer))
+                try {
+                    val id = ensureIntQueryParam("id") ?: return@get
+                    val game = ensureGame(gameManager, id) ?: return@get
+                    val state = StateSerializer.serialize(game)
+                    call.respond(SerializableState(state, game.state.currentPlayer))
+                } catch (e: Throwable) {
+                    println(e)
+                    println(e.stackTrace)
+                }
             }
             get("/game/figures") {
                 try {
@@ -157,6 +162,7 @@ fun main(args: Array<String>) {
                 staticRootFolder = File("src/main/resources/static")
                 files("js")
                 files("css")
+                files("images")
             }
             get("/") {
                 call.respond(FreeMarkerContent("index.ftl", emptyMap<String, Any>()))

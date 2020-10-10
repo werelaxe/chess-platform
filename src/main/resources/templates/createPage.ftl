@@ -13,6 +13,7 @@
 <select id="gk">
     <option value="SIMPLE">Simple</option>
     <option value="CHECKERS">Checkers</option>
+    <option value="CLASSIC_CHESS">Classic chess</option>
 </select>
 <input type="button" id="create-btn" value="Create">
 </body>

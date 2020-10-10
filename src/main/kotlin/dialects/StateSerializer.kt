@@ -7,6 +7,10 @@ import dialects.checkers.CheckersFigure
 import dialects.checkers.CheckersGame
 import dialects.checkers.CheckersState
 import dialects.checkers.CheckersStateSerializer
+import dialects.chess.classic.ChessFigure
+import dialects.chess.classic.ChessGame
+import dialects.chess.classic.ChessState
+import dialects.chess.classic.ChessStateSerializer
 import dialects.simple.SimpleFigure
 import dialects.simple.SimpleGame
 import dialects.simple.SimpleState
@@ -37,7 +41,7 @@ abstract class StateSerializer <FigureType: Figure, StateType: State<FigureType>
         private val kind2figures = mutableMapOf<GameKind, (List<Int>) -> List<SerializableFigure>>()
         private val kind2serialize = mutableMapOf<GameKind, (State<*>) -> List<List<Int?>>>()
 
-        fun <FigureType: Figure, StateType: State<FigureType>, GameType: Game<FigureType, StateType>>
+        private fun <FigureType: Figure, StateType: State<FigureType>, GameType: Game<FigureType, StateType>>
                 register(kind: GameKind, serialize: (State<*>) -> List<List<Int?>>, figures: (List<Int>) -> List<SerializableFigure>) {
             kind2figures[kind] = figures
             kind2serialize[kind] = serialize
@@ -64,6 +68,12 @@ abstract class StateSerializer <FigureType: Figure, StateType: State<FigureType>
                 GameKind.CHECKERS,
                 { state -> CheckersStateSerializer.serialize(state as CheckersState) },
                 { ids -> CheckersStateSerializer.figures(ids) }
+            )
+
+            register<ChessFigure, ChessState, ChessGame>(
+                GameKind.CLASSIC_CHESS,
+                { state -> ChessStateSerializer.serialize(state as ChessState) },
+                { ids -> ChessStateSerializer.figures(ids) }
             )
         }
     }

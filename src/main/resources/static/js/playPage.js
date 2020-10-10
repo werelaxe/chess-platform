@@ -9,6 +9,11 @@ let figures = {};
 let board = [];
 let ws = null;
 
+let drawers = {
+    "CHECKERS": drawCheckersFigure,
+    "CLASSIC_CHESS": drawChessFigure,
+};
+
 
 function waitSocket(socket, callback) {
     setTimeout(
@@ -61,6 +66,69 @@ function highlightCell(x, y) {
 }
 
 
+function drawCheckersFigure(ctx, fig, i, j) {
+    ctx.beginPath();
+    ctx.arc(
+        i * cellSize + cellSize / 2,
+        j * cellSize + cellSize / 2,
+        cellSize / 2.5,
+        0,
+        Math.PI * 2
+    );
+
+
+    if (fig.type === 0) {
+        if (fig.owner === 1) {
+            ctx.fillStyle = "#000";
+            ctx.strokeStyle = "#fff";
+        } else {
+            ctx.fillStyle = "#fff";
+            ctx.strokeStyle = "#000";
+        }
+    } else {
+        if (fig.owner === 1) {
+            ctx.fillStyle = "#222";
+            ctx.strokeStyle = "#aaa";
+        } else {
+            ctx.fillStyle = "#ddd";
+            ctx.strokeStyle = "#aaa";
+        }
+    }
+
+    ctx.fill();
+    ctx.stroke();
+
+}
+
+
+let type2imageSelector = {
+    "0,1": "#w-pawn",
+    "1,1": "#w-bishop",
+    "2,1": "#w-knight",
+    "3,1": "#w-rook",
+    "4,1": "#w-queen",
+    "5,1": "#w-king",
+
+    "0,2": "#b-pawn",
+    "1,2": "#b-bishop",
+    "2,2": "#b-knight",
+    "3,2": "#b-rook",
+    "4,2": "#b-queen",
+    "5,2": "#b-king",
+};
+
+
+function drawChessFigure(ctx, fig, i, j) {
+    let type = `${fig.type},${fig.owner}`;
+    let image = $(type2imageSelector[type])[0];
+    if (image === undefined) {
+        console.log(`Can not find image by type ${type}`)
+        return;
+    }
+    ctx.drawImage(image, 10 + i * cellSize, 10 + j * cellSize);
+}
+
+
 function updateBoardCanvas() {
     boardWidth = boardCanvas.width();
     boardHeight = boardCanvas.height();
@@ -80,34 +148,7 @@ function updateBoardCanvas() {
                 ctx.fillRect(i * cellSize, j * cellSize, cellSize, cellSize);
             }
             if (board[j][i] !== null) {
-                ctx.beginPath();
-                ctx.arc(
-                    i * cellSize + cellSize / 2,
-                    j * cellSize + cellSize / 2,
-                    cellSize / 2.5,
-                    0,
-                    Math.PI * 2
-                );
-                let fig = figures[board[j][i]];
-                if (fig.type === 0) {
-                    if (fig.owner === 1) {
-                        ctx.fillStyle = "#000";
-                        ctx.strokeStyle = "#fff";
-                    } else {
-                        ctx.fillStyle = "#fff";
-                        ctx.strokeStyle = "#000";
-                    }
-                } else {
-                    if (fig.owner === 1) {
-                        ctx.fillStyle = "#222";
-                        ctx.strokeStyle = "#aaa";
-                    } else {
-                        ctx.fillStyle = "#ddd";
-                        ctx.strokeStyle = "#aaa";
-                    }
-                }
-                ctx.fill();
-                ctx.stroke();
+                drawers[gameKind](ctx, figures[board[j][i]], i, j);
             }
         }
     }
