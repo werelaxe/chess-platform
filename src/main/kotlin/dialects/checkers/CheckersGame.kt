@@ -3,7 +3,6 @@ package dialects.checkers
 import core.Coordinate
 import core.Game
 import dialects.GameKind
-import dialects.simple.SimpleGame
 
 class CheckersGame: Game<CheckersFigure, CheckersState>(
     GameKind.CHECKERS,
@@ -21,6 +20,20 @@ class CheckersGame: Game<CheckersFigure, CheckersState>(
             }
         }
         state.move(from, to)
+
+        if (state.currentPlayer == CheckersPlayer.BLACK && to.nums[1] == state.height - 1) {
+            state[to]?.let { fig ->
+                if (fig.figureType == CheckersFigureType.MEN) {
+                    state[to] = CheckersFigure(fig.owner, CheckersFigureType.KNIGHT)
+                }
+            }
+        } else if (state.currentPlayer == CheckersPlayer.WHITE && to.nums[1] == 0) {
+            state[to]?.let { fig ->
+                if (fig.figureType == CheckersFigureType.MEN) {
+                    state[to] = CheckersFigure(fig.owner, CheckersFigureType.KNIGHT)
+                }
+            }
+        }
         state.currentPlayer = rules.nextPlayer(state, from, to)
     }
 

@@ -5,20 +5,20 @@ import kotlin.math.abs
 
 
 class SimpleRules: Rules<SimpleFigure, SimpleState> {
-    override fun canMove(state: SimpleState, from: Coordinate, to: Coordinate): Boolean {
-        val fromFig = state.getEl(from)
-        val toFig = state.getEl(to)
-        if (state.currentPlayer != fromFig?.owner || toFig != null
-                || to.nums.single() < 0 || to.nums.single() > 9) {
-            return false
-        }
-        return when (abs(to.nums.single() - from.nums.single())) {
-            1 -> true
-            2 -> state.getEl((to + from) / 2) != null
-            else -> false
-        }
-    }
-
+//    override fun canMove(state: SimpleState, from: Coordinate, to: Coordinate): Boolean {
+//        val fromFig = state.getEl(from)
+//        val toFig = state.getEl(to)
+//        if (state.currentPlayer != fromFig?.owner || toFig != null
+//                || to.nums.single() < 0 || to.nums.single() > 9) {
+//            return false
+//        }
+//        return when (abs(to.nums.single() - from.nums.single())) {
+//            1 -> true
+//            2 -> state.getEl((to + from) / 2) != null
+//            else -> false
+//        }
+//    }
+//
     override fun isTerminateState(state: SimpleState): Boolean {
         return state.getEl(Coordinate.of(0))?.owner == SimplePlayer.SECOND &&
                 state.getEl(Coordinate.of(1))?.owner == SimplePlayer.SECOND &&
@@ -32,4 +32,28 @@ class SimpleRules: Rules<SimpleFigure, SimpleState> {
 
     override fun nextPlayer(state: SimpleState, from: Coordinate, to: Coordinate): Int =
             if (state.currentPlayer == SimplePlayer.FIRST) SimplePlayer.SECOND else SimplePlayer.FIRST
+
+    override fun possibleSteps(state: SimpleState, from: Coordinate): List<Coordinate> {
+        state[from]?.let { fromFig ->
+            if (fromFig.owner != state.currentPlayer) {
+                return emptyList()
+            }
+            if ((state.currentPlayer == SimplePlayer.FIRST && from.single() == SimpleState.SIZE - 1) ||
+                    (state.currentPlayer == SimplePlayer.SECOND && from.single() == 0)) {
+                return emptyList()
+            }
+            val res = mutableListOf<Coordinate>()
+            val playerCoef = if (state.currentPlayer == SimplePlayer.FIRST) 1 else - 1
+            val next = from + Coordinate.of(1) * playerCoef
+            val nextNext = from + Coordinate.of(2) * playerCoef
+            if (state[next] == null) {
+                res.add(next)
+            }
+            if (nextNext in state && state[nextNext] == null && state[next] != null) {
+                res.add(nextNext)
+            }
+            return res
+        }
+        return emptyList()
+    }
 }

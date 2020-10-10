@@ -13,7 +13,7 @@ class CheckersState(
 
     private val board: MutableList<MutableList<CheckersFigure?>> = MutableList(height) { y ->
         MutableList(width) { x ->
-            if ((x + y) % 2 == 0 && (y <= 2 || y >= height - 3)) {
+            if ((x + y) % 2 == 1 && (y <= 2 || y >= height - 3)) {
                 if (y <= 2) {
                     blackCount++
                     CheckersFigure(CheckersPlayer.BLACK, CheckersFigureType.MEN)

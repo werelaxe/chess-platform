@@ -17,7 +17,8 @@ data class Coordinate (
         return of(nums.size) { index -> nums[index] + other.nums[index] }
     }
 
-    operator fun div(other: Int) = of(nums.size) { index -> nums[index] / other }
+    operator fun div(other: Int) = Coordinate(nums.map { it / other })
+    operator fun times(other: Int) = Coordinate(nums.map { it * other })
 
     companion object {
         fun of(size: Int, init: (Int) -> Int) = Coordinate(List(size, init))

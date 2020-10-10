@@ -54,7 +54,23 @@ suspend fun <T> PipelineContext<Unit, ApplicationCall>.ensureQueryParam(name: St
             null
         }
     }
-    call.respondText("Paramater '${name}' is required")
+    call.respondText("Parameter '${name}' is required")
+    call.response.status(HttpStatusCode.BadRequest)
+    return null
+}
+
+
+suspend fun <T> PipelineContext<Unit, ApplicationCall>.ensureQueryParamList(name: String, parse: (String) -> T): List<T>? {
+    call.request.queryParameters.getAll(name)?.let { value ->
+        return try {
+            value.map(parse)
+        } catch (e: Throwable) {
+            call.respondText("Invalid value '${value}' for parameter '${name}'")
+            call.response.status(HttpStatusCode.BadRequest)
+            null
+        }
+    }
+    call.respondText("Parameter '${name}' is required")
     call.response.status(HttpStatusCode.BadRequest)
     return null
 }
@@ -75,7 +91,7 @@ suspend fun PipelineContext<Unit, ApplicationCall>.ensureGame(gameManager: GameM
 
 fun main(args: Array<String>) {
     val gameManager = GameManager()
-    gameManager.create(GameKind.SIMPLE)
+    gameManager.create(GameKind.CHECKERS)
 
     val server = embeddedServer(Netty, port = 8080) {
         basicAuthApplication()
@@ -103,14 +119,26 @@ fun main(args: Array<String>) {
             get("/game/state") {
                 val id = ensureIntQueryParam("id") ?: return@get
                 val game = ensureGame(gameManager, id) ?: return@get
-                call.respond(SerializableState(StateSerializer.serialize(game), game.state.currentPlayer))
+                val state = StateSerializer.serialize(game)
+                call.respond(SerializableState(state, game.state.currentPlayer))
+            }
+            get("/game/figures") {
+                try {
+                    val id = ensureIntQueryParam("id") ?: return@get
+                    val game = ensureGame(gameManager, id) ?: return@get
+                    val ids = ensureQueryParamList("ids") { it.toInt() } ?: return@get
+                    call.respond(StateSerializer.figures(game.kind, ids))
+                } catch (e: Throwable) {
+                    println(e)
+                    println(e.stackTrace)
+                }
             }
             post("/game/step") {
                 val step = call.receive<StepSchema>()
                 val game = ensureGame(gameManager, step.gameId) ?: return@post
                 if (!game.canMove(step.from, step.to)) {
+                    call.response.status(HttpStatusCode.BadRequest)
                     call.respondText("Can not make step due to rules")
-                    call.response.status(HttpStatusCode.NotFound)
                     return@post
                 }
                 game.step(step.from, step.to)
