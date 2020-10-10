@@ -13,7 +13,8 @@
 <body>
     <p>
         Id: ${id}<br>
-        Kind: ${kind}
+        Kind: ${kind}<br>
+        CurrentPlayer: <span id="current-player">White</span>
     </p>
     <canvas id="board" width="800" height="800" style="border:1px solid #000000;"></canvas>
     <div style="display:none;"><img id="b-pawn" src="/static/b-pawn.png" width="100" height="100" alt="black-pawn"></div>

@@ -4,9 +4,11 @@ let cellSize = 10;
 let width = 10;
 let height = 10;
 let chosenCoords = null
+let suggestedCoords = null;
 let boardCanvas = null;
 let figures = {};
 let board = [];
+let currentPlayer = null;
 let ws = null;
 
 let drawers = {
@@ -33,6 +35,10 @@ function waitSocket(socket, callback) {
 }
 
 
+function setCurrentPlayer() {
+    $("#current-player").text(currentPlayer === 1 ? "White" : "Black");
+}
+
 
 function updateBoard() {
     $.ajax({
@@ -40,6 +46,8 @@ function updateBoard() {
         url: "/game/state?id=" + gameId.toString(),
         success: function (data) {
             board = data["board"];
+            currentPlayer = data["currentPlayer"];
+            setCurrentPlayer(currentPlayer);
             ensureFigures(board);
             height = board.length;
             width = board[0].length;
@@ -195,7 +203,41 @@ function suggest(x, y) {
         },
         async:false
     });
+    suggestedCoords = res;
     return res;
+}
+
+
+function isSuggestedContains(x, y) {
+    for (let i = 0; i < suggestedCoords.length; i++) {
+        let coords = suggestedCoords[i].nums;
+        if (suggestedCoords[i].nums[0] === x && suggestedCoords[i].nums[1] === y) {
+            return true;
+        }
+    }
+    return false;
+}
+
+
+function doStep(x, y) {
+    let data = JSON.stringify({
+        "gameId": gameId,
+        "from": {
+            "nums": chosenCoords
+        },
+        "to": {
+            "nums": [x, y]
+        }
+    });
+    $.ajax({
+        type: 'POST',
+        url: "/game/step",
+        data: data,
+        contentType:"application/json; charset=utf-8",
+        async:false
+    });
+    chosenCoords = null;
+    sendStepToWs();
 }
 
 
@@ -205,28 +247,16 @@ function setCanvasClickHandler() {
     boardCanvas.on("click", function (e) {
         let x = (e.pageX - canvasLeft) / cellSize | 0;
         let y = (e.pageY - canvasTop) / cellSize | 0;
-        if (chosenCoords === null) {
-            highlightCells(suggest(x, y));
-            chosenCoords = [x, y];
-        } else {
-            let data = JSON.stringify({
-                "gameId": gameId,
-                "from": {
-                    "nums": chosenCoords
-                },
-                "to": {
-                    "nums": [x, y]
-                }
-            });
-            $.ajax({
-                type: 'POST',
-                url: "/game/step",
-                data: data,
-                contentType:"application/json; charset=utf-8",
-                async:false
-            });
-            chosenCoords = null;
-            sendStepToWs();
+        if (board[y][x] !== null) {
+            if (figures[board[y][x]].owner === currentPlayer) {
+                updateBoardCanvas();
+                highlightCells(suggest(x, y));
+                chosenCoords = [x, y];
+                return;
+            }
+        }
+        if (chosenCoords !== null && isSuggestedContains(x, y)) {
+            doStep(x, y);
         }
     });
 }
