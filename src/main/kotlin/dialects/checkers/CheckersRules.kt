@@ -31,14 +31,27 @@ class CheckersRules: Rules<CheckersFigure, CheckersState> {
                 return emptyList()
             }
             val res = mutableListOf<Coordinate>()
-            val playerCoef = if (state.currentPlayer == CheckersPlayer.BLACK) 1 else - 1
-            val next = from + Coordinate.of(0, 1) * playerCoef
-            val nextNext = from + Coordinate.of(0, 2) * playerCoef
-            if (next in state) {
-                res.add(next)
-            }
-            if (nextNext in state && state[next] != null) {
-                res.add(nextNext)
+            if (fromFig.figureType == CheckersFigureType.MEN) {
+                val playerCoef = if (state.currentPlayer == CheckersPlayer.BLACK) 1 else -1
+                val next = from + Coordinate.of(0, 1) * playerCoef
+                val nextNext = from + Coordinate.of(0, 2) * playerCoef
+                if (next in state) {
+                    res.add(next)
+                }
+                if (nextNext in state && state[next] != null) {
+                    res.add(nextNext)
+                }
+            } else {
+                for (y in 0 until state.height) {
+                    if (y != from.y()) {
+                        res.add(Coordinate.of(from.x(), y))
+                    }
+                }
+                for (x in 0 until state.width) {
+                    if (x != from.x()) {
+                        res.add(Coordinate.of(x, from.y()))
+                    }
+                }
             }
             return res
         }

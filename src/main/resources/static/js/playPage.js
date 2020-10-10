@@ -6,79 +6,111 @@ let height = 10;
 let chosenCoords = null
 let boardCanvas = null;
 let figures = {};
+let board = [];
+let ws = null;
 
 
-$(document).ready(function() {
-    boardCanvas = $("#board");
-    setCanvasClickHandler();
-    updateBoard();
-});
+function waitSocket(socket, callback) {
+    setTimeout(
+        function () {
+            let done = false;
+            if (socket) {
+                if (socket.readyState === 1) {
+                    callback();
+                    done = true;
+                }
+            }
+            if (!done) {
+                waitSocket(socket, callback);
+            }
+        },
+        5);
+}
+
 
 
 function updateBoard() {
-    let ctx = boardCanvas[0].getContext("2d");
-
-    boardWidth = boardCanvas.width();
-    boardHeight = boardCanvas.height();
-
     $.ajax({
         type: 'GET',
         url: "/game/state?id=" + gameId.toString(),
         success: function (data) {
-            let board = data["board"];
+            board = data["board"];
             ensureFigures(board);
-
             height = board.length;
             width = board[0].length;
-
             cellSize = Math.min(boardWidth / width, boardHeight / height);
+        },
+        async: false
+    });
+}
 
-            ctx.fillStyle = "#c80";
-            ctx.fillRect(0, 0, boardWidth, boardHeight);
 
-            for (let j = 0; j < board.length; j++) {
-                for (let i = 0; i < board[0].length; i++) {
-                    if ((j + i) % 2 === 0) {
-                        ctx.strokeRect(i * cellSize, j * cellSize, cellSize, cellSize);
+function highlightCells(suggestions) {
+    for (let i = 0; i < suggestions.length; i++) {
+        let x = suggestions[i].nums[0];
+        let y = suggestions[i].nums[1];
+        highlightCell(x, y);
+    }
+}
+
+function highlightCell(x, y) {
+    let ctx = boardCanvas[0].getContext("2d");
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = "#0f0";
+    ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
+}
+
+
+function updateBoardCanvas() {
+    boardWidth = boardCanvas.width();
+    boardHeight = boardCanvas.height();
+
+    updateBoard();
+
+    let ctx = boardCanvas[0].getContext("2d");
+
+    ctx.lineWidth = 1;
+    ctx.fillStyle = "#c80";
+    ctx.fillRect(0, 0, boardWidth, boardHeight);
+
+    for (let j = 0; j < board.length; j++) {
+        for (let i = 0; i < board[0].length; i++) {
+            if ((j + i) % 2 === 1) {
+                ctx.fillStyle = "#730";
+                ctx.fillRect(i * cellSize, j * cellSize, cellSize, cellSize);
+            }
+            if (board[j][i] !== null) {
+                ctx.beginPath();
+                ctx.arc(
+                    i * cellSize + cellSize / 2,
+                    j * cellSize + cellSize / 2,
+                    cellSize / 2.5,
+                    0,
+                    Math.PI * 2
+                );
+                let fig = figures[board[j][i]];
+                if (fig.type === 0) {
+                    if (fig.owner === 1) {
+                        ctx.fillStyle = "#000";
+                        ctx.strokeStyle = "#fff";
                     } else {
-                        ctx.fillStyle = "#730";
-                        ctx.fillRect(i * cellSize, j * cellSize, cellSize, cellSize);
+                        ctx.fillStyle = "#fff";
+                        ctx.strokeStyle = "#000";
                     }
-                    if (board[j][i] !== null) {
-                        ctx.beginPath();
-                        ctx.arc(
-                            i * cellSize + cellSize / 2,
-                            j * cellSize + cellSize / 2,
-                            cellSize / 2.5,
-                            0,
-                            Math.PI * 2
-                        );
-                        let fig = figures[board[j][i]];
-                        if (fig.type === 0) {
-                            if (fig.owner === 1) {
-                                ctx.fillStyle = "#000";
-                                ctx.strokeStyle = "#fff";
-                            } else {
-                                ctx.fillStyle = "#fff";
-                                ctx.strokeStyle = "#000";
-                            }
-                        } else {
-                            if (fig.owner === 1) {
-                                ctx.fillStyle = "#222";
-                                ctx.strokeStyle = "#aaa";
-                            } else {
-                                ctx.fillStyle = "#ddd";
-                                ctx.strokeStyle = "#aaa";
-                            }
-                        }
-                        ctx.fill();
-                        ctx.stroke();
+                } else {
+                    if (fig.owner === 1) {
+                        ctx.fillStyle = "#222";
+                        ctx.strokeStyle = "#aaa";
+                    } else {
+                        ctx.fillStyle = "#ddd";
+                        ctx.strokeStyle = "#aaa";
                     }
                 }
+                ctx.fill();
+                ctx.stroke();
             }
-        },
-        async:false
-    });
+        }
+    }
 }
 
 
@@ -112,6 +144,20 @@ function loadFigures(ids) {
 }
 
 
+function suggest(x, y) {
+    let res = null;
+    $.ajax({
+        type: 'GET',
+        url: `/game/suggest?id=${gameId}&from=${x}&from=${y}`,
+        success: function (data) {
+            res = data;
+        },
+        async:false
+    });
+    return res;
+}
+
+
 function setCanvasClickHandler() {
     let canvasLeft = boardCanvas[0].offsetLeft + boardCanvas[0].clientLeft;
     let canvasTop = boardCanvas[0].offsetTop + boardCanvas[0].clientTop;
@@ -119,10 +165,9 @@ function setCanvasClickHandler() {
         let x = (e.pageX - canvasLeft) / cellSize | 0;
         let y = (e.pageY - canvasTop) / cellSize | 0;
         if (chosenCoords === null) {
-            console.log("Now choose coords: " + [x, y].toString());
+            highlightCells(suggest(x, y));
             chosenCoords = [x, y];
         } else {
-            console.log("Send post");
             let data = JSON.stringify({
                 "gameId": gameId,
                 "from": {
@@ -137,14 +182,47 @@ function setCanvasClickHandler() {
                 url: "/game/step",
                 data: data,
                 contentType:"application/json; charset=utf-8",
-                success: function (data) {
-                    console.log(data);
-                },
                 async:false
             });
-            console.log("Step from " + chosenCoords.toString() + " to " + [x, y].toString());
             chosenCoords = null;
-            updateBoard();
+            sendStepToWs();
         }
     });
 }
+
+
+function sendStepToWs() {
+    ws.send(`step:${gameId}`);
+}
+
+
+function sendHelloToWs() {
+    ws.send(`new:${gameId}`);
+}
+
+
+function setWsReceivingHandler() {
+    ws.onmessage = function (data) {
+        updateBoardCanvas();
+    }
+}
+
+
+function waitChatSocket() {
+    waitSocket(ws, main);
+}
+
+
+function main() {
+    boardCanvas = $("#board");
+    setCanvasClickHandler();
+    updateBoardCanvas();
+    setWsReceivingHandler();
+    sendHelloToWs();
+}
+
+
+$(document).ready(function() {
+    ws = new WebSocket("ws://" + location.host + "/game/notify");
+    waitSocket(ws, waitChatSocket);
+});

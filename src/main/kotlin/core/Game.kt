@@ -28,6 +28,8 @@ open class Game <FigureType: Figure, StateType: State<FigureType>> (
 
     fun canMove(from: Coordinate, to: Coordinate) = rules.canMove(state, from, to)
 
+    fun possibleSteps(from: Coordinate) = rules.possibleSteps(state, from)
+
     fun result(): Result {
         return rules.winners(state)
     }

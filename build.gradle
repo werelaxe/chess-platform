@@ -51,6 +51,7 @@ dependencies {
     compile "io.ktor:ktor-auth-jwt:$ktor_version"
     compile "io.ktor:ktor-client-apache:$ktor_version"
     compile "io.ktor:ktor-freemarker:$ktor_version"
+    compile "io.ktor:ktor-websockets:$ktor_version"
 
     implementation "org.jetbrains.kotlinx:kotlinx-serialization-core:1.0.0-RC"
     implementation "io.ktor:ktor-serialization:$ktor_version"

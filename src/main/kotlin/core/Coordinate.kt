@@ -9,6 +9,9 @@ data class Coordinate (
 ) {
     fun single() = nums.single()
 
+    fun x() = nums[0]
+    fun y() = nums[1]
+
     operator fun plus(other: Coordinate): Coordinate {
         if (nums.size != other.nums.size) {
             throw Exception("Can not sum coordinates with different sizes")

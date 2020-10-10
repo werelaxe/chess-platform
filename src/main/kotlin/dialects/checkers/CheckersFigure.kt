@@ -1,7 +1,6 @@
 package dialects.checkers
 
 import core.Figure
-import dialects.simple.SimpleFigureType
 
 enum class CheckersFigureType {
     MEN,

@@ -10,6 +10,7 @@ import io.ktor.auth.*
 import io.ktor.features.*
 import io.ktor.freemarker.*
 import io.ktor.http.*
+import io.ktor.http.cio.websocket.*
 import io.ktor.http.content.*
 import io.ktor.request.*
 import io.ktor.response.*
@@ -18,11 +19,14 @@ import io.ktor.serialization.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
 import io.ktor.util.pipeline.*
+import io.ktor.websocket.*
 import other.GameManager
 import java.io.File
+import java.util.*
+import kotlin.collections.LinkedHashSet
 
 
-fun Application.basicAuthApplication() {
+fun Application.installFeatures() {
     install(Authentication) {
         basic(name = "myauth1") {
             realm = "Ktor Server"
@@ -41,6 +45,7 @@ fun Application.basicAuthApplication() {
     install(FreeMarker) {
         templateLoader = ClassTemplateLoader(this::class.java.classLoader, "templates")
     }
+    install(WebSockets)
 }
 
 
@@ -94,7 +99,7 @@ fun main(args: Array<String>) {
     gameManager.create(GameKind.CHECKERS)
 
     val server = embeddedServer(Netty, port = 8080) {
-        basicAuthApplication()
+        installFeatures()
         routing {
 //            authenticate("auth") {
             post("/game/create") {
@@ -163,6 +168,47 @@ fun main(args: Array<String>) {
                 val id = ensureIntQueryParam("id") ?: return@get
                 val game = ensureGame(gameManager, id) ?: return@get
                 call.respond(FreeMarkerContent("playPage.ftl", mapOf("id" to id, "kind" to game.kind)))
+            }
+            get("/game/suggest") {
+                val id = ensureIntQueryParam("id") ?: return@get
+                val game = ensureGame(gameManager, id) ?: return@get
+                val fromNums = ensureQueryParamList("from") { it.toInt() } ?: return@get
+                call.respond(game.possibleSteps(Coordinate(fromNums)))
+            }
+
+            val connections = Collections.synchronizedMap(mutableMapOf<Int, MutableSet<DefaultWebSocketSession>>())
+
+            webSocket("/game/notify") {
+                while (true) {
+                    val frame = incoming.receive()
+                    if (frame is Frame.Text) {
+                        val text = frame.readText()
+                        if (text.startsWith("new:")) {
+                            text.substring(4, text.length).toIntOrNull()?.let { gameId ->
+                                if (gameId !in connections) {
+                                    connections[gameId] = mutableSetOf()
+                                }
+                                connections[gameId]!!.add(this)
+                            }
+                        } else if (text.startsWith("step:")) {
+                            text.substring(5, text.length).toIntOrNull()?.let { gameId ->
+                                connections[gameId]?.let { conns ->
+                                    val toRemove = mutableSetOf<DefaultWebSocketSession>()
+
+                                    for (conn in conns) {
+                                        try {
+                                            conn.outgoing.send(Frame.Text(""))
+                                        } catch (e: Throwable) {
+                                            toRemove.add(conn)
+                                        }
+                                    }
+
+                                    conns.removeAll(toRemove)
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
