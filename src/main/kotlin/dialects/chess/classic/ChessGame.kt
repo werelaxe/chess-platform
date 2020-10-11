@@ -11,8 +11,12 @@ class ChessGame: Game<ChessFigure, ChessState>(
 ) {
     override fun step(from: Coordinate, to: Coordinate) {
         preStepCheck(from, to)
+        val enPassantPair = if (state.isEnPassantMove(from, to)) state.enPassantPair else null
         state.move(from, to)
         processPawnTransformation(to)
+        enPassantPair?.let {
+            state[enPassantPair.second] = null
+        }
         state.currentPlayer = rules.nextPlayer(state, from, to)
     }
 

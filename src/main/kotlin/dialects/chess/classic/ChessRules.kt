@@ -105,7 +105,7 @@ class ChessRules: Rules<ChessFigure, ChessState> {
         }
         for (diff in listOf(-1, 1)) {
             val coord = from + Coordinate.of(diff, playerCoef)
-            if (coord in state && state[coord]?.owner == anotherPlayer) {
+            if (coord in state && (state[coord]?.owner == anotherPlayer || coord == state.enPassantPair?.first)) {
                 res.add(coord)
             }
         }
@@ -170,16 +170,16 @@ class ChessRules: Rules<ChessFigure, ChessState> {
     private fun isStepCheck(state: ChessState, from: Coordinate, to: Coordinate): Boolean {
         var result = false
         val backupToFig = state[to]
-        state.move(from, to)
+        state.testMove(from, to)
         if (isCheck(state)) {
             result = true
         }
-        state.move(to, from)
+        state.testMove(to, from)
         state[to] = backupToFig
         return result
     }
 
-    fun possibleStepsIgnoreCheck(state: ChessState, from: Coordinate): List<Coordinate> {
+    private fun possibleStepsIgnoreCheck(state: ChessState, from: Coordinate): List<Coordinate> {
         state[from]?.let { fromFig ->
             if (!isCurrentPlayerStep(state, fromFig)) {
                 return emptyList()

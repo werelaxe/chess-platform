@@ -12,7 +12,7 @@ abstract class State<FigureType: Figure>(
 
     var currentPlayer: Int = startPlayer
 
-    fun move(from: Coordinate, to: Coordinate) {
+    open fun move(from: Coordinate, to: Coordinate) {
         this[to] = this[from]
         this[from] = null
     }
