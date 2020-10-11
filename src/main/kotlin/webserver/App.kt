@@ -94,6 +94,19 @@ suspend fun PipelineContext<Unit, ApplicationCall>.ensureGame(gameManager: GameM
 }
 
 
+suspend fun MutableSet<DefaultWebSocketSession>.removeIfInvalid(block: suspend (DefaultWebSocketSession) -> Unit) {
+    val toRemove = mutableSetOf<DefaultWebSocketSession>()
+    for (conn in this) {
+        try {
+            block(conn)
+        } catch (e: Throwable) {
+            toRemove.add(conn)
+        }
+    }
+    this.removeAll(toRemove)
+}
+
+
 fun main(args: Array<String>) {
     val gameManager = GameManager()
     gameManager.create(GameKind.CLASSIC_CHESS)
@@ -101,6 +114,8 @@ fun main(args: Array<String>) {
     val server = embeddedServer(Netty, port = 8080) {
         installFeatures()
         routing {
+            val connections = Collections.synchronizedMap(mutableMapOf<Int, MutableSet<DefaultWebSocketSession>>())
+
 //            authenticate("auth") {
             post("/game/create") {
                 try {
@@ -152,11 +167,12 @@ fun main(args: Array<String>) {
                     return@post
                 }
                 game.step(step.from, step.to)
+                if (game.isOver()) {
+                    connections[step.gameId]!!.removeIfInvalid { conn ->
+                        conn.outgoing.send(Frame.Text("winner:${game.result().winners.toList()[0]}"))
+                    }
+                }
                 call.response.status(HttpStatusCode.OK)
-            }
-            get("/sandbox") {
-                val x = StepSchema(123, Coordinate.of(1, 2), Coordinate.of(5, 6))
-                call.respond(x)
             }
             static("static") {
                 staticRootFolder = File("src/main/resources/static")
@@ -176,13 +192,16 @@ fun main(args: Array<String>) {
                 call.respond(FreeMarkerContent("playPage.ftl", mapOf("id" to id, "kind" to game.kind)))
             }
             get("/game/suggest") {
-                val id = ensureIntQueryParam("id") ?: return@get
-                val game = ensureGame(gameManager, id) ?: return@get
-                val fromNums = ensureQueryParamList("from") { it.toInt() } ?: return@get
-                call.respond(game.possibleSteps(Coordinate(fromNums)))
+                try {
+                    val id = ensureIntQueryParam("id") ?: return@get
+                    val game = ensureGame(gameManager, id) ?: return@get
+                    val fromNums = ensureQueryParamList("from") { it.toInt() } ?: return@get
+                    call.respond(game.possibleSteps(Coordinate(fromNums)))
+                } catch (e: Throwable) {
+                    println(e)
+                    println(e.stackTrace)
+                }
             }
-
-            val connections = Collections.synchronizedMap(mutableMapOf<Int, MutableSet<DefaultWebSocketSession>>())
 
             webSocket("/game/notify") {
                 while (true) {
@@ -199,17 +218,9 @@ fun main(args: Array<String>) {
                         } else if (text.startsWith("step:")) {
                             text.substring(5, text.length).toIntOrNull()?.let { gameId ->
                                 connections[gameId]?.let { conns ->
-                                    val toRemove = mutableSetOf<DefaultWebSocketSession>()
-
-                                    for (conn in conns) {
-                                        try {
-                                            conn.outgoing.send(Frame.Text(""))
-                                        } catch (e: Throwable) {
-                                            toRemove.add(conn)
-                                        }
+                                    conns.removeIfInvalid { conn ->
+                                        conn.outgoing.send(Frame.Text(""))
                                     }
-
-                                    conns.removeAll(toRemove)
                                 }
                             }
                         }

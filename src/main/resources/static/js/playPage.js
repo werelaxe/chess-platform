@@ -35,8 +35,13 @@ function waitSocket(socket, callback) {
 }
 
 
+function getPlayerText(player) {
+    return player === 1 ? "White" : "Black";
+}
+
+
 function setCurrentPlayer() {
-    $("#current-player").text(currentPlayer === 1 ? "White" : "Black");
+    $("#current-player").text(getPlayerText(currentPlayer));
 }
 
 
@@ -273,8 +278,12 @@ function sendHelloToWs() {
 
 
 function setWsReceivingHandler() {
-    ws.onmessage = function (data) {
-        updateBoardCanvas();
+    ws.onmessage = function (e) {
+        if (e.data.startsWith("winner:")) {
+            alert(`${getPlayerText(parseInt(e.data.split(":")[1]))} wins!`);
+        } else {
+            updateBoardCanvas();
+        }
     }
 }
 
