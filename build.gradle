@@ -53,7 +53,19 @@ dependencies {
     compile "io.ktor:ktor-freemarker:$ktor_version"
     compile "io.ktor:ktor-websockets:$ktor_version"
 
-    implementation "org.jetbrains.kotlinx:kotlinx-serialization-core:1.0.0-RC"
-    implementation "io.ktor:ktor-serialization:$ktor_version"
+    compile "org.jetbrains.kotlinx:kotlinx-serialization-core:1.0.0-RC"
+    compile "org.jetbrains.kotlinx:kotlinx-serialization-runtime-common:0.20.0"
+    compile 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.0.0-RC'
+    compile "io.ktor:ktor-serialization:$ktor_version"
     testCompile group: 'junit', name: 'junit', version: '4.12'
+}
+
+jar {
+    manifest {
+        attributes "Main-Class": "webserver.AppKt"
+    }
+
+    from {
+        configurations.compile.collect { it.isDirectory() ? it : zipTree(it) }
+    }
 }
