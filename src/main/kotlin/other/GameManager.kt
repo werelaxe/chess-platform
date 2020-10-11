@@ -22,12 +22,9 @@ class GameManager {
         }
     }
 
-    fun remove(id: Int) = games.remove(id)
-
     fun get(id: Int) = games[id]
     fun info(id: Int) = infos[id]
-//    fun serializer(kind: GameKind) = GameCollection.serializer(kind)
 
-    private val games = mutableMapOf<Int, Game<*, *>>()
+    private val games = mutableMapOf<Int, Game<*, *, *>>()
     private val infos = mutableMapOf<Int, GameInfo>()
 }

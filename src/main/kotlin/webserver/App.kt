@@ -85,7 +85,7 @@ suspend fun PipelineContext<Unit, ApplicationCall>.ensureIntQueryParam(name: Str
         ensureQueryParam(name) {it.toInt()}
 
 
-suspend fun PipelineContext<Unit, ApplicationCall>.ensureGame(gameManager: GameManager, id: Int): Game<*, *>? {
+suspend fun PipelineContext<Unit, ApplicationCall>.ensureGame(gameManager: GameManager, id: Int): Game<*, *, *>? {
     return gameManager.get(id) ?: run {
         call.respondText("Game with id=${id} does not exist")
         call.response.status(HttpStatusCode.NotFound)

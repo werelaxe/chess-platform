@@ -2,21 +2,18 @@ package dialects
 
 import core.Figure
 import core.Game
+import core.Rules
 import core.State
-import dialects.checkers.CheckersFigure
-import dialects.checkers.CheckersGame
-import dialects.checkers.CheckersState
-import dialects.checkers.CheckersStateSerializer
-import dialects.chess.classic.ChessFigure
-import dialects.chess.classic.ChessGame
-import dialects.chess.classic.ChessState
-import dialects.chess.classic.ChessStateSerializer
-import dialects.simple.SimpleFigure
-import dialects.simple.SimpleGame
-import dialects.simple.SimpleState
-import dialects.simple.SimpleStateSerializer
+import dialects.checkers.*
+import dialects.chess.classic.*
+import dialects.simple.*
 
-abstract class StateSerializer <FigureType: Figure, StateType: State<FigureType>, GameType: Game<FigureType, StateType>> {
+abstract class StateSerializer <
+    FigureType: Figure,
+    StateType: State<FigureType>,
+    RulesType: Rules<FigureType, StateType>,
+    GameType: Game<FigureType, StateType, RulesType>
+> {
     private val figure2Id = mutableMapOf<FigureType, Int>()
     private val id2Figure = mutableMapOf<Int, FigureType>()
 
@@ -41,13 +38,13 @@ abstract class StateSerializer <FigureType: Figure, StateType: State<FigureType>
         private val kind2figures = mutableMapOf<GameKind, (List<Int>) -> List<SerializableFigure>>()
         private val kind2serialize = mutableMapOf<GameKind, (State<*>) -> List<List<Int?>>>()
 
-        private fun <FigureType: Figure, StateType: State<FigureType>, GameType: Game<FigureType, StateType>>
+        private fun <FigureType: Figure, StateType: State<FigureType>, RulesType: Rules<FigureType, StateType>, GameType: Game<FigureType, StateType, RulesType>>
                 register(kind: GameKind, serialize: (State<*>) -> List<List<Int?>>, figures: (List<Int>) -> List<SerializableFigure>) {
             kind2figures[kind] = figures
             kind2serialize[kind] = serialize
         }
 
-        fun <FigureType: Figure, StateType: State<FigureType>, GameType: Game<FigureType, StateType>> serialize(game: GameType): List<List<Int?>> {
+        fun <FigureType: Figure, StateType: State<FigureType>, RulesType: Rules<FigureType, StateType>, GameType: Game<FigureType, StateType, RulesType>> serialize(game: GameType): List<List<Int?>> {
             val serialize = kind2serialize[game.kind] ?: throw Exception("Unknown kind: ${game.kind}")
             return serialize(game.state)
         }
@@ -58,19 +55,19 @@ abstract class StateSerializer <FigureType: Figure, StateType: State<FigureType>
         }
 
         init {
-            register<SimpleFigure, SimpleState, SimpleGame>(
+            register<SimpleFigure, SimpleState, SimpleRules, SimpleGame>(
                 GameKind.SIMPLE,
                 { state -> SimpleStateSerializer.serialize(state as SimpleState) },
                 { ids -> SimpleStateSerializer.figures(ids) }
             )
 
-            register<CheckersFigure, CheckersState, CheckersGame>(
+            register<CheckersFigure, CheckersState, CheckersRules, CheckersGame>(
                 GameKind.CHECKERS,
                 { state -> CheckersStateSerializer.serialize(state as CheckersState) },
                 { ids -> CheckersStateSerializer.figures(ids) }
             )
 
-            register<ChessFigure, ChessState, ChessGame>(
+            register<ChessFigure, ChessState, ChessRules, ChessGame>(
                 GameKind.CLASSIC_CHESS,
                 { state -> ChessStateSerializer.serialize(state as ChessState) },
                 { ids -> ChessStateSerializer.figures(ids) }

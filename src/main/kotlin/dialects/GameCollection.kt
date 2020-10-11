@@ -2,12 +2,13 @@ package dialects
 
 import core.Figure
 import core.Game
+import core.Rules
 import core.State
 import dialects.checkers.CheckersGame
 import dialects.chess.classic.ChessGame
 import dialects.simple.*
 
-typealias GameType = Game<out Figure, out State<out Figure>>
+typealias GameType = Game<out Figure, out State<out Figure>, out Rules<out Figure, out State<out Figure>>>
 
 
 object GameCollection {

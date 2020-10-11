@@ -4,7 +4,7 @@ import core.Coordinate
 import core.Game
 import dialects.GameKind
 
-class ChessGame: Game<ChessFigure, ChessState>(
+class ChessGame: Game<ChessFigure, ChessState, ChessRules>(
     GameKind.CLASSIC_CHESS,
     ChessState(),
     ChessRules()
@@ -12,10 +12,15 @@ class ChessGame: Game<ChessFigure, ChessState>(
     override fun step(from: Coordinate, to: Coordinate) {
         preStepCheck(from, to)
         val enPassantPair = if (state.isEnPassantMove(from, to)) state.enPassantPair else null
+        val castlingPostMove = rules.castlingPostMoveIfNeed(state, from, to)
+
         state.move(from, to)
         processPawnTransformation(to)
         enPassantPair?.let {
             state[enPassantPair.second] = null
+        }
+        castlingPostMove?.let {
+            state.move(castlingPostMove.first, castlingPostMove.second)
         }
         state.currentPlayer = rules.nextPlayer(state, from, to)
     }

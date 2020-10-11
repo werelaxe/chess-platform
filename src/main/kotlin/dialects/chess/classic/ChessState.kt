@@ -26,23 +26,23 @@ class ChessState: State<ChessFigure>(ChessPlayer.WHITE) {
             board[1][i] = ChessFigure(ChessPlayer.BLACK, ChessFigureType.PAWN)
             board[6][i] = ChessFigure(ChessPlayer.WHITE, ChessFigureType.PAWN)
         }
-        board[0][0] = ChessFigure(ChessPlayer.BLACK, ChessFigureType.ROOK)
-        board[0][width - 1] = ChessFigure(ChessPlayer.BLACK, ChessFigureType.ROOK)
+        board[0][0] = ChessFigure(ChessPlayer.BLACK, ChessFigureType.ROOK, true)
+        board[0][width - 1] = ChessFigure(ChessPlayer.BLACK, ChessFigureType.ROOK, true)
         board[0][1] = ChessFigure(ChessPlayer.BLACK, ChessFigureType.KNIGHT)
         board[0][width - 2] = ChessFigure(ChessPlayer.BLACK, ChessFigureType.KNIGHT)
         board[0][2] = ChessFigure(ChessPlayer.BLACK, ChessFigureType.BISHOP)
         board[0][width - 3] = ChessFigure(ChessPlayer.BLACK, ChessFigureType.BISHOP)
         board[0][3] = ChessFigure(ChessPlayer.BLACK, ChessFigureType.QUEEN)
-        board[0][width - 4] = ChessFigure(ChessPlayer.BLACK, ChessFigureType.KING)
+        board[0][width - 4] = ChessFigure(ChessPlayer.BLACK, ChessFigureType.KING, true)
 
-        board[height - 1][0] = ChessFigure(ChessPlayer.WHITE, ChessFigureType.ROOK)
-        board[height - 1][width - 1] = ChessFigure(ChessPlayer.WHITE, ChessFigureType.ROOK)
+        board[height - 1][0] = ChessFigure(ChessPlayer.WHITE, ChessFigureType.ROOK, true)
+        board[height - 1][width - 1] = ChessFigure(ChessPlayer.WHITE, ChessFigureType.ROOK, true)
         board[height - 1][1] = ChessFigure(ChessPlayer.WHITE, ChessFigureType.KNIGHT)
         board[height - 1][width - 2] = ChessFigure(ChessPlayer.WHITE, ChessFigureType.KNIGHT)
         board[height - 1][2] = ChessFigure(ChessPlayer.WHITE, ChessFigureType.BISHOP)
         board[height - 1][width - 3] = ChessFigure(ChessPlayer.WHITE, ChessFigureType.BISHOP)
         board[height - 1][3] = ChessFigure(ChessPlayer.WHITE, ChessFigureType.QUEEN)
-        board[height - 1][width - 4] = ChessFigure(ChessPlayer.WHITE, ChessFigureType.KING)
+        board[height - 1][width - 4] = ChessFigure(ChessPlayer.WHITE, ChessFigureType.KING, true)
     }
 
     override fun getEl(coord: Coordinate): ChessFigure? {
@@ -93,6 +93,11 @@ class ChessState: State<ChessFigure>(ChessPlayer.WHITE) {
         enPassantPair =
             if (isDoubleSquarePawnMove(from, to)) (to + from) / 2 to to
             else null
+        this[to]?.let { toFig ->
+            if (toFig.figureType == ChessFigureType.KING || toFig.figureType == ChessFigureType.ROOK) {
+                this[to] = this[to]?.copy(canCastling = false)
+            }
+        }
     }
 
     override fun contains(coord: Coordinate) = coord.x() in 0 until width && coord.y() in 0 until height

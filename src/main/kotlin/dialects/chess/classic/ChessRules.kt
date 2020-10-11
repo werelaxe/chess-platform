@@ -3,6 +3,8 @@ package dialects.chess.classic
 import core.Coordinate
 import core.Result
 import core.Rules
+import kotlin.math.abs
+import kotlin.math.sign
 
 
 class ChessRules: Rules<ChessFigure, ChessState> {
@@ -124,7 +126,40 @@ class ChessRules: Rules<ChessFigure, ChessState> {
                 }
             }
         }
+        for (rookX in listOf(0, state.width - 1)) {
+            if (canCastle(state, rookX)) {
+                res.add(Coordinate.of(from.x() - 2 * sign((from.x() - rookX).toDouble()).toInt(), from.y()))
+            }
+        }
         return res
+    }
+
+    fun castlingPostMoveIfNeed(state: ChessState, from: Coordinate, to: Coordinate): Pair<Coordinate, Coordinate>? {
+        state[from]?.let { fig ->
+            if (fig.figureType == ChessFigureType.KING && abs(from.x() - to.x()) == 2) {
+                return if (to.x() == state.width - 6) {
+                    Coordinate.of(0, from.y()) to Coordinate.of(3, from.y())
+                } else {
+                    Coordinate.of(state.width - 1, from.y()) to Coordinate.of(state.width - 3, from.y())
+                }
+            }
+        }
+        return null
+    }
+
+    private fun canCastle(state: ChessState, rookX: Int): Boolean {
+        val y = if (state.currentPlayer == ChessPlayer.WHITE) state.height - 1 else 0
+        state[Coordinate.of(state.width - 4, y)]?.let { fig ->
+            val rook = state[Coordinate.of(rookX, y)]
+
+            return fig.figureType == ChessFigureType.KING &&
+                    fig.owner == state.currentPlayer &&
+                    fig.canCastling &&
+                    rook?.figureType == ChessFigureType.ROOK &&
+                    rook.owner == state.currentPlayer &&
+                    rook.canCastling
+        }
+        return false
     }
 
     private fun possibleStepsForKnight(state: ChessState, from: Coordinate): List<Coordinate> {

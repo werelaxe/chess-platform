@@ -3,10 +3,10 @@ package core
 import dialects.GameKind
 
 
-open class Game <FigureType: Figure, StateType: State<FigureType>> (
+open class Game <FigureType: Figure, StateType: State<FigureType>, RulesType: Rules<FigureType, StateType>> (
     val kind: GameKind,
     val state: StateType,
-    protected val rules: Rules<FigureType, StateType>
+    protected val rules: RulesType
 ) {
     fun isOver() = rules.isTerminateState(state)
 

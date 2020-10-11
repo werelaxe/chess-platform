@@ -4,7 +4,7 @@ import core.Coordinate
 import dialects.StateSerializer
 
 
-object CheckersStateSerializer: StateSerializer<CheckersFigure, CheckersState, CheckersGame>() {
+object CheckersStateSerializer: StateSerializer<CheckersFigure, CheckersState, CheckersRules, CheckersGame>() {
     override fun serialize(state: CheckersState): List<List<Int?>> {
         return MutableList(state.height) { y ->
             MutableList(state.width) { x ->

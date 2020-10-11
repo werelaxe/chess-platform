@@ -5,20 +5,6 @@ import kotlin.math.abs
 
 
 class SimpleRules: Rules<SimpleFigure, SimpleState> {
-//    override fun canMove(state: SimpleState, from: Coordinate, to: Coordinate): Boolean {
-//        val fromFig = state.getEl(from)
-//        val toFig = state.getEl(to)
-//        if (state.currentPlayer != fromFig?.owner || toFig != null
-//                || to.nums.single() < 0 || to.nums.single() > 9) {
-//            return false
-//        }
-//        return when (abs(to.nums.single() - from.nums.single())) {
-//            1 -> true
-//            2 -> state.getEl((to + from) / 2) != null
-//            else -> false
-//        }
-//    }
-//
     override fun isTerminateState(state: SimpleState): Boolean {
         return state.getEl(Coordinate.of(0))?.owner == SimplePlayer.SECOND &&
                 state.getEl(Coordinate.of(1))?.owner == SimplePlayer.SECOND &&

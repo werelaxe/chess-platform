@@ -4,7 +4,7 @@ import core.Coordinate
 import core.Game
 import dialects.GameKind
 
-class CheckersGame: Game<CheckersFigure, CheckersState>(
+class CheckersGame: Game<CheckersFigure, CheckersState, CheckersRules>(
     GameKind.CHECKERS,
     CheckersState(8, 8),
     CheckersRules()
