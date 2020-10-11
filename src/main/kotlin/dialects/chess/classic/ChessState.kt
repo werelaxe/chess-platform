@@ -10,9 +10,14 @@ class ChessState: State<ChessFigure>(ChessPlayer.WHITE) {
     val width = 8
     val height = 8
 
-    var isOver = false
-    var blackCount = 0
-    var whiteCount = 0
+    var blackKingPosition = Coordinate.of(width - 4, 0)
+    var whiteKingPosition = Coordinate.of(width - 4, height - 1)
+
+    fun isBlackStep() = currentPlayer == ChessPlayer.BLACK
+    fun isWhiteStep() = currentPlayer == ChessPlayer.WHITE
+
+    val kingPosition: Coordinate
+        get() = if (isWhiteStep()) whiteKingPosition else blackKingPosition
 
     private val board: MutableList<MutableList<ChessFigure?>> = MutableList(height) { MutableList(8) { null } }
 
@@ -45,6 +50,15 @@ class ChessState: State<ChessFigure>(ChessPlayer.WHITE) {
     }
 
     override fun setEl(coord: Coordinate, figure: ChessFigure?) {
+        figure?.let {
+            if (figure.figureType == ChessFigureType.KING) {
+                if (figure.owner == ChessPlayer.BLACK) {
+                    blackKingPosition = coord
+                } else {
+                    whiteKingPosition = coord
+                }
+            }
+        }
         board[coord.y()][coord.x()] = figure
     }
 

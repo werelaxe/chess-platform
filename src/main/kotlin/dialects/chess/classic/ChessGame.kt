@@ -11,19 +11,20 @@ class ChessGame: Game<ChessFigure, ChessState>(
 ) {
     override fun step(from: Coordinate, to: Coordinate) {
         preStepCheck(from, to)
-        state[to]?.let { fig ->
-            if (fig.owner == ChessPlayer.BLACK) {
-                state.blackCount--
-            }
-            if (fig.owner == ChessPlayer.WHITE) {
-                state.whiteCount--
-            }
-        }
         state.move(from, to)
-
-        // TODO: process pawn transformation here
-
+        processPawnTransformation(to)
         state.currentPlayer = rules.nextPlayer(state, from, to)
+    }
+
+    private fun processPawnTransformation(to: Coordinate) {
+        if (state[to]?.figureType != ChessFigureType.PAWN) {
+            return
+        }
+        if (state.currentPlayer == ChessPlayer.WHITE && to.y() == 0) {
+            state[to] = ChessFigure(ChessPlayer.WHITE, ChessFigureType.QUEEN)
+        } else if (state.currentPlayer == ChessPlayer.BLACK && to.y() == state.height - 1) {
+            state[to] = ChessFigure(ChessPlayer.BLACK, ChessFigureType.QUEEN)
+        }
     }
 
     companion object {
