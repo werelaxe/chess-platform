@@ -1,5 +1,6 @@
 package dialects.checkers
 
+import core.AdditionalStepInfo
 import core.Coordinate
 import core.Game
 import dialects.GameKind
@@ -9,7 +10,7 @@ class CheckersGame: Game<CheckersFigure, CheckersState, CheckersRules>(
     CheckersState(8, 8),
     CheckersRules()
 ) {
-    override fun step(from: Coordinate, to: Coordinate) {
+    override fun step(from: Coordinate, to: Coordinate, additionalStepInfo: AdditionalStepInfo?) {
         preStepCheck(from, to)
         state[to]?.let { fig ->
             if (fig.owner == CheckersPlayer.BLACK) {

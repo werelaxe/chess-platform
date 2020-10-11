@@ -4,6 +4,8 @@ import core.Coordinate
 import core.Game
 import dialects.GameKind
 import dialects.StateSerializer
+import dialects.chess.quantum.QuantumChessGame
+import dialects.chess.quantum.QuantumChessState
 import freemarker.cache.ClassTemplateLoader
 import io.ktor.application.*
 import io.ktor.auth.*

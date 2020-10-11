@@ -42,4 +42,6 @@ class SimpleRules: Rules<SimpleFigure, SimpleState> {
         }
         return emptyList()
     }
+
+    override fun isCurrentPlayerStep(state: SimpleState, figure: SimpleFigure) = state.currentPlayer == figure.owner
 }

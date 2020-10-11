@@ -9,9 +9,9 @@ enum class CheckersFigureType {
 
 
 data class CheckersFigure (
-        override val owner: Int,
+        val owner: Int,
         val figureType: CheckersFigureType
 ) : Figure {
-    override val type: Int
+    val type: Int
         get() = figureType.ordinal
 }

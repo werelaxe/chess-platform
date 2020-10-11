@@ -27,7 +27,20 @@ abstract class StateSerializer <
 
     abstract fun serialize(state: StateType): List<List<Int?>>
 
-    private fun FigureType.serialize() = SerializableFigure(type, owner)
+    private fun FigureType.serialize(): SerializableFigure {
+        return when (this) {
+            is SimpleFigure -> {
+                SerializableFigure(type, owner)
+            }
+            is ChessFigure -> {
+                SerializableFigure(type, owner)
+            }
+            is CheckersFigure -> {
+                SerializableFigure(type, owner)
+            }
+            else -> throw IllegalArgumentException("Invalid figure type: ${this.javaClass}")
+        }
+    }
 
     fun figures(ids: List<Int>): List<SerializableFigure> =
         ids.map { id ->

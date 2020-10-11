@@ -101,4 +101,11 @@ class ChessState: State<ChessFigure>(ChessPlayer.WHITE) {
     }
 
     override fun contains(coord: Coordinate) = coord.x() in 0 until width && coord.y() in 0 until height
+
+    class Context {
+        var enPassantPair: Pair<Coordinate, Coordinate>? = null
+        var castlingPostMove: Pair<Coordinate, Coordinate>? = null
+    }
+
+    val context = Context()
 }

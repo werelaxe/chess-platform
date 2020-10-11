@@ -57,4 +57,7 @@ class CheckersRules: Rules<CheckersFigure, CheckersState> {
         }
         return emptyList()
     }
+
+    override fun isCurrentPlayerStep(state: CheckersState, figure: CheckersFigure) = state.currentPlayer == figure.owner
+
 }
