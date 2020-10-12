@@ -112,6 +112,7 @@ suspend fun MutableSet<DefaultWebSocketSession>.removeIfInvalid(block: suspend (
 fun main(args: Array<String>) {
     val gameManager = GameManager()
     gameManager.create(GameKind.CLASSIC_CHESS)
+    gameManager.create(GameKind.QUANTUM_CHESS)
 
     val server = embeddedServer(Netty, port = 8080) {
         installFeatures()
@@ -168,7 +169,8 @@ fun main(args: Array<String>) {
                     call.respondText("Can not make step due to rules")
                     return@post
                 }
-                game.step(step.from, step.to)
+                println(step)
+                game.step(step.from, step.to, step.additionalStepInfo)
                 if (game.isOver()) {
                     connections[step.gameId]!!.removeIfInvalid { conn ->
                         conn.outgoing.send(Frame.Text("winner:${game.result().winners.toList()[0]}"))

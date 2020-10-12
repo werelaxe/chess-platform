@@ -11,9 +11,10 @@
     Choose game kind
 </label>
 <select id="gk">
-    <option value="SIMPLE">Simple</option>
-    <option value="CHECKERS">Checkers</option>
     <option value="CLASSIC_CHESS">Classic chess</option>
+    <option value="QUANTUM_CHESS">Quantum chess</option>
+    <option value="CHECKERS">Checkers</option>
+    <option value="SIMPLE">Simple</option>
 </select>
 <input type="button" id="create-btn" value="Create">
 </body>

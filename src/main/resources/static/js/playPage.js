@@ -10,10 +10,12 @@ let figures = {};
 let board = [];
 let currentPlayer = null;
 let ws = null;
+let isQuantum = false;
 
 let drawers = {
     "CHECKERS": drawCheckersFigure,
     "CLASSIC_CHESS": drawChessFigure,
+    "QUANTUM_CHESS": drawQuantumChessFigure,
 };
 
 
@@ -132,13 +134,41 @@ let type2imageSelector = {
 
 
 function drawChessFigure(ctx, fig, i, j) {
-    let type = `${fig.type},${fig.owner}`;
+    let image = getImage(fig);
+    ctx.drawImage(image, 10 + i * cellSize, 10 + j * cellSize);
+}
+
+
+function drawFigPiece(ctx, img, x, y, size, offset) {
+    ctx.drawImage(img, offset, 0, size, 80, x + offset, y, size, 80);
+}
+
+
+function getImage(pair) {
+    let type = `${pair.type},${pair.owner}`;
     let image = $(type2imageSelector[type])[0];
     if (image === undefined) {
         console.log(`Can not find image by type ${type}`)
         return;
     }
-    ctx.drawImage(image, 10 + i * cellSize, 10 + j * cellSize);
+    return image;
+}
+
+
+function drawQuantumChessFigure(ctx, fig, i, j) {
+    if (fig.figures.length === 1 && fig.figures[0].first === 1) {
+        drawChessFigure(ctx, fig.figures[0].second, i, j);
+        return;
+    }
+    let pawnSize = 60;
+    let offset = 10;
+
+    for (let k = 0; k < fig.figures.length; k++) {
+        let f = fig.figures[k]
+        let img = getImage(f.second);
+        drawFigPiece(ctx, img, 10 + i * cellSize, 10 + j * cellSize, f.first * pawnSize, offset);
+        offset += f.first * pawnSize;
+    }
 }
 
 
@@ -232,6 +262,11 @@ function doStep(x, y) {
         },
         "to": {
             "nums": [x, y]
+        },
+        "additionalStepInfo": {
+            "records": {
+                "is_quantum": isQuantum.toString()
+            }
         }
     });
     $.ajax({
@@ -246,6 +281,22 @@ function doStep(x, y) {
 }
 
 
+
+function canPickFigure(x, y) {
+    if (gameKind === "CLASSIC_CHESS") {
+        return figures[board[y][x]].owner === currentPlayer;
+    } else {
+        let figs = figures[board[y][x]].figures;
+        for (let i = 0; i < figs.length; i++) {
+            if (figs[i].second.owner === currentPlayer) {
+                return true
+            }
+        }
+        return false
+    }
+}
+
+
 function setCanvasClickHandler() {
     let canvasLeft = boardCanvas[0].offsetLeft + boardCanvas[0].clientLeft;
     let canvasTop = boardCanvas[0].offsetTop + boardCanvas[0].clientTop;
@@ -253,15 +304,15 @@ function setCanvasClickHandler() {
         let x = (e.pageX - canvasLeft) / cellSize | 0;
         let y = (e.pageY - canvasTop) / cellSize | 0;
         if (board[y][x] !== null) {
-            if (figures[board[y][x]].owner === currentPlayer) {
+            if (chosenCoords !== null && isSuggestedContains(x, y)) {
+                doStep(x, y);
+                return
+            }
+            if (canPickFigure(x, y)) {
                 updateBoardCanvas();
                 highlightCells(suggest(x, y));
                 chosenCoords = [x, y];
-                return;
             }
-        }
-        if (chosenCoords !== null && isSuggestedContains(x, y)) {
-            doStep(x, y);
         }
     });
 }

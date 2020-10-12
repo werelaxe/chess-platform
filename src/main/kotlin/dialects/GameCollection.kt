@@ -6,6 +6,7 @@ import core.Rules
 import core.State
 import dialects.checkers.CheckersGame
 import dialects.chess.classic.ChessGame
+import dialects.chess.quantum.QuantumChessGame
 import dialects.simple.*
 
 typealias GameType = Game<out Figure, out State<out Figure>, out Rules<out Figure, out State<out Figure>>>
@@ -29,5 +30,6 @@ object GameCollection {
         register(GameKind.SIMPLE, SimpleGame.Companion::createSimpleGame)
         register(GameKind.CHECKERS, CheckersGame.Companion::createCheckersGame)
         register(GameKind.CLASSIC_CHESS, ChessGame.Companion::createChessGame)
+        register(GameKind.QUANTUM_CHESS, QuantumChessGame.Companion::createQuantumChessGame)
     }
 }

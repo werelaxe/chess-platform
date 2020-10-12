@@ -1,5 +1,6 @@
 package webserver
 
+import core.AdditionalStepInfo
 import core.Coordinate
 import kotlinx.serialization.Serializable
 
@@ -7,5 +8,6 @@ import kotlinx.serialization.Serializable
 data class StepSchema(
     val gameId: Int,
     val from: Coordinate,
-    val to: Coordinate
+    val to: Coordinate,
+    val additionalStepInfo: AdditionalStepInfo
 )

@@ -7,10 +7,14 @@ import dialects.GameKind
 
 
 class QuantumChessGame: Game<QuantumChessFigure, QuantumChessState, QuantumChessRules>(
-        GameKind.CLASSIC_CHESS,
+        GameKind.QUANTUM_CHESS,
         QuantumChessState(),
         QuantumChessRules()
 ) {
+    init {
+        step(Coordinate.of(0, 6), Coordinate.of(0, 5), AdditionalStepInfo(mapOf("is_quantum" to "true")))
+    }
+
     private fun AdditionalStepInfo.isQuantum() = records["is_quantum"]?.toBoolean()
 
     override fun step(from: Coordinate, to: Coordinate, additionalStepInfo: AdditionalStepInfo?) {
@@ -25,6 +29,12 @@ class QuantumChessGame: Game<QuantumChessFigure, QuantumChessState, QuantumChess
         rules.postMove(state, from, to)
 
         state.currentPlayer = rules.nextPlayer(state, from, to)
+        state.states.forEach {
+            it.currentPlayer = state.currentPlayer
+        }
+    }
 
+    companion object {
+        fun createQuantumChessGame() = QuantumChessGame()
     }
 }
