@@ -3,6 +3,7 @@ package dialects.chess.quantum
 import core.Coordinate
 import core.Result
 import core.Rules
+import dialects.chess.classic.ChessFigureType
 import dialects.chess.classic.ChessPlayer
 import dialects.chess.classic.ChessRules
 import kotlin.math.abs
@@ -15,16 +16,23 @@ class QuantumChessRules: Rules<QuantumChessFigure, QuantumChessState> {
     override fun nextPlayer(state: QuantumChessState, from: Coordinate, to: Coordinate) = ChessPlayer.another(state.currentPlayer)
 
     override fun isTerminateState(state: QuantumChessState): Boolean {
-        println("Fix this terminal state")
-        return false
+        return state.blackKingCount() == 0 || state.whiteKingCount() == 0
     }
 
-    override fun winners(state: QuantumChessState): Result {
-        TODO("Not yet implemented")
+    override fun winners(state: QuantumChessState) = when {
+        state.whiteKingCount() == 0 -> Result(true, setOf(ChessPlayer.BLACK), setOf(ChessPlayer.WHITE))
+        state.blackKingCount() == 0 -> Result(true, setOf(ChessPlayer.WHITE), setOf(ChessPlayer.BLACK))
+        else -> Result(false, emptySet(), emptySet())
     }
 
     override fun possibleSteps(state: QuantumChessState, from: Coordinate): List<Coordinate> {
-        return state.states.map { classicRules.possibleSteps(it, from) }.flatten().distinct()
+        state.context.isQuantumMove?.let { qm ->
+            if (from != qm) {
+                return emptyList()
+            }
+            return (state.states.map { classicRules.possibleSteps(it, from) }.flatten() + listOf(from)).distinct()
+        }
+        return (state.states.map { classicRules.possibleSteps(it, from) }.flatten()).distinct()
     }
 
     override fun isCurrentPlayerStep(state: QuantumChessState, figure: QuantumChessFigure): Boolean {
@@ -51,6 +59,14 @@ class QuantumChessRules: Rules<QuantumChessFigure, QuantumChessState> {
     override fun move(state: QuantumChessState, from: Coordinate, to: Coordinate) {
         state.states.forEach {
             if (classicRules.canMove(it, from, to)) {
+                val toFig = it[to]
+                if (toFig?.figureType == ChessFigureType.KING) {
+                    if (toFig.owner == ChessPlayer.WHITE) {
+                        it.whiteKingPosition = voidPosition
+                    } else {
+                        it.blackKingPosition = voidPosition
+                    }
+                }
                 it.move(from, to)
             }
         }
@@ -60,5 +76,9 @@ class QuantumChessRules: Rules<QuantumChessFigure, QuantumChessState> {
         state.states.forEach {
             classicRules.postMove(it, from, to)
         }
+    }
+
+    companion object {
+        val voidPosition = Coordinate.of(-100, -100)
     }
 }

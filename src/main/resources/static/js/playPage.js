@@ -10,7 +10,8 @@ let figures = {};
 let board = [];
 let currentPlayer = null;
 let ws = null;
-let isQuantum = false;
+let isQuantum = null;
+let isPostQuantum = null;
 
 let drawers = {
     "CHECKERS": drawCheckersFigure,
@@ -53,6 +54,9 @@ function updateBoard() {
         url: "/game/state?id=" + gameId.toString(),
         success: function (data) {
             board = data["board"];
+            if (data["postQuantum"] != null) {
+                isPostQuantum = data["postQuantum"].nums;
+            }
             currentPlayer = data["currentPlayer"];
             setCurrentPlayer(currentPlayer);
             ensureFigures(board);
@@ -65,18 +69,18 @@ function updateBoard() {
 }
 
 
-function highlightCells(suggestions) {
+function highlightCells(suggestions, color) {
     for (let i = 0; i < suggestions.length; i++) {
         let x = suggestions[i].nums[0];
         let y = suggestions[i].nums[1];
-        highlightCell(x, y);
+        highlightCell(x, y, color);
     }
 }
 
-function highlightCell(x, y) {
+function highlightCell(x, y, color) {
     let ctx = boardCanvas[0].getContext("2d");
     ctx.lineWidth = 5;
-    ctx.strokeStyle = "#0f0";
+    ctx.strokeStyle = color;
     ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
 }
 
@@ -265,7 +269,7 @@ function doStep(x, y) {
         },
         "additionalStepInfo": {
             "records": {
-                "is_quantum": isQuantum.toString()
+                "is_quantum": isQuantum === null ? "false" : "true"
             }
         }
     });
@@ -304,15 +308,31 @@ function setCanvasClickHandler() {
         let x = (e.pageX - canvasLeft) / cellSize | 0;
         let y = (e.pageY - canvasTop) / cellSize | 0;
         if (board[y][x] !== null) {
-            if (chosenCoords !== null && isSuggestedContains(x, y)) {
+            if (chosenCoords !== null && chosenCoords[0] === x && chosenCoords[1] === y && !isSuggestedContains(x, y)) {
+                isQuantum = chosenCoords;
+                updateBoardCanvas();
+                highlightCells(suggest(x, y), "#00f");
+                return;
+            } else if (chosenCoords !== null && isSuggestedContains(x, y)) {
                 doStep(x, y);
+                if (isQuantum !== null) {
+                    isQuantum = null;
+                }
+                if (isPostQuantum !== null) {
+                    isPostQuantum = null;
+                }
                 return
             }
             if (canPickFigure(x, y)) {
                 updateBoardCanvas();
-                highlightCells(suggest(x, y));
+                highlightCells(suggest(x, y), "#0f0");
                 chosenCoords = [x, y];
             }
+        }
+        if (isPostQuantum !== null) {
+            chosenCoords = isPostQuantum;
+            updateBoardCanvas();
+            highlightCells(suggest(isPostQuantum[0], isPostQuantum[1]), "#00f");
         }
     });
 }

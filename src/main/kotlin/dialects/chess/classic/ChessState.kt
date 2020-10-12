@@ -8,14 +8,13 @@ class ChessState(
     val width: Int,
     val height: Int,
     private val board: MutableList<MutableList<ChessFigure?>>,
-    val context: Context = Context()
-): State<ChessFigure>(ChessPlayer.WHITE) {
+    val context: Context = Context(),
+    startPlayer: Int = ChessPlayer.WHITE
+): State<ChessFigure>(startPlayer) {
     constructor(width: Int = 8, height: Int = 8): this(width, height, genStartBoard(width, height))
 
     var blackKingPosition = Coordinate.of(width - 4, 0)
-        private set
     var whiteKingPosition = Coordinate.of(width - 4, height - 1)
-        private set
 
     fun isBlackStep() = currentPlayer == ChessPlayer.BLACK
     fun isWhiteStep() = currentPlayer == ChessPlayer.WHITE
@@ -94,10 +93,10 @@ class ChessState(
 
     fun clone(): ChessState {
         val boardClone = board.clone()
-        return with(ChessState(width, height, boardClone)) {
+        return with(ChessState(width, height, boardClone, startPlayer = currentPlayer)) {
             this.enPassantPair = enPassantPair
-            this.blackKingPosition = blackKingPosition
-            this.whiteKingPosition = whiteKingPosition
+            this.blackKingPosition = this@ChessState.blackKingPosition
+            this.whiteKingPosition = this@ChessState.whiteKingPosition
             this
         }
     }

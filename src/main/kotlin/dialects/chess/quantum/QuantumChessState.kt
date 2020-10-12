@@ -32,4 +32,13 @@ class QuantumChessState: State<QuantumChessFigure>(ChessPlayer.WHITE) {
     override fun contains(coord: Coordinate) = coord.x() in 0 until width && coord.y() in 0 until height
 
     override fun move(from: Coordinate, to: Coordinate) {}
+
+    class Context {
+        var isQuantumMove: Coordinate? = null
+    }
+
+    val context = Context()
+
+    fun whiteKingCount() = states.count { it.whiteKingPosition != QuantumChessRules.voidPosition }
+    fun blackKingCount() = states.count { it.blackKingPosition != QuantumChessRules.voidPosition }
 }

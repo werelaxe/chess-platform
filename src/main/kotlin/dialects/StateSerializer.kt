@@ -8,6 +8,8 @@ import dialects.checkers.*
 import dialects.chess.classic.*
 import dialects.chess.quantum.*
 import dialects.simple.*
+import webserver.SerializableQuantumState
+import webserver.SerializableState
 
 abstract class StateSerializer <
     FigureType: Figure,
@@ -64,9 +66,17 @@ abstract class StateSerializer <
             kind2serialize[kind] = serialize
         }
 
-        fun <FigureType: Figure, StateType: State<FigureType>, RulesType: Rules<FigureType, StateType>, GameType: Game<FigureType, StateType, RulesType>> serialize(game: GameType): List<List<Int?>> {
+        fun <FigureType: Figure, StateType: State<FigureType>, RulesType: Rules<FigureType, StateType>, GameType: Game<FigureType, StateType, RulesType>> serializeBoard(game: GameType): List<List<Int?>> {
             val serialize = kind2serialize[game.kind] ?: throw Exception("Unknown kind: ${game.kind}")
             return serialize(game.state)
+        }
+
+        fun <FigureType: Figure, StateType: State<FigureType>, RulesType: Rules<FigureType, StateType>, GameType: Game<FigureType, StateType, RulesType>> serialize(game: GameType): Any {
+            return if (game.state is QuantumChessState)
+                SerializableQuantumState(serializeBoard(game), game.state.currentPlayer, game.state.context.isQuantumMove)
+            else
+                SerializableState(serializeBoard(game), game.state.currentPlayer)
+
         }
 
         fun figures(kind: GameKind, ids: List<Int>): List<Any> {

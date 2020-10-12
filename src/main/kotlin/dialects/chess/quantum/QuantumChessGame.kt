@@ -21,17 +21,18 @@ class QuantumChessGame: Game<QuantumChessFigure, QuantumChessState, QuantumChess
         preStepCheck(from, to)
 
         rules.preMove(state, from, to)
-        if (additionalStepInfo?.isQuantum() == true) {
+        if (additionalStepInfo?.isQuantum() == true && state.context.isQuantumMove == null) {
+            state.context.isQuantumMove = from
             rules.quantumMove(state, from, to)
         } else {
             rules.move(state, from, to)
+            state.currentPlayer = rules.nextPlayer(state, from, to)
+            state.states.forEach {
+                it.currentPlayer = state.currentPlayer
+            }
+            state.context.isQuantumMove = null
         }
         rules.postMove(state, from, to)
-
-        state.currentPlayer = rules.nextPlayer(state, from, to)
-        state.states.forEach {
-            it.currentPlayer = state.currentPlayer
-        }
     }
 
     companion object {

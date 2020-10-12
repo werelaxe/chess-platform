@@ -4,8 +4,6 @@ import core.Coordinate
 import core.Game
 import dialects.GameKind
 import dialects.StateSerializer
-import dialects.chess.quantum.QuantumChessGame
-import dialects.chess.quantum.QuantumChessState
 import freemarker.cache.ClassTemplateLoader
 import io.ktor.application.*
 import io.ktor.auth.*
@@ -25,7 +23,6 @@ import io.ktor.websocket.*
 import other.GameManager
 import java.io.File
 import java.util.*
-import kotlin.collections.LinkedHashSet
 
 
 fun Application.installFeatures() {
@@ -144,7 +141,7 @@ fun main(args: Array<String>) {
                     val id = ensureIntQueryParam("id") ?: return@get
                     val game = ensureGame(gameManager, id) ?: return@get
                     val state = StateSerializer.serialize(game)
-                    call.respond(SerializableState(state, game.state.currentPlayer))
+                    call.respond(state)
                 } catch (e: Throwable) {
                     println(e)
                     println(e.stackTrace)
@@ -162,21 +159,24 @@ fun main(args: Array<String>) {
                 }
             }
             post("/game/step") {
-                val step = call.receive<StepSchema>()
-                val game = ensureGame(gameManager, step.gameId) ?: return@post
-                if (!game.canMove(step.from, step.to)) {
-                    call.response.status(HttpStatusCode.BadRequest)
-                    call.respondText("Can not make step due to rules")
-                    return@post
-                }
-                println(step)
-                game.step(step.from, step.to, step.additionalStepInfo)
-                if (game.isOver()) {
-                    connections[step.gameId]!!.removeIfInvalid { conn ->
-                        conn.outgoing.send(Frame.Text("winner:${game.result().winners.toList()[0]}"))
+                try {
+                    val step = call.receive<StepSchema>()
+                    val game = ensureGame(gameManager, step.gameId) ?: return@post
+                    if (!game.canMove(step.from, step.to)) {
+                        call.response.status(HttpStatusCode.BadRequest)
+                        call.respondText("Can not make step due to rules")
+                        return@post
                     }
+                    game.step(step.from, step.to, step.additionalStepInfo)
+                    if (game.isOver()) {
+                        connections[step.gameId]!!.removeIfInvalid { conn ->
+                            conn.outgoing.send(Frame.Text("winner:${game.result().winners.toList()[0]}"))
+                        }
+                    }
+                    call.response.status(HttpStatusCode.OK)
+                } catch (e: Throwable) {
+                    println(e)
                 }
-                call.response.status(HttpStatusCode.OK)
             }
             static("static") {
                 staticRootFolder = File("src/main/resources/static")
