@@ -11,10 +11,6 @@ class QuantumChessGame: Game<QuantumChessFigure, QuantumChessState, QuantumChess
         QuantumChessState(),
         QuantumChessRules()
 ) {
-    init {
-        step(Coordinate.of(0, 6), Coordinate.of(0, 5), AdditionalStepInfo(mapOf("is_quantum" to "true")))
-    }
-
     private fun AdditionalStepInfo.isQuantum() = records["is_quantum"]?.toBoolean()
 
     override fun step(from: Coordinate, to: Coordinate, additionalStepInfo: AdditionalStepInfo?) {
