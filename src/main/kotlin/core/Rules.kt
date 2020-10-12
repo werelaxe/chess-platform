@@ -7,6 +7,9 @@ interface Rules<FigureType: Figure, StateType: State<FigureType>> {
     fun possibleSteps(state: StateType, from: Coordinate): List<Coordinate>
 
     fun preMove(state: StateType, from: Coordinate, to: Coordinate) {}
+    fun move(state: StateType, from: Coordinate, to: Coordinate) {
+        state.move(from, to)
+    }
     fun postMove(state: StateType, from: Coordinate, to: Coordinate) {}
 
     fun canMove(state: StateType, from: Coordinate, to: Coordinate) = to in possibleSteps(state, from)

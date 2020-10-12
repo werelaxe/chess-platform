@@ -24,7 +24,7 @@ open class Game <FigureType: Figure, StateType: State<FigureType>, RulesType: Ru
         preStepCheck(from, to)
 
         rules.preMove(state, from, to)
-        state.move(from, to)
+        rules.move(state, from, to)
         rules.postMove(state, from, to)
 
         state.currentPlayer = rules.nextPlayer(state, from, to)
