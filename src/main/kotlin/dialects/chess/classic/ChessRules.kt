@@ -10,7 +10,7 @@ import kotlin.math.sign
 class ChessRules: Rules<ChessFigure, ChessState> {
     override fun nextPlayer(state: ChessState, from: Coordinate, to: Coordinate) = ChessPlayer.another(state.currentPlayer)
 
-    private fun canCurrentPlayerMove(state: ChessState): Boolean {
+    fun canCurrentPlayerMove(state: ChessState): Boolean {
         for (x in 0 until state.width) {
             for (y in 0 until state.height) {
                 val coord = Coordinate.of(x, y)

@@ -6,8 +6,6 @@ import core.Rules
 import dialects.chess.classic.ChessFigureType
 import dialects.chess.classic.ChessPlayer
 import dialects.chess.classic.ChessRules
-import kotlin.math.abs
-import kotlin.math.sign
 
 
 class QuantumChessRules: Rules<QuantumChessFigure, QuantumChessState> {
@@ -16,10 +14,13 @@ class QuantumChessRules: Rules<QuantumChessFigure, QuantumChessState> {
     override fun nextPlayer(state: QuantumChessState, from: Coordinate, to: Coordinate) = ChessPlayer.another(state.currentPlayer)
 
     override fun isTerminateState(state: QuantumChessState): Boolean {
-        return state.blackKingCount() == 0 || state.whiteKingCount() == 0
+        return state.blackKingCount() == 0 || state.whiteKingCount() == 0 || !canCurrentPlayerMove(state)
     }
 
+    fun canCurrentPlayerMove(state: QuantumChessState) = state.states.any { classicRules.canCurrentPlayerMove(it) }
+
     override fun winners(state: QuantumChessState) = when {
+        !canCurrentPlayerMove(state) -> Result(true, setOf(ChessPlayer.another(state.currentPlayer)), setOf(state.currentPlayer))
         state.whiteKingCount() == 0 -> Result(true, setOf(ChessPlayer.BLACK), setOf(ChessPlayer.WHITE))
         state.blackKingCount() == 0 -> Result(true, setOf(ChessPlayer.WHITE), setOf(ChessPlayer.BLACK))
         else -> Result(false, emptySet(), emptySet())
