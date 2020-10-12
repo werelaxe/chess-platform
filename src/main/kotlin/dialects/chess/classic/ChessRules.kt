@@ -176,8 +176,8 @@ class ChessRules: Rules<ChessFigure, ChessState> {
     private fun isCheckByPawn(state: ChessState): Boolean {
         val playerCoef = playerCoef(state)
         for (k in listOf(-1, 1)) {
-            state[state.kingPosition + Coordinate.of(k, playerCoef)]?.let { leftFig ->
-                if (leftFig.owner == ChessPlayer.another(state.currentPlayer)) {
+            state[state.kingPosition + Coordinate.of(k, playerCoef)]?.let { fig ->
+                if (fig.owner == ChessPlayer.another(state.currentPlayer) && fig.figureType == ChessFigureType.PAWN) {
                     return true
                 }
             }
