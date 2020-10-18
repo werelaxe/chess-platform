@@ -16,6 +16,8 @@ let isPostQuantum = null;
 let timer = null;
 let tooltip = null;
 let btn = null;
+let whiteCurrentPlayerImg = null;
+let blackCurrentPlayerImg = null;
 
 
 let drawers = {
@@ -49,7 +51,12 @@ function getPlayerText(player) {
 
 
 function setCurrentPlayer() {
-    $("#current-player").text(getPlayerText(currentPlayer));
+    let dot = $("#dot");
+    if (currentPlayer === 1) {
+        dot.removeClass("black");
+    } else {
+        dot.addClass("black");
+    }
 }
 
 
@@ -293,6 +300,15 @@ function setObserveButtonHandler() {
 }
 
 
+function setCurrentPlayerImage() {
+    let div = $("#cur-pl");
+    div.css("margin-left", boardCanvas[0].offsetLeft + boardCanvas[0].width - 250);
+    div.css("margin-top", -45);
+    let cpl = $("#cpl");
+    cpl.offset({top: cpl.offset().top - 17, left: cpl.offset().left - 10})
+}
+
+
 function doStep(x, y) {
     let fromCoords = isObservation ? [x, y] : chosenCoords;
 
@@ -519,6 +535,13 @@ function initTooltip() {
 }
 
 
+function setResizeHandler() {
+    $(window).on('resize', function () {
+        location.reload();
+    });
+}
+
+
 function main() {
     boardCanvas = $("#board");
     setObserveButtonHandler();
@@ -528,6 +551,8 @@ function main() {
     sendHelloToWs();
     initTooltip();
     setTooltipHandler();
+    setCurrentPlayerImage();
+    setResizeHandler();
 }
 
 
