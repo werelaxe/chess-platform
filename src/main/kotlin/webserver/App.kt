@@ -162,7 +162,7 @@ fun main(args: Array<String>) {
                 try {
                     val step = call.receive<StepSchema>()
                     val game = ensureGame(gameManager, step.gameId) ?: return@post
-                    if (!game.canMove(step.from, step.to)) {
+                    if (!game.canMove(step.from, step.to, step.additionalStepInfo)) {
                         call.response.status(HttpStatusCode.BadRequest)
                         call.respondText("Can not make step due to rules")
                         return@post

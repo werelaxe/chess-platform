@@ -49,3 +49,23 @@
 .inv {
     display: none;
 }
+
+
+#observe-btn {
+    font-size: 25px;
+    border: gray solid 3px;
+    border-radius: 5px;
+    outline: gray;
+    margin-top: 15px;
+}
+
+#observe-btn.active {
+    background-color: lightgreen;
+    border-radius: 5px;
+    border: green solid 3px;
+    outline: green;
+}
+
+#observe-btn.disable {
+    color: gray;
+}

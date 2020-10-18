@@ -11,9 +11,11 @@ let board = [];
 let currentPlayer = null;
 let ws = null;
 let isQuantum = null;
+let isObservation = false;
 let isPostQuantum = null;
 let timer = null;
 let tooltip = null;
+let btn = null;
 
 
 let drawers = {
@@ -59,6 +61,7 @@ function updateBoard() {
             board = data["board"];
             if (data["postQuantum"] != null) {
                 isPostQuantum = data["postQuantum"].nums;
+                btn.addClass("disable");
             }
             currentPlayer = data["currentPlayer"];
             setCurrentPlayer(currentPlayer);
@@ -278,18 +281,33 @@ function isSuggestedContains(x, y) {
 }
 
 
+function setObserveButtonHandler() {
+    btn = $("#observe-btn");
+    btn.css("margin-left", boardCanvas.position().left);
+    btn.on("click", function (e) {
+        if (isPostQuantum === null) {
+            isObservation = !isObservation;
+            btn.toggleClass("active");
+        }
+    });
+}
+
+
 function doStep(x, y) {
+    let fromCoords = isObservation ? [x, y] : chosenCoords;
+
     let data = JSON.stringify({
         "gameId": gameId,
         "from": {
-            "nums": chosenCoords
+            "nums": fromCoords
         },
         "to": {
             "nums": [x, y]
         },
         "additionalStepInfo": {
             "records": {
-                "is_quantum": isQuantum === null ? "false" : "true"
+                "is_quantum": isQuantum === null ? "false" : "true",
+                "is_observation": isObservation.toString()
             }
         }
     });
@@ -327,6 +345,14 @@ function setCanvasClickHandler() {
     boardCanvas.on("click", function (e) {
         let x = (e.pageX - canvasLeft) / cellSize | 0;
         let y = (e.pageY - canvasTop) / cellSize | 0;
+
+        if (isObservation) {
+            doStep(x, y);
+            isObservation = false;
+            btn.toggleClass("active");
+            return;
+        }
+
         if (board[y][x] !== null) {
             if (chosenCoords !== null && chosenCoords[0] === x && chosenCoords[1] === y && !isSuggestedContains(x, y)) {
                 isQuantum = chosenCoords;
@@ -339,9 +365,10 @@ function setCanvasClickHandler() {
                     isQuantum = null;
                 }
                 if (isPostQuantum !== null) {
+                    btn.removeClass("disable");
                     isPostQuantum = null;
                 }
-                return
+                return;
             }
             if (canPickFigure(x, y)) {
                 updateBoardCanvas();
@@ -494,6 +521,7 @@ function initTooltip() {
 
 function main() {
     boardCanvas = $("#board");
+    setObserveButtonHandler();
     setCanvasClickHandler();
     updateBoardCanvas();
     setWsReceivingHandler();

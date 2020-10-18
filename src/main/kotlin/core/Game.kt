@@ -10,18 +10,18 @@ open class Game <FigureType: Figure, StateType: State<FigureType>, RulesType: Ru
 ) {
     fun isOver() = rules.isTerminateState(state)
 
-    open fun preStepCheck(from: Coordinate, to: Coordinate) {
+    open fun preStepCheck(from: Coordinate, to: Coordinate, info: AdditionalStepInfo? = null) {
         if (isOver()) {
             throw Exception("Game is over")
         }
 
-        if (!rules.canMove(state, from, to)) {
+        if (!rules.canMove(state, from, to, info)) {
             throw Exception("Can not move")
         }
     }
 
     open fun step(from: Coordinate, to: Coordinate, additionalStepInfo: AdditionalStepInfo? = null) {
-        preStepCheck(from, to)
+        preStepCheck(from, to, additionalStepInfo)
 
         rules.preMove(state, from, to)
         rules.move(state, from, to)
@@ -30,7 +30,7 @@ open class Game <FigureType: Figure, StateType: State<FigureType>, RulesType: Ru
         state.currentPlayer = rules.nextPlayer(state, from, to)
     }
 
-    fun canMove(from: Coordinate, to: Coordinate) = rules.canMove(state, from, to)
+    fun canMove(from: Coordinate, to: Coordinate, info: AdditionalStepInfo? = null) = rules.canMove(state, from, to, info)
 
     fun possibleSteps(from: Coordinate) = rules.possibleSteps(state, from)
 

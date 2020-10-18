@@ -32,6 +32,7 @@
     <div class="inv"><img id="w-rook" src="/static/w-rook.png" width="100" height="100" alt="white-rook"></div>
     <div class="inv"><img id="w-queen" src="/static/w-queen.png" width="100" height="100" alt="white-queen"></div>
     <div class="inv"><img id="w-king" src="/static/w-king.png" width="100" height="100" alt="white-king"></div>
+    <input id="observe-btn" type="button" value="Observe">
     <div id="tooltip"></div>
 </body>
 </html>
