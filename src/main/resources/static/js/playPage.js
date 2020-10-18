@@ -12,6 +12,9 @@ let currentPlayer = null;
 let ws = null;
 let isQuantum = null;
 let isPostQuantum = null;
+let timer = null;
+let tooltip = null;
+
 
 let drawers = {
     "CHECKERS": drawCheckersFigure,
@@ -135,6 +138,23 @@ let type2imageSelector = {
     "4,2": "#b-queen",
     "5,2": "#b-king",
 };
+
+
+let type2Label = {
+    "0,1": "White pawn",
+    "1,1": "White bishop",
+    "2,1": "White knight",
+    "3,1": "White rook",
+    "4,1": "White queen",
+    "5,1": "White king",
+
+    "0,2": "Black pawn",
+    "1,2": "Black bishop",
+    "2,2": "Black knight",
+    "3,2": "Black rook",
+    "4,2": "Black queen",
+    "5,2": "Black king",
+}
 
 
 function drawChessFigure(ctx, fig, i, j) {
@@ -335,6 +355,104 @@ function setCanvasClickHandler() {
             highlightCells(suggest(isPostQuantum[0], isPostQuantum[1]), "#00f");
         }
     });
+
+    boardCanvas.on("mousemove", function (e) {
+        let x = e.pageX;
+        let y = e.pageY;
+        hideTooltip();
+        moveTooltipTo(x, y);
+    });
+
+    $(document).on("mousemove", function (e) {
+        mouseX = e.pageX;
+        mouseY = e.pageY;
+    });
+}
+
+
+let mouseX = 0;
+let mouseY = 0;
+
+
+function isInsideCanvas(x, y) {
+    let canvasLeft = boardCanvas[0].offsetLeft + boardCanvas[0].clientLeft;
+    let canvasTop = boardCanvas[0].offsetTop + boardCanvas[0].clientTop;
+    let canvasWidth = boardCanvas[0].width;
+    let canvasHeight = boardCanvas[0].height;
+    return x >= canvasLeft && x <= canvasLeft + canvasWidth && y >= canvasTop && y <= canvasTop + canvasHeight;
+}
+
+
+function tooltipHandler(e) {
+    let x = (e.pageX);
+    let y = (e.pageY);
+    moveTooltipTo(x, y);
+    if (isInsideCanvas(mouseX, mouseY)) {
+        let canvasLeft = boardCanvas[0].offsetLeft + boardCanvas[0].clientLeft;
+        let canvasTop = boardCanvas[0].offsetTop + boardCanvas[0].clientTop;
+
+        let cellX = (e.pageX - canvasLeft) / cellSize | 0;
+        let cellY = (e.pageY - canvasTop) / cellSize | 0;
+
+        if (figures[board[cellY][cellX]].figures.length === 0) {
+            return;
+        }
+        updateTooltip(cellX, cellY);
+        moveTooltipTo(x, y, true);
+        showTooltip(cellX, cellY);
+    }
+}
+
+
+function getProperty(object, prop) {
+    let raw = object.css(prop);
+    return parseInt(raw.substring(0, raw.length - 2));
+}
+
+
+function moveTooltipTo(x, y, adjust=true) {
+    if (adjust) {
+        x += 5;
+        let count = (tooltip.html().match(/<br>/g) || []).length + 1;
+        y -= count * 18 + 50;
+    }
+    tooltip.css("left", `${x}px`);
+    tooltip.css("top", `${y}px`);
+}
+
+
+function updateTooltip(x, y) {
+    let figId = board[y][x];
+    let figs = figures[figId];
+    let label = [];
+    for (let i = 0; i < figs.figures.length; i++) {
+        let pair = figs.figures[i].second;
+        let type = `${pair.type},${pair.owner}`;
+        label.push(`${type2Label[type]}: ${figs.figures[i].first}`);
+    }
+    tooltip.html(label.join("<br>"));
+}
+
+
+function showTooltip(x, y) {
+    tooltip.addClass("show");
+}
+
+
+function hideTooltip() {
+    tooltip.removeClass("show");
+}
+
+
+function setTooltipHandler() {
+    boardCanvas.on("mousemove", function (e) {
+        if (timer) {
+            clearTimeout(timer);
+        }
+        timer = setTimeout(function() {
+            tooltipHandler(e);
+        }, 1000);
+    });
 }
 
 
@@ -364,12 +482,24 @@ function waitChatSocket() {
 }
 
 
+function initTooltip() {
+    tooltip = $("#tooltip");
+    tooltip.css("left", 100);
+    tooltip.css("top", 100);
+    tooltip.addClass("bottom");
+    tooltip.addClass("left");
+    tooltip.html("Tip!");
+}
+
+
 function main() {
     boardCanvas = $("#board");
     setCanvasClickHandler();
     updateBoardCanvas();
     setWsReceivingHandler();
     sendHelloToWs();
+    initTooltip();
+    setTooltipHandler();
 }
 
 
