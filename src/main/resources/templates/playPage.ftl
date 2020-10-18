@@ -28,6 +28,7 @@
     <div class="inv"><img id="w-queen" src="/static/w-queen.png" alt="white-queen"></div>
     <div class="inv"><img id="w-king" src="/static/w-king.png" alt="white-king"></div>
     <input id="observe-btn" type="button" value="Observe">
+    <span id="qs" style="display: none; font-size: 30px; margin-left: 0px">(Quantum step)</span>
     <div id="cur-pl">
         <span id="cpl" class="current-player-lbl">Current player:</span>
         <span id="dot" class="dot"></span>

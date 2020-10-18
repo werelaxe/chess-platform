@@ -60,6 +60,16 @@ function setCurrentPlayer() {
 }
 
 
+function showQuantumStep() {
+    $("#qs").css("display", "block");
+}
+
+
+function hideQuantumStep() {
+    $("#qs").css("display", "none");
+}
+
+
 function updateBoard() {
     $.ajax({
         type: 'GET',
@@ -69,6 +79,7 @@ function updateBoard() {
             if (data["postQuantum"] != null) {
                 isPostQuantum = data["postQuantum"].nums;
                 btn.addClass("disable");
+                showQuantumStep();
             }
             currentPlayer = data["currentPlayer"];
             setCurrentPlayer(currentPlayer);
@@ -382,6 +393,7 @@ function setCanvasClickHandler() {
                 }
                 if (isPostQuantum !== null) {
                     btn.removeClass("disable");
+                    hideQuantumStep();
                     isPostQuantum = null;
                 }
                 return;
@@ -542,6 +554,13 @@ function setResizeHandler() {
 }
 
 
+function initQuantumStepLabel() {
+    let qs = $("#qs");
+    qs.css("margin-left", 450);
+    qs.css("margin-top", -35);
+}
+
+
 function main() {
     boardCanvas = $("#board");
     setObserveButtonHandler();
@@ -553,6 +572,7 @@ function main() {
     setTooltipHandler();
     setCurrentPlayerImage();
     setResizeHandler();
+    initQuantumStepLabel();
 }
 
 
