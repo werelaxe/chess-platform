@@ -11,8 +11,8 @@
     Choose game kind
 </label>
 <select id="gk">
-    <option value="CLASSIC_CHESS">Classic chess</option>
     <option value="QUANTUM_CHESS">Quantum chess</option>
+    <option value="CLASSIC_CHESS">Classic chess</option>
     <option value="CHECKERS">Checkers</option>
     <option value="SIMPLE">Simple</option>
 </select>
