@@ -576,7 +576,12 @@ function main() {
 }
 
 
+function getWebSocketUrl() {
+    return `ws${location.protocol.includes("s") ? "s" : ""}://${location.host}/game/notify`;
+}
+
+
 $(document).ready(function() {
-    ws = new WebSocket("ws://" + location.host + "/game/notify");
+    ws = new WebSocket(getWebSocketUrl());
     waitSocket(ws, waitChatSocket);
 });
