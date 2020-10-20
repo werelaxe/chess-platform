@@ -6,7 +6,7 @@
         let gameKind = "${kind}";
     </script>
     <link rel="stylesheet" href="/static/main.css">
-    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="/static/jquery.min.js"></script>
     <script src="/static/playPage.js"></script>
     <meta charset="UTF-8">
     <title>Play</title>
