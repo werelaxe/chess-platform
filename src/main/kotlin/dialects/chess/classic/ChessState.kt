@@ -4,10 +4,10 @@ import core.Coordinate
 import core.State
 import kotlin.math.abs
 
-class ChessState(
+open class ChessState(
     val width: Int,
     val height: Int,
-    private val board: MutableList<MutableList<ChessFigure?>>,
+    val board: MutableList<MutableList<ChessFigure?>>,
     val context: Context = Context(),
     startPlayer: Int = ChessPlayer.WHITE
 ): State<ChessFigure>(startPlayer) {
@@ -41,7 +41,7 @@ class ChessState(
     }
 
     var enPassantPair: Pair<Coordinate, Coordinate>? = null
-        private set
+        protected set
 
     fun testMove(from: Coordinate, to: Coordinate) {
         super.move(from, to)
@@ -85,13 +85,13 @@ class ChessState(
         var castlingPostMove: Pair<Coordinate, Coordinate>? = null
     }
 
-    private fun MutableList<MutableList<ChessFigure?>>.clone() = MutableList(this.size) { y ->
+    protected fun MutableList<MutableList<ChessFigure?>>.clone() = MutableList(this.size) { y ->
         MutableList(this[y].size) { x ->
             this[y][x]?.copy()
         }
     }
 
-    fun clone(): ChessState {
+    open fun clone(): ChessState {
         val boardClone = board.clone()
         return with(ChessState(width, height, boardClone, startPlayer = currentPlayer)) {
             this.enPassantPair = enPassantPair
@@ -103,7 +103,7 @@ class ChessState(
 }
 
 
-private fun genStartBoard(width: Int, height: Int): MutableList<MutableList<ChessFigure?>> {
+fun genStartBoard(width: Int, height: Int): MutableList<MutableList<ChessFigure?>> {
     val boardResult: MutableList<MutableList<ChessFigure?>> = MutableList(height) { MutableList(width) { null } }
 
     for (i in 0 until width) {

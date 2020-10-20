@@ -24,7 +24,7 @@ class QuantumChessRules: Rules<QuantumChessFigure, QuantumChessState> {
         return state.blackKingCount() == 0 || state.whiteKingCount() == 0 || !canCurrentPlayerMove(state)
     }
 
-    fun canCurrentPlayerMove(state: QuantumChessState) = state.states.any { classicRules.canCurrentPlayerMove(it) }
+    private fun canCurrentPlayerMove(state: QuantumChessState) = state.states.any { classicRules.canCurrentPlayerMove(it) }
 
     override fun winners(state: QuantumChessState) = when {
         !canCurrentPlayerMove(state) -> Result(true, setOf(ChessPlayer.another(state.currentPlayer)), setOf(state.currentPlayer))
@@ -77,7 +77,13 @@ class QuantumChessRules: Rules<QuantumChessFigure, QuantumChessState> {
                 current += pair.probability
             }
 
-            state.states.removeAll { it[coordinate] != resultFig }
+            state.states.removeAll { stateWithHash ->
+                (stateWithHash[coordinate] != resultFig).apply {
+                    if (this) {
+                        state.hashKeeper.remove(stateWithHash.boardHash)
+                    }
+                }
+            }
         }
     }
 
@@ -107,6 +113,39 @@ class QuantumChessRules: Rules<QuantumChessFigure, QuantumChessState> {
     override fun postMove(state: QuantumChessState, from: Coordinate, to: Coordinate) {
         state.states.forEach {
             classicRules.postMove(it, from, to)
+        }
+    }
+
+    fun isCollapsable(state: QuantumChessState): Boolean {
+        if (!state.hashKeeper.isCollapsable()) {
+            return false
+        }
+        val stateCheck = mutableMapOf<HashType, ChessStateWithHash?>()
+
+        state.states.forEach { subState ->
+            if (subState.boardHash !in stateCheck) {
+                stateCheck[subState.boardHash] = subState
+            }
+            stateCheck[subState.boardHash]?.let { chessStateWithHash ->
+                if (chessStateWithHash != subState) {
+                    return false
+                }
+            }
+        }
+        return true
+    }
+
+    fun collapse(state: QuantumChessState) {
+        val rememberedStates = mutableSetOf<ChessStateWithHash>()
+
+        state.states.removeIf { chessStateWithHash ->
+            if (chessStateWithHash !in rememberedStates) {
+                rememberedStates.add(chessStateWithHash)
+                false
+            } else {
+                state.hashKeeper.remove(chessStateWithHash.boardHash)
+                true
+            }
         }
     }
 

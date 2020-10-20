@@ -37,6 +37,9 @@ class QuantumChessGame: Game<QuantumChessFigure, QuantumChessState, QuantumChess
             state.context.isQuantumMove = null
         }
         rules.postMove(state, from, to)
+        if (rules.isCollapsable(state)) {
+            rules.collapse(state)
+        }
     }
 
     companion object {

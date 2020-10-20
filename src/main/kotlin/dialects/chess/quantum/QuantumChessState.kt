@@ -8,10 +8,12 @@ import dialects.chess.classic.ChessState
 
 
 class QuantumChessState: State<QuantumChessFigure>(ChessPlayer.WHITE) {
+    val hashKeeper = HashKeeper()
+
     val width = 8
     val height = 8
 
-    val states = mutableListOf(ChessState())
+    val states = mutableListOf(ChessStateWithHash(hashKeeper))
 
     override fun getEl(coord: Coordinate): QuantumChessFigure? {
         val distribution = states.mapNotNull { it[coord] }
