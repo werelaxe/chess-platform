@@ -1,4 +1,5 @@
 {
     "port": 8080,
-    "host": "0.0.0.0"
+    "host": "0.0.0.0",
+    "homeUrl": "http://localhost:8080"
 }

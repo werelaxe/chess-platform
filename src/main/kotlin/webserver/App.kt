@@ -20,15 +20,9 @@ import io.ktor.server.engine.*
 import io.ktor.server.netty.*
 import io.ktor.util.pipeline.*
 import io.ktor.websocket.*
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
 import other.GameManager
 import java.io.File
 import java.util.*
-
-
-const val DEFAULT_HOST = "0.0.0.0"
 
 
 fun Application.installFeatures() {
@@ -114,7 +108,7 @@ suspend fun MutableSet<DefaultWebSocketSession>.removeIfInvalid(block: suspend (
 
 fun main(args: Array<String>) {
     val config = Config.readOrDefault("config")
-    println("Starting server on ${config.host}:${config.port}")
+    println("Starting server with $config")
 
     val gameManager = GameManager()
     gameManager.create(GameKind.CLASSIC_CHESS)
@@ -202,7 +196,14 @@ fun main(args: Array<String>) {
             get("/game/play") {
                 val id = ensureIntQueryParam("id") ?: return@get
                 val game = ensureGame(gameManager, id) ?: return@get
-                call.respond(FreeMarkerContent("playPage.ftl", mapOf("id" to id, "kind" to game.kind)))
+                call.respond(FreeMarkerContent("playPage.ftl",
+                    mapOf(
+                        "id" to id,
+                        "kind" to game.kind,
+                        "port" to config.port,
+                        "home_url" to config.homeUrl
+                    )
+                ))
             }
             get("/game/suggest") {
                 try {
