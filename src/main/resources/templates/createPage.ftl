@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="/static/jquery.min.js"></script>
     <script src="/static/createPage.js"></script>
     <meta charset="UTF-8">
     <title>Create game</title>
