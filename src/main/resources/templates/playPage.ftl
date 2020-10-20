@@ -9,12 +9,12 @@
     <script src="/static/jquery.min.js"></script>
     <script src="/static/playPage.js"></script>
     <meta charset="UTF-8">
-    <title>Quantum Chess</title>
+    <title>Quantum Chess | Game #${id}</title>
 
     <meta name="description" content="Quantum chess playground">
     <meta property="og:url" content="${home_url}/game/play?id=${id}">
     <meta property="og:type" content="website">
-    <meta property="og:title" content="Quantum Chess">
+    <meta property="og:title" content="Quantum Chess | Game #${id}">
     <meta property="og:description" content="Quantum chess playground">
     <meta property="og:image" content="${home_url}/static/chess.png">
 
