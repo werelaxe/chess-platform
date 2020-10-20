@@ -12,11 +12,18 @@
     <title>Quantum Chess | Game #${id}</title>
 
     <meta name="description" content="Quantum chess playground">
+
     <meta property="og:url" content="${home_url}/game/play?id=${id}">
     <meta property="og:type" content="website">
     <meta property="og:title" content="Quantum Chess | Game #${id}">
     <meta property="og:description" content="Quantum chess playground">
     <meta property="og:image" content="${home_url}/static/chess.png">
+
+    <meta property="twitter:url" content="${home_url}/game/play?id=${id}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Quantum Chess | Game #${id}">
+    <meta name="twitter:description" content="Quantum chess playground">
+    <meta name="twitter:image" content="${home_url}/static/chess.png">
 
     <title>Play</title>
 </head>
