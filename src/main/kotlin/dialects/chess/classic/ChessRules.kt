@@ -146,6 +146,9 @@ class ChessRules: Rules<ChessFigure, ChessState> {
     }
 
     private fun canCastle(state: ChessState, rookX: Int): Boolean {
+        if (isCheck(state, false)) {
+            return false
+        }
         val y = if (state.currentPlayer == ChessPlayer.WHITE) state.height - 1 else 0
         state[Coordinate.of(state.width - 4, y)]?.let { fig ->
             val rook = state[Coordinate.of(rookX, y)]
@@ -170,7 +173,6 @@ class ChessRules: Rules<ChessFigure, ChessState> {
         setOf(ChessFigureType.KNIGHT) to ::possibleStepsForKnight,
         setOf(ChessFigureType.ROOK, ChessFigureType.QUEEN) to ::possibleStepsForRook,
         setOf(ChessFigureType.BISHOP, ChessFigureType.QUEEN) to ::possibleStepsForBishop,
-        setOf(ChessFigureType.KING) to ::possibleStepsForKing,
     )
 
     private fun isCheckByPawn(state: ChessState): Boolean {
@@ -185,11 +187,14 @@ class ChessRules: Rules<ChessFigure, ChessState> {
         return false
     }
 
-    private fun isCheck(state: ChessState): Boolean {
+    private fun isCheck(state: ChessState, kingCheck: Boolean = true): Boolean {
         if (isCheckByPawn(state)) {
             return true
         }
-        for ((types, possibleSteps) in typesAndPossibleSteps) {
+
+        val addition = if (kingCheck) listOf(setOf(ChessFigureType.KING) to ::possibleStepsForKing) else emptyList()
+
+        for ((types, possibleSteps) in typesAndPossibleSteps + addition) {
             for (coord in possibleSteps(state, state.kingPosition)) {
                 val fig = state[coord]
                 if (fig?.figureType in types && fig?.owner == ChessPlayer.another(state.currentPlayer)) {
@@ -197,6 +202,7 @@ class ChessRules: Rules<ChessFigure, ChessState> {
                 }
             }
         }
+
         return false
     }
 
