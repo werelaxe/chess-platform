@@ -47,7 +47,7 @@ class QuantumChessRules: Rules<QuantumChessFigure, QuantumChessState> {
         return figure.figures.any { it.figure.owner == state.currentPlayer }
     }
 
-    override fun preMove(state: QuantumChessState, from: Coordinate, to: Coordinate) {
+    fun preMove(state: QuantumChessState, from: Coordinate, to: Coordinate) {
         state.states.forEach {
             classicRules.preMove(it, from, to)
         }
@@ -59,7 +59,7 @@ class QuantumChessRules: Rules<QuantumChessFigure, QuantumChessState> {
             val newState = state.states[i].clone()
             state.states.add(newState)
             if (classicRules.canMove(newState, from, to, )) {
-                newState.move(from, to)
+                classicRules.move(newState, from, to)
             }
         }
     }
@@ -95,6 +95,8 @@ class QuantumChessRules: Rules<QuantumChessFigure, QuantumChessState> {
     }
 
     override fun move(state: QuantumChessState, from: Coordinate, to: Coordinate) {
+        preMove(state, from, to)
+
         state.states.forEach {
             if (classicRules.canMove(it, from, to)) {
                 val toFig = it[to]
@@ -108,9 +110,11 @@ class QuantumChessRules: Rules<QuantumChessFigure, QuantumChessState> {
                 it.move(from, to)
             }
         }
+
+        postMove(state, from, to)
     }
 
-    override fun postMove(state: QuantumChessState, from: Coordinate, to: Coordinate) {
+    fun postMove(state: QuantumChessState, from: Coordinate, to: Coordinate) {
         state.states.forEach {
             classicRules.postMove(it, from, to)
         }

@@ -28,6 +28,9 @@ open class ChessState(
     }
 
     override fun setEl(coord: Coordinate, figure: ChessFigure?) {
+        if (coord.x() == 3 && coord.y() == 3) {
+            val a = 1
+        }
         figure?.let {
             if (figure.figureType == ChessFigureType.KING) {
                 if (figure.owner == ChessPlayer.BLACK) {
@@ -59,9 +62,11 @@ open class ChessState(
     fun isEnPassantMove(from: Coordinate, to: Coordinate): Boolean {
         this[from]?.let { fromFig ->
             return fromFig.figureType == ChessFigureType.PAWN &&
-                    this[to] == null &&
-                    abs(from.x() - to.x()) == 1 &&
-                    abs(from.y() - to.y()) == 1
+                this[to] == null &&
+                abs(from.x() - to.x()) == 1 &&
+                abs(from.y() - to.y()) == 1 &&
+                ((fromFig.owner == ChessPlayer.BLACK && from.y() == 4) ||
+                    (fromFig.owner == ChessPlayer.WHITE && from.y() == 3))
         }
         return false
     }

@@ -248,12 +248,18 @@ class ChessRules: Rules<ChessFigure, ChessState> {
 
     override fun isCurrentPlayerStep(state: ChessState, figure: ChessFigure) = state.currentPlayer == figure.owner
 
-    override fun preMove(state: ChessState, from: Coordinate, to: Coordinate) {
+    fun preMove(state: ChessState, from: Coordinate, to: Coordinate) {
         state.context.enPassantPair = if (state.isEnPassantMove(from, to)) state.enPassantPair else null
         state.context.castlingPostMove = castlingPostMoveIfNeed(state, from, to)
     }
 
-    override fun postMove(state: ChessState, from: Coordinate, to: Coordinate) {
+    override fun move(state: ChessState, from: Coordinate, to: Coordinate) {
+        preMove(state, from, to)
+        super.move(state, from, to)
+        postMove(state, from, to)
+    }
+
+    fun postMove(state: ChessState, from: Coordinate, to: Coordinate) {
         processPawnTransformation(state, to)
         state.context.enPassantPair?.let {
             state[it.second] = null
@@ -261,7 +267,6 @@ class ChessRules: Rules<ChessFigure, ChessState> {
         state.context.castlingPostMove?.let {
             state.move(it.first, it.second)
         }
-
     }
 
     private fun processPawnTransformation(state: ChessState, to: Coordinate) {

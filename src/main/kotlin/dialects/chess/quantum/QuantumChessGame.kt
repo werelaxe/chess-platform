@@ -27,7 +27,6 @@ class QuantumChessGame: Game<QuantumChessFigure, QuantumChessState, QuantumChess
             return
         }
 
-        rules.preMove(state, from, to)
         if (additionalStepInfo?.isQuantum() == true && state.context.isQuantumMove == null) {
             state.context.isQuantumMove = from
             rules.quantumMove(state, from, to)
@@ -36,7 +35,7 @@ class QuantumChessGame: Game<QuantumChessFigure, QuantumChessState, QuantumChess
             changeCurrentPlayer(from, to)
             state.context.isQuantumMove = null
         }
-        rules.postMove(state, from, to)
+
         if (rules.isCollapsable(state)) {
             rules.collapse(state)
         }

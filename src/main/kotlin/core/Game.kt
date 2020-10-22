@@ -22,11 +22,7 @@ open class Game <FigureType: Figure, StateType: State<FigureType>, RulesType: Ru
 
     open fun step(from: Coordinate, to: Coordinate, additionalStepInfo: AdditionalStepInfo? = null) {
         preStepCheck(from, to, additionalStepInfo)
-
-        rules.preMove(state, from, to)
         rules.move(state, from, to)
-        rules.postMove(state, from, to)
-
         state.currentPlayer = rules.nextPlayer(state, from, to)
     }
 

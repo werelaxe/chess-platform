@@ -40,7 +40,7 @@ class ChessStateWithHash(
         val boardClone = board.clone()
         hashKeeper
         return with(ChessStateWithHash(hashKeeper, width, height, boardClone, startPlayer = currentPlayer)) {
-            this.enPassantPair = enPassantPair
+            this.enPassantPair = this@ChessStateWithHash.enPassantPair
             this.blackKingPosition = this@ChessStateWithHash.blackKingPosition
             this.whiteKingPosition = this@ChessStateWithHash.whiteKingPosition
             this
