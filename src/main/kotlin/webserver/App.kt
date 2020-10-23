@@ -81,10 +81,14 @@ suspend fun <T> PipelineContext<Unit, ApplicationCall>.ensureQueryParamList(name
 
 
 suspend fun PipelineContext<Unit, ApplicationCall>.ensureIntQueryParam(name: String) =
-        ensureQueryParam(name) {it.toInt()}
+    ensureQueryParam(name) {it.toInt()}
 
 
-suspend fun PipelineContext<Unit, ApplicationCall>.ensureGame(gameManager: GameManager, id: Int): Game<*, *, *>? {
+suspend fun PipelineContext<Unit, ApplicationCall>.ensureStringQueryParam(name: String) =
+    ensureQueryParam(name) { it }
+
+
+suspend fun PipelineContext<Unit, ApplicationCall>.ensureGame(gameManager: GameManager, id: String): Game<*, *, *>? {
     return gameManager.get(id) ?: run {
         call.respondText("Game with id=${id} does not exist")
         call.response.status(HttpStatusCode.NotFound)
@@ -117,9 +121,8 @@ fun main(args: Array<String>) {
     val server = embeddedServer(Netty, host = config.host, port = config.port) {
         installFeatures()
         routing {
-            val connections = Collections.synchronizedMap(mutableMapOf<Int, MutableSet<DefaultWebSocketSession>>())
+            val connections = Collections.synchronizedMap(mutableMapOf<String, MutableSet<DefaultWebSocketSession>>())
 
-//            authenticate("auth") {
             post("/game/create") {
                 try {
                     val newGameSchema = call.receive<NewGameSchema>()
@@ -130,7 +133,7 @@ fun main(args: Array<String>) {
                 }
             }
             get("/game/info") {
-                val id = ensureIntQueryParam("id") ?: return@get
+                val id = ensureStringQueryParam("id") ?: return@get
                 val info = gameManager.info(id)
                 if (info == null) {
                     call.respondText("Game with id=${id} does not exist")
@@ -141,7 +144,7 @@ fun main(args: Array<String>) {
             }
             get("/game/state") {
                 try {
-                    val id = ensureIntQueryParam("id") ?: return@get
+                    val id = ensureStringQueryParam("id") ?: return@get
                     val game = ensureGame(gameManager, id) ?: return@get
                     val state = StateSerializer.serialize(game)
                     call.respond(state)
@@ -152,7 +155,7 @@ fun main(args: Array<String>) {
             }
             get("/game/figures") {
                 try {
-                    val id = ensureIntQueryParam("id") ?: return@get
+                    val id = ensureStringQueryParam("id") ?: return@get
                     val game = ensureGame(gameManager, id) ?: return@get
                     val ids = ensureQueryParamList("ids") { it.toInt() } ?: return@get
                     call.respond(StateSerializer.figures(game.kind, ids))
@@ -194,7 +197,7 @@ fun main(args: Array<String>) {
                 call.respond(FreeMarkerContent("createPage.ftl", emptyMap<String, Any>()))
             }
             get("/game/play") {
-                val id = ensureIntQueryParam("id") ?: return@get
+                val id = ensureStringQueryParam("id") ?: return@get
                 val game = ensureGame(gameManager, id) ?: return@get
                 call.respond(FreeMarkerContent("playPage.ftl",
                     mapOf(
@@ -207,7 +210,7 @@ fun main(args: Array<String>) {
             }
             get("/game/suggest") {
                 try {
-                    val id = ensureIntQueryParam("id") ?: return@get
+                    val id = ensureStringQueryParam("id") ?: return@get
                     val game = ensureGame(gameManager, id) ?: return@get
                     val fromNums = ensureQueryParamList("from") { it.toInt() } ?: return@get
                     call.respond(game.possibleSteps(Coordinate(fromNums)))
@@ -223,18 +226,17 @@ fun main(args: Array<String>) {
                     if (frame is Frame.Text) {
                         val text = frame.readText()
                         if (text.startsWith("new:")) {
-                            text.substring(4, text.length).toIntOrNull()?.let { gameId ->
-                                if (gameId !in connections) {
-                                    connections[gameId] = mutableSetOf()
-                                }
-                                connections[gameId]!!.add(this)
+                            val gameId = text.substring(4, text.length)
+                            if (gameId !in connections) {
+                                connections[gameId] = mutableSetOf()
                             }
+                            connections[gameId]!!.add(this)
+
                         } else if (text.startsWith("step:")) {
-                            text.substring(5, text.length).toIntOrNull()?.let { gameId ->
-                                connections[gameId]?.let { conns ->
-                                    conns.removeIfInvalid { conn ->
-                                        conn.outgoing.send(Frame.Text(""))
-                                    }
+                            val gameId = text.substring(5, text.length)
+                            connections[gameId]?.let { conns ->
+                                conns.removeIfInvalid { conn ->
+                                    conn.outgoing.send(Frame.Text(""))
                                 }
                             }
                         }

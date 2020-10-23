@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <script>
-        let gameId = ${id};
+        let gameId = "${id}";
         let gameKind = "${kind}";
     </script>
     <link rel="stylesheet" href="/static/main.css">

@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class StepSchema(
-    val gameId: Int,
+    val gameId: String,
     val from: Coordinate,
     val to: Coordinate,
     val additionalStepInfo: AdditionalStepInfo
