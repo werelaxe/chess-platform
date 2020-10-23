@@ -556,7 +556,7 @@ function setResizeHandler() {
 
 function initQuantumStepLabel() {
     let qs = $("#qs");
-    qs.css("margin-left", 450);
+    qs.css("margin-left", btn.offset().left + 200);
     qs.css("margin-top", -35);
 }
 
