@@ -80,6 +80,8 @@ function updateBoard() {
                 isPostQuantum = data["postQuantum"].nums;
                 btn.addClass("disable");
                 showQuantumStep();
+            } else {
+                hideQuantumStep();
             }
             currentPlayer = data["currentPlayer"];
             setCurrentPlayer(currentPlayer);
@@ -393,7 +395,6 @@ function setCanvasClickHandler() {
                 }
                 if (isPostQuantum !== null) {
                     btn.removeClass("disable");
-                    hideQuantumStep();
                     isPostQuantum = null;
                 }
                 return;
