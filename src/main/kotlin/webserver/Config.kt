@@ -14,6 +14,13 @@ data class Config(
     companion object {
         private val DEFAULT = Config(8080, "0.0.0.0", "http://localhost:8080")
 
+        private fun configNameFromEnv() = when(System.getenv("CHESS_ENV")) {
+            "prod" -> "src/main/kotlin/webserver/configs/prod-config"
+            else -> "src/main/kotlin/webserver/configs/dev-config"
+        }
+
+        fun readOrDefault() = readOrDefault(configNameFromEnv())
+
         fun readOrDefault(filename: String): Config {
             return try {
                 Json.decodeFromString(File(filename).readText())

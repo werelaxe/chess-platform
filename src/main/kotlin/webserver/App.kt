@@ -111,7 +111,7 @@ suspend fun MutableSet<DefaultWebSocketSession>.removeIfInvalid(block: suspend (
 
 
 fun main(args: Array<String>) {
-    val config = Config.readOrDefault("config")
+    val config = Config.readOrDefault()
     println("Starting server with $config")
 
     val gameManager = GameManager()
