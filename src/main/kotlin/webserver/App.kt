@@ -80,10 +80,6 @@ suspend fun <T> PipelineContext<Unit, ApplicationCall>.ensureQueryParamList(name
 }
 
 
-suspend fun PipelineContext<Unit, ApplicationCall>.ensureIntQueryParam(name: String) =
-    ensureQueryParam(name) {it.toInt()}
-
-
 suspend fun PipelineContext<Unit, ApplicationCall>.ensureStringQueryParam(name: String) =
     ensureQueryParam(name) { it }
 
@@ -110,7 +106,7 @@ suspend fun MutableSet<DefaultWebSocketSession>.removeIfInvalid(block: suspend (
 }
 
 
-fun main(args: Array<String>) {
+fun main() {
     val config = Config.readOrDefault()
     println("Starting server with $config")
 

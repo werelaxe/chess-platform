@@ -16,8 +16,6 @@ let isPostQuantum = null;
 let timer = null;
 let tooltip = null;
 let btn = null;
-let whiteCurrentPlayerImg = null;
-let blackCurrentPlayerImg = null;
 
 
 let drawers = {
@@ -293,7 +291,7 @@ function suggest(x, y) {
 function isSuggestedContains(x, y) {
     for (let i = 0; i < suggestedCoords.length; i++) {
         let coords = suggestedCoords[i].nums;
-        if (suggestedCoords[i].nums[0] === x && suggestedCoords[i].nums[1] === y) {
+        if (coords[0] === x && coords[1] === y) {
             return true;
         }
     }
@@ -455,7 +453,7 @@ function tooltipHandler(e) {
         }
         updateTooltip(cellX, cellY);
         moveTooltipTo(x, y, true);
-        showTooltip(cellX, cellY);
+        showTooltip();
     }
 }
 
@@ -490,7 +488,7 @@ function updateTooltip(x, y) {
 }
 
 
-function showTooltip(x, y) {
+function showTooltip() {
     tooltip.addClass("show");
 }
 
