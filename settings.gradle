@@ -1,2 +1,3 @@
 rootProject.name = 'chess-platform'
-
+include 'backend'
+include 'chess-lib'
