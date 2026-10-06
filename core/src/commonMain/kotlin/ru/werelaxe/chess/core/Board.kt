@@ -7,8 +7,8 @@ import kotlinx.serialization.Serializable
  * and the en passant target square. Two boards are equal when all four match, which is
  * exactly the equivalence used to merge quantum universes.
  *
- * [enPassant] is set only when an enemy pawn is actually positioned to capture, so that
- * positions differing only by an unusable en passant square compare equal.
+ * [enPassant] is set only when an en passant capture is actually legal, so that positions
+ * differing only by an unusable en passant square compare equal (as FIDE's repetition rule requires).
  */
 @Serializable
 data class Board(

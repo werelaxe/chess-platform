@@ -33,6 +33,12 @@ object Fen {
             require(file == 8) { "Invalid FEN rank: '$row'" }
         }
 
+        // A side may lack a king (quantum universes after a capture) but never have two.
+        for (color in Color.entries) {
+            val kings = squares.count { it == Piece(color, PieceType.KING) }
+            require(kings <= 1) { "Invalid FEN: found $kings ${color.name.lowercase()} kings" }
+        }
+
         val sideToMove = when (fields[1]) {
             "w" -> Color.WHITE
             "b" -> Color.BLACK
@@ -44,7 +50,7 @@ object Fen {
         val fullmoveNumber = fields.getOrNull(5)?.toIntOrNull() ?: 1
 
         val board = Board(squares, sideToMove, sanitizeCastling(squares, castling), null)
-        val enPassant = rawEnPassant?.takeIf { ClassicRules.canCaptureEnPassant(board, it) }
+        val enPassant = rawEnPassant?.takeIf { ClassicRules.hasLegalEnPassantCapture(board, it) }
         return FenPosition(board.copy(enPassant = enPassant), halfmoveClock, fullmoveNumber)
     }
 

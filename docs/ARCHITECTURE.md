@@ -35,9 +35,9 @@ into `core/build/dist/js/productionLibrary`.
 | `BoardView` | rendering model shared by both variants (see 1.4) |
 | `Game(kind)` | current state + move history, replayable from the history alone |
 
-`Board.enPassant` is set only when an enemy pawn can actually capture, so positions that differ
-only by an unusable en passant square are equal. Equality of `Board` is the equivalence relation
-used to merge quantum universes.
+`Board.enPassant` is set only when an en passant capture is actually legal, so positions that
+differ only by an unusable en passant square are equal (which is also what FIDE's repetition
+rule requires). Equality of `Board` is the equivalence relation used to merge quantum universes.
 
 ### 1.2 Variants
 
@@ -54,8 +54,9 @@ Quantum rules (see `docs/RULES.md` for the player-facing text):
 * The state is a weighted multiset of classical universes `Map<Board, Long>`; probability of a
   universe = weight / total weight. Weights are divided by their GCD after every move, which is
   the "collapse by equivalence classes": identical universes merge, and the representation of a
-  distribution is unique. When the total weight exceeds 2^50, universes with probability below
-  2^-40 are dropped.
+  distribution is unique. The total weight is kept at or below 2^50 so that a split can never
+  overflow: above that bound universes with probability below 2^-40 are dropped and the
+  remaining weights are scaled down with rounding (relative error below 2^-49).
 * `Normal(from, to, promotion?)`: applied in every universe where it is a legal classical move;
   universes where it is illegal (piece absent, blocked, pinned, ...) pass the turn unchanged.
   Legal overall if legal in at least one universe.
@@ -66,15 +67,17 @@ Quantum rules (see `docs/RULES.md` for the player-facing text):
   `first != from`, `first != second`, `first` legal somewhere and `second` legal somewhere (or
   stay). `promotion` applies to whichever target promotes a pawn.
 * `Observe(square, outcome)`: measurement. The authoritative side samples `outcome` from the
-  square's distribution (`Game.resolve`), then all universes inconsistent with the outcome are
-  removed and the turn passes. Legal only when the square has at least two possible contents.
+  square's distribution (`Game.resolve`, which ignores any outcome a client may have sent),
+  then all universes inconsistent with the outcome are removed and the turn passes. Legal only
+  when the square has at least two possible contents.
 * Check is enforced per universe by classical rules. Because a move may not apply in some
   universes, a king can be left in check there and captured later. A side without a king in a
   universe simply plays on there.
 * End of game: a player whose king is gone from **all** universes loses (`KING_CAPTURED`).
   A player with no legal move in any universe loses if in check in at least one of them
-  (`CHECKMATE`), otherwise it is a draw (`STALEMATE`). Fifty plies without a capture or pawn
-  move in any universe, or the same distribution occurring three times, is a draw.
+  (`CHECKMATE`), otherwise it is a draw (`STALEMATE`). One hundred plies (fifty moves by each
+  side) without a capture or pawn move in any universe, or the same distribution occurring
+  three times, is a draw.
 * The move list is the only persistent form of a game; replaying it reproduces the exact
   distribution because observation outcomes are stored inside `Observe` moves.
 

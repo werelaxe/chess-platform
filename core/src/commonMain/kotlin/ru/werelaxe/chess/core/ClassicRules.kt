@@ -157,13 +157,26 @@ object ClassicRules {
     private fun leavesKingInCheck(board: Board, move: Move): Boolean =
         isInCheck(apply(board, move), board.sideToMove)
 
-    /** Whether the side to move could capture en passant on [enPassant] (ignoring pins). */
-    fun canCaptureEnPassant(board: Board, enPassant: Square): Boolean {
+    /**
+     * Whether the side to move has a legal en passant capture onto [target]: the square is on the
+     * right rank and empty, an enemy pawn stands on the square it just double-stepped to, its origin
+     * square is empty and at least one capturing pawn can take it without exposing its own king.
+     * This decides whether [Board.enPassant] is recorded, so positions with an unusable en passant
+     * square are not distinguished from the same position without it.
+     */
+    fun hasLegalEnPassantCapture(board: Board, target: Square): Boolean {
         val color = board.sideToMove
+        if (target.rank != (if (color == Color.WHITE) 5 else 2)) return false
+        if (!board.isEmpty(target)) return false
+        val victim = target.offset(0, -color.pawnDirection) ?: return false
+        if (board[victim] != Piece(color.opposite, PieceType.PAWN)) return false
+        val origin = target.offset(0, color.pawnDirection) ?: return false
+        if (!board.isEmpty(origin)) return false
         val pawn = Piece(color, PieceType.PAWN)
         for (fileDelta in intArrayOf(-1, 1)) {
-            val from = enPassant.offset(fileDelta, -color.pawnDirection) ?: continue
-            if (board[from] == pawn) return true
+            val from = target.offset(fileDelta, -color.pawnDirection) ?: continue
+            if (board[from] != pawn) continue
+            if (!isInCheck(apply(board, Move(from, target)), color)) return true
         }
         return false
     }
@@ -205,11 +218,8 @@ object ClassicRules {
                 }
                 if (abs(move.to.rank - move.from.rank) == 2) {
                     val target = Square.of(move.from.file, (move.from.rank + move.to.rank) / 2)
-                    val enemyPawn = Piece(color.opposite, PieceType.PAWN)
-                    val capturable = intArrayOf(-1, 1).any { df ->
-                        move.to.offset(df, 0)?.let { squares[it.index] == enemyPawn } == true
-                    }
-                    if (capturable) enPassant = target
+                    val next = Board(squares.toList(), color.opposite, castling, null)
+                    if (hasLegalEnPassantCapture(next, target)) enPassant = target
                 }
             }
             PieceType.KING -> {

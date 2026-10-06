@@ -19,8 +19,9 @@ class Game private constructor(
 
     private val moves = ArrayList<GameMove>()
 
+    /** A snapshot of the moves played so far. */
     val history: List<GameMove>
-        get() = moves
+        get() = moves.toList()
 
     val moveCount: Int
         get() = moves.size
@@ -28,28 +29,36 @@ class Game private constructor(
     val sideToMove: Color
         get() = state.sideToMove
 
-    fun status(): GameStatus = variant.status(state)
+    private var cachedStatus: GameStatus? = null
+
+    fun status(): GameStatus = cachedStatus ?: variant.status(state).also { cachedStatus = it }
+
+    val isOver: Boolean
+        get() = status().isOver
 
     fun view(): BoardView = variant.view(state)
 
-    fun legalTargets(from: Square): Set<Square> = variant.legalTargets(state, from)
+    /** Query helpers return nothing playable once the game is over, consistently with [isLegal]. */
+    fun legalTargets(from: Square): Set<Square> = if (isOver) emptySet() else variant.legalTargets(state, from)
 
-    fun splitSecondTargets(from: Square, first: Square): Set<Square> = variant.splitSecondTargets(state, from, first)
+    fun splitSecondTargets(from: Square, first: Square): Set<Square> =
+        if (isOver) emptySet() else variant.splitSecondTargets(state, from, first)
 
-    fun requiresPromotion(from: Square, to: Square): Boolean = variant.requiresPromotion(state, from, to)
+    fun requiresPromotion(from: Square, to: Square): Boolean = !isOver && variant.requiresPromotion(state, from, to)
 
-    fun canObserve(square: Square): Boolean = variant.canObserve(state, square)
+    fun canObserve(square: Square): Boolean = !isOver && variant.canObserve(state, square)
 
-    fun isLegal(move: GameMove): Boolean = !status().isOver && variant.isLegal(state, move)
+    fun isLegal(move: GameMove): Boolean = !isOver && variant.isLegal(state, move)
 
     /** Fills in random outcomes (observations); call on the authoritative side before [apply]. */
     fun resolve(move: GameMove, random: Random = Random.Default): GameMove = variant.resolve(state, move, random)
 
     /** Applies a move; throws [IllegalMoveException] if it is illegal or the game is over. */
     fun apply(move: GameMove) {
-        if (status().isOver) throw IllegalMoveException("The game is over")
+        if (isOver) throw IllegalMoveException("The game is over")
         state = variant.apply(state, move)
         moves.add(move)
+        cachedStatus = null
     }
 
     companion object {

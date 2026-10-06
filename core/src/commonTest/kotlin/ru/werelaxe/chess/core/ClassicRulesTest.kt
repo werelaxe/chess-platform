@@ -30,8 +30,11 @@ class ClassicRulesTest {
     fun enPassantIsIllegalWhenItExposesKingAlongTheRank() {
         // White Ka5 Pb5, Black Pc5 (just double pushed) Rh5: both pawns leaving the rank exposes the king.
         val board = board("7k/8/8/KPp4r/8/8/8/8 w - c6 0 1")
-        assertEquals(sq("c6"), board.enPassant)
+        assertNull(board.enPassant, "a pinned en passant capture is not recorded as available")
         assertFalse(ClassicRules.isLegal(board, mv("b5c6")))
+        val playedOut = ClassicRules.apply(board("7k/2p5/8/KP5r/8/8/8/8 b - - 0 1"), mv("c7c5"))
+        assertNull(playedOut.enPassant)
+        assertFalse(ClassicRules.isLegal(playedOut, mv("b5c6")))
     }
 
     @Test

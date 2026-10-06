@@ -20,6 +20,9 @@ class ClassicState internal constructor(
 
         fun fromFen(fen: String): ClassicState {
             val position = Fen.parse(fen)
+            for (color in Color.entries) {
+                require(position.board.hasKing(color)) { "Invalid position: no ${color.name.lowercase()} king" }
+            }
             return ClassicState(position.board, position.halfmoveClock, position.fullmoveNumber, mapOf(position.board to 1), null)
         }
     }

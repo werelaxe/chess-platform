@@ -59,8 +59,13 @@ class QuantumState internal constructor(
 object QuantumVariant : Variant<QuantumState>() {
     override val kind: GameKind = GameKind.QUANTUM
 
-    /** When the total weight exceeds this, universes with negligible probability are dropped. */
-    private const val PRUNE_TOTAL_THRESHOLD = 1L shl 50
+    /**
+     * The total weight is kept at or below 2^[MAX_TOTAL_WEIGHT_BITS] so that a split (which doubles
+     * it) can never overflow a Long. Above the bound, universes with probability below
+     * 2^-[PRUNE_RATIO_BITS] are dropped first, then all weights are scaled down with rounding.
+     */
+    private const val MAX_TOTAL_WEIGHT_BITS = 50
+    private const val MAX_TOTAL_WEIGHT = 1L shl MAX_TOTAL_WEIGHT_BITS
     private const val PRUNE_RATIO_BITS = 40
 
     override fun initialState(): QuantumState = QuantumState.initial()
@@ -123,14 +128,20 @@ object QuantumVariant : Variant<QuantumState>() {
         return Move(from, to, if (promotes) promotion else null)
     }
 
+    /**
+     * Samples a fresh outcome for an observation. Any outcome already present in [move] is
+     * ignored on purpose: the authoritative side must never let a client choose how a square
+     * collapses. Replaying a stored history goes through [apply], which honours stored outcomes.
+     */
     override fun resolve(state: QuantumState, move: GameMove, random: Random): GameMove {
-        if (move !is GameMove.Observe || move.outcome != null) return move
+        if (move !is GameMove.Observe) return move
         if (!canObserve(state, move.square)) return move
         return move.copy(outcome = Observation(sampleContent(state, move.square, random)))
     }
 
     /** Samples the content of [square] from the universe distribution. */
     fun sampleContent(state: QuantumState, square: Square, random: Random): Piece? {
+        check(state.totalWeight > 0) { "Corrupt quantum state: total weight ${state.totalWeight}" }
         var remaining = random.nextLong(state.totalWeight)
         for ((board, weight) in state.universes) {
             if (remaining < weight) return board[square]
@@ -212,10 +223,17 @@ object QuantumVariant : Variant<QuantumState>() {
     private fun normalize(universes: LinkedHashMap<Board, Long>): Map<Board, Long> {
         var result: MutableMap<Board, Long> = universes
         divideByGcd(result)
-        val total = result.values.sum()
-        if (total > PRUNE_TOTAL_THRESHOLD) {
+        var total = result.values.sum()
+        if (total > MAX_TOTAL_WEIGHT) {
             val minimum = total shr PRUNE_RATIO_BITS
             result = result.filterTo(LinkedHashMap()) { it.value >= minimum }
+            total = result.values.sum()
+            if (total > MAX_TOTAL_WEIGHT) {
+                // Scale down with rounding; the relative error is below 2^-49 and every universe survives.
+                val shift = (64 - total.countLeadingZeroBits()) - MAX_TOTAL_WEIGHT_BITS
+                val half = 1L shl (shift - 1)
+                for (entry in result.entries) entry.setValue(maxOf(1L, (entry.value + half) shr shift))
+            }
             divideByGcd(result)
         }
         return result
