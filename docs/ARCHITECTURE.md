@@ -152,7 +152,7 @@ replayed games and the WebSocket subscriber registry; PostgreSQL is the source o
 | `PORT` | `8080` | HTTP port |
 | `DATABASE_URL` | `jdbc:postgresql://localhost:5432/chess` | JDBC URL |
 | `DATABASE_USER` / `DATABASE_PASSWORD` | `chess` / `chess` | DB credentials |
-| `JWT_SECRET` | dev-only default, must be set in production | HS256 key |
+| `JWT_SECRET` | none: required (at least 16 characters), the server refuses to start without it | HS256 key |
 | `JWT_TTL_DAYS` | `30` | token lifetime |
 | `CORS_ORIGINS` | `http://localhost:5173` | comma-separated allowed origins (dev only; in production nginx serves both) |
 
@@ -171,36 +171,50 @@ moves(game_id FK games ON DELETE CASCADE, ply INT, move JSONB, created_at TIMEST
 ```
 
 `games.status` is `WAITING` (one player, open for joining), `ACTIVE` or `FINISHED`.
-Game ids are 12 random base62 characters. Usernames: 3–20 characters `[A-Za-z0-9_]`, unique
+Game ids are 12 random base62 characters; a path id of any other shape is answered with 404
+without touching the database. Usernames: 3–20 characters `[A-Za-z0-9_]`, unique
 case-insensitively; passwords 8–72 characters, stored as bcrypt (cost 12).
 
 ### 2.3 REST API
 
 All endpoints under `/api`, JSON bodies, `Authorization: Bearer <jwt>` where required.
 Errors: `{"error":"<code>","message":"<human readable>"}` with a matching HTTP status
-(400 validation / illegal move, 401 unauthenticated, 403 forbidden, 404 not found, 409 conflict).
+(400 validation / illegal move, 401 unauthenticated, 403 forbidden, 404 not found, 409 conflict,
+429 rate limited). `/api/auth/*` is limited to 20 requests per minute per client IP; above that
+the server answers 429 `rate_limited`.
 
 ```
-POST /api/auth/register   {username, password}        -> 201 {token, user}
+POST /api/auth/register   {username, password}        -> 201 {token, user}     409 username_taken
 POST /api/auth/login      {username, password}        -> 200 {token, user}     401 on bad credentials
 GET  /api/auth/me                                      -> 200 user             (auth)
 
 POST /api/games           {kind, visibility, color}   -> 201 GameDto          (auth)
                             kind: CLASSIC|QUANTUM, visibility: PUBLIC|PRIVATE, color: WHITE|BLACK|RANDOM
 GET  /api/games?filter=open|active|finished&kind=&limit=&offset= -> {games:[GameSummary]}  (public games only)
-GET  /api/games/mine                                   -> {games:[GameSummary]} (auth; newest first)
+GET  /api/games/mine?limit=&offset=                    -> {games:[GameSummary]} (auth; newest first)
 GET  /api/games/{id}                                   -> GameDto              (anyone with the id)
 POST /api/games/{id}/join                              -> 200 GameDto          (auth; 409 unless WAITING; 400 if own game)
 POST /api/games/{id}/moves {move: GameMove}            -> 200 {ply, move, status} (auth; player on turn)
-                            400 illegal move, 403 not a player / not your turn, 409 game finished
-POST /api/games/{id}/resign                            -> 200 GameDto          (auth; player; ACTIVE only)
-POST /api/games/{id}/draw  {action: OFFER|ACCEPT|DECLINE|WITHDRAW} -> 200 GameDto (auth; player)
+                            400 illegal move, 403 not a player / not your turn,
+                            409 game_not_started (WAITING) / game_finished
+POST /api/games/{id}/resign                            -> 200 GameDto          (auth; player of an ACTIVE game,
+                                                                                 or creator of a WAITING game)
+POST /api/games/{id}/draw  {action: OFFER|ACCEPT|DECLINE|WITHDRAW} -> 200 GameDto (auth; player; ACTIVE only)
 GET  /api/health                                       -> 200 {status:"ok"}
 ```
 
-Draw offers: `OFFER` records the color; `ACCEPT` by the opponent finishes the game with
-`DRAW_AGREEMENT`; `DECLINE`/`WITHDRAW` clear it; any move by the opponent clears it too.
-A game in `WAITING` state can be left by its creator via `resign`, which deletes it.
+In both listings `limit` defaults to 50 and is clamped to 1..200; `offset` defaults to 0.
+
+Draw offers: `OFFER` records the color (409 `draw_pending` while one is open); `ACCEPT` by the
+opponent finishes the game with `DRAW_AGREEMENT`; `DECLINE` (opponent) and `WITHDRAW` (offerer)
+clear it, and so does a move by the opponent, whereas the offerer's own move keeps the offer
+open. `ACCEPT`/`DECLINE`/`WITHDRAW` without a matching offer: 409 `no_draw_offer`.
+
+Resigning an `ACTIVE` game finishes it with `RESIGNATION` in favour of the opponent. A `WAITING`
+game is cancelled by its creator through the same endpoint: the game is deleted, and the
+response (and the `game` event) carry the DTO with `status: "FINISHED"` and
+`result: {"winner": null, "reason": "ABANDONMENT"}`. Resigning a `FINISHED` game is 409
+`game_finished`.
 
 ```jsonc
 UserRef     {"id": 1, "username": "alice"}
@@ -218,14 +232,15 @@ GameDto     GameSummary + "moves": [GameMove, ...]
 2. Check the caller is the player whose color is on turn and the game is `ACTIVE`.
 3. `move = game.resolve(move, random)` (fills observation outcomes), reject if `!game.isLegal(move)`.
 4. `game.apply(move)`; insert the move row with `ply = previous move count`; update
-   `move_count`, `updated_at`, clear `draw_offered_by`; if `game.status()` is finished, set
-   `status = FINISHED`, `result_*`, `finished_at`.
+   `move_count` and `updated_at`; clear `draw_offered_by` unless the mover is the offerer;
+   if `game.status()` is finished, set `status = FINISHED`, `result_*`, `finished_at`.
 5. Broadcast the event to WebSocket subscribers of the game.
 
 ### 2.5 WebSocket
 
-`GET /api/games/{id}/ws?token=<jwt>` (token optional; spectators may connect without it).
-Server → client events (JSON, `type` discriminator):
+`GET /api/games/{id}/ws`. The connection is anonymous: it only streams events, so players and
+spectators connect the same way, and every state change goes through the REST API. Unknown
+ids are refused with a close frame. Server → client events (JSON, `type` discriminator):
 
 ```jsonc
 {"type":"move","ply":12,"move":GameMove,"status":GameStatus}
@@ -268,8 +283,22 @@ Game page behaviour:
 
 ## 4. Deployment
 
-`docker-compose.yml` runs three services: `db` (postgres:17, named volume), `api`
-(`server/Dockerfile`, multi-stage Gradle build on Temurin 21) and `web` (`web/Dockerfile`:
-builds the core JS library and the Vite bundle, served by nginx which also proxies `/api`
-including WebSockets to `api`). Only `web` publishes a port (80). Secrets come from `.env`
-(`.env.example` lists them). Mobile clients will talk to the same `/api` through nginx.
+`docker-compose.yml` runs three services: `db` (postgres:17, named volume; published on
+`127.0.0.1:5432` only, so that a server started from Gradle can use it), `api`
+(`server/Dockerfile`: multi-stage Gradle build on Temurin 21, runs as an unprivileged user,
+healthcheck on `/api/health`) and `web` (`web/Dockerfile`: builds the core JS library and the
+Vite bundle, served by nginx which also proxies `/api` including WebSockets to `api`; starts
+once `api` is healthy). Both Dockerfiles copy the build scripts before the sources and keep the
+Gradle and npm caches in BuildKit cache mounts, so a source change does not download the
+dependencies again. Only `web` publishes a port (80). `POSTGRES_PASSWORD` and `JWT_SECRET` come
+from `.env` (`.env.example` lists them); compose refuses to start when either is missing.
+Mobile clients will talk to the same `/api` through nginx.
+
+nginx serves `index.html` with `Cache-Control: no-cache` and the hashed `/assets/` as
+immutable, hides its version and adds `X-Content-Type-Options`, `X-Frame-Options` and
+`Referrer-Policy` to every response (`deploy/security-headers.conf`).
+
+TLS is a deployment prerequisite, not part of the stack: nginx listens on plain HTTP, so
+passwords and bearer tokens travel in clear text until a TLS-terminating reverse proxy (or load
+balancer) sits in front of port 80. That proxy owns the certificate, the HTTP-to-HTTPS redirect
+and `Strict-Transport-Security`; nginx forwards `X-Forwarded-Proto` to the API.

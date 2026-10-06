@@ -17,11 +17,11 @@ interface GameRepository {
     /** Deletes the game and its moves. */
     suspend fun delete(id: String)
 
-    /** Public games, newest first. */
+    /** Public games, newest first (`created_at DESC, id DESC`). */
     suspend fun listPublic(filter: GameFilter?, kind: GameKind?, limit: Int, offset: Int): List<GameRecord>
 
-    /** Games the user created or plays, newest first. */
-    suspend fun listForUser(userId: Long): List<GameRecord>
+    /** Games the user created or plays, newest first (`created_at DESC, id DESC`). */
+    suspend fun listForUser(userId: Long, limit: Int, offset: Int): List<GameRecord>
 
     /** The move list in ply order. */
     suspend fun moves(gameId: String): List<GameMove>

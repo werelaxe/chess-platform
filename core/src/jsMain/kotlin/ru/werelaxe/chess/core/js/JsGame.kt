@@ -14,7 +14,13 @@ import ru.werelaxe.chess.core.Square
  */
 @JsExport
 class JsGame(kind: String) {
-    private val game = Game(GameKind.valueOf(kind))
+    // Kotlin/JS exports only the primary constructor, so wrapping an existing game has to go through
+    // a secondary one: it delegates to the primary and then installs the game it was given.
+    private var game: Game = Game(GameKind.valueOf(kind))
+
+    internal constructor(game: Game) : this(game.kind.name) {
+        this.game = game
+    }
 
     val kind: String
         get() = game.kind.name
@@ -57,11 +63,8 @@ class JsGame(kind: String) {
 
 /** Builds a game by replaying a JSON array of moves; throws when the history is illegal. */
 @JsExport
-fun replayGame(kind: String, movesJson: String): JsGame {
-    val game = JsGame(kind)
-    for (move in ChessJson.decodeMoves(movesJson)) game.applyJson(ChessJson.encodeMove(move))
-    return game
-}
+fun replayGame(kind: String, movesJson: String): JsGame =
+    JsGame(Game.replay(GameKind.valueOf(kind), ChessJson.decodeMoves(movesJson)))
 
 @JsExport
 fun squareName(index: Int): String = Square(index).name

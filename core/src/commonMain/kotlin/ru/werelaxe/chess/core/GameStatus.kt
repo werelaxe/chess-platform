@@ -13,6 +13,8 @@ enum class EndReason {
     KING_CAPTURED,
     RESIGNATION,
     DRAW_AGREEMENT,
+
+    /** Set by the server when the creator cancels a game nobody has joined; no variant produces it. */
     ABANDONMENT,
 }
 

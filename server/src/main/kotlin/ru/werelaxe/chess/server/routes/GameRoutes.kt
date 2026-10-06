@@ -20,10 +20,24 @@ import ru.werelaxe.chess.server.service.ApiException
 import ru.werelaxe.chess.server.service.GameService
 
 private const val DEFAULT_LIMIT = 50
-private const val MAX_LIMIT = 100
+private const val MAX_LIMIT = 200
 
+/** The shape of the ids [ru.werelaxe.chess.server.service.GameIdGenerator] produces. */
+private val GAME_ID_PATTERN = Regex("[A-Za-z0-9]{12}")
+
+/** The `{id}` segment; anything that cannot be a game id is not found, without touching the cache. */
 val ApplicationCall.gameId: String
-    get() = parameters["id"] ?: throw ApiException.validation("Missing game id")
+    get() = parameters["id"]?.takeIf { GAME_ID_PATTERN.matches(it) } ?: throw ApiException.notFound("Game")
+
+private data class Paging(val limit: Int, val offset: Int)
+
+/** `limit` (default [DEFAULT_LIMIT], clamped to 1..[MAX_LIMIT]) and `offset` (at least 0) of a listing. */
+private fun ApplicationCall.paging(): Paging {
+    val query = request.queryParameters
+    val limit = (query["limit"]?.toIntOrNull() ?: DEFAULT_LIMIT).coerceIn(1, MAX_LIMIT)
+    val offset = (query["offset"]?.toIntOrNull() ?: 0).coerceAtLeast(0)
+    return Paging(limit, offset)
+}
 
 fun Route.gameRoutes(games: GameService) {
     route("/api/games") {
@@ -37,8 +51,7 @@ fun Route.gameRoutes(games: GameService) {
                 GameKind.entries.firstOrNull { it.name.equals(value, ignoreCase = true) }
                     ?: throw ApiException.validation("Unknown kind '$value'; expected CLASSIC or QUANTUM")
             }
-            val limit = (query["limit"]?.toIntOrNull() ?: DEFAULT_LIMIT).coerceIn(1, MAX_LIMIT)
-            val offset = (query["offset"]?.toIntOrNull() ?: 0).coerceAtLeast(0)
+            val (limit, offset) = call.paging()
             call.respond(GamesResponse(games.listPublic(filter, kind, limit, offset)))
         }
         get("/{id}") {
@@ -50,7 +63,8 @@ fun Route.gameRoutes(games: GameService) {
                 call.respond(HttpStatusCode.Created, games.create(call.user, request))
             }
             get("/mine") {
-                call.respond(GamesResponse(games.listMine(call.user)))
+                val (limit, offset) = call.paging()
+                call.respond(GamesResponse(games.listMine(call.user, limit, offset)))
             }
             post("/{id}/join") {
                 call.respond(games.join(call.user, call.gameId))

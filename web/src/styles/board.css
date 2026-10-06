@@ -90,6 +90,12 @@
   cursor: pointer;
 }
 
+/* The global ring sits outside the box, where the neighbouring cells paint over it: draw it inside. */
+.cell:focus-visible {
+  outline-width: 3px;
+  outline-offset: -3px;
+}
+
 .cell__coord {
   position: absolute;
   z-index: 3;
@@ -128,6 +134,14 @@
 .cell__check {
   z-index: 1;
   background: radial-gradient(circle at 50% 50%, rgba(226, 96, 90, var(--check, 0)) 0%, rgba(226, 96, 90, calc(var(--check, 0) * 0.35)) 75%, transparent 100%);
+}
+
+/* Observe mode outline; its own layer so it never reshapes the last-move or selection tint below. */
+.cell__observable {
+  z-index: 1;
+  inset: 6%;
+  border-radius: 6px;
+  border: 2px dashed rgba(103, 212, 195, 0.9);
 }
 
 .cell--last::before {
@@ -192,10 +206,6 @@
   box-sizing: border-box;
 }
 
-.cell--split .cell--target::after {
-  background: rgba(103, 212, 195, 0.7);
-}
-
 .board--split .cell--target::after {
   background: rgba(11, 60, 55, 0.5);
 }
@@ -207,16 +217,6 @@
 
 .cell--observable {
   cursor: crosshair;
-}
-
-.cell--observable::before {
-  content: "";
-  position: absolute;
-  inset: 6%;
-  z-index: 1;
-  border-radius: 6px;
-  border: 2px dashed rgba(103, 212, 195, 0.9);
-  animation: dash 6s linear infinite;
 }
 
 .cell--inspected {
@@ -768,12 +768,6 @@
   background: var(--accent-soft);
   color: var(--accent-bright);
   font-size: 0.92rem;
-}
-
-@keyframes dash {
-  to {
-    transform: rotate(0.001deg);
-  }
 }
 
 @keyframes fade {

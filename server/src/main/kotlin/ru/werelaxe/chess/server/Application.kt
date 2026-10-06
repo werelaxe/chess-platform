@@ -9,6 +9,7 @@ import ru.werelaxe.chess.server.config.AppConfig
 import ru.werelaxe.chess.server.db.DatabaseFactory
 import ru.werelaxe.chess.server.plugins.configureCallLogging
 import ru.werelaxe.chess.server.plugins.configureCors
+import ru.werelaxe.chess.server.plugins.configureRateLimiting
 import ru.werelaxe.chess.server.plugins.configureSecurity
 import ru.werelaxe.chess.server.plugins.configureSerialization
 import ru.werelaxe.chess.server.plugins.configureStatusPages
@@ -28,12 +29,15 @@ import ru.werelaxe.chess.server.ws.GameHub
 import java.time.Clock
 import java.time.Duration
 import kotlin.random.Random
+import kotlin.system.exitProcess
 
 fun main() {
     val log = LoggerFactory.getLogger("ru.werelaxe.chess.server.Main")
-    val config = AppConfig.fromEnvironment()
-    if (config.jwtSecret == AppConfig.DEV_JWT_SECRET) {
-        log.warn("JWT_SECRET is not set; using the insecure development default")
+    val config = try {
+        AppConfig.fromEnvironment()
+    } catch (e: AppConfig.ConfigurationException) {
+        log.error("Refusing to start: {}", e.message)
+        exitProcess(1)
     }
     val database = DatabaseFactory.connect(config)
     val repositories = Repositories(
@@ -66,6 +70,7 @@ fun Application.module(
     configureCors(config)
     configureCallLogging()
     configureSecurity(jwt)
+    configureRateLimiting()
     configureWebSockets()
 
     routing {

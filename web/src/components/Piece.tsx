@@ -11,7 +11,7 @@ const SYMBOLS: Record<PieceType, string> = {
 };
 
 /** URL of the cburnett SVG for a piece: "l" (light) is white, "d" (dark) is black. */
-export function pieceUrl(piece: Piece): string {
+function pieceUrl(piece: Piece): string {
   return `/pieces/Chess_${SYMBOLS[piece.type]}${piece.color === "WHITE" ? "l" : "d"}t45.svg`;
 }
 

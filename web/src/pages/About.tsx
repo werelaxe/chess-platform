@@ -1,3 +1,4 @@
+import { Link } from "react-router";
 import { BRAND_NAME } from "../brand";
 
 export function AboutPage() {
@@ -50,7 +51,7 @@ export function AboutPage() {
         <h2>Open source</h2>
         <p>
           The rules library is written in Kotlin Multiplatform; the server runs on Ktor with PostgreSQL; this client is
-          React and TypeScript. Quantum chess here follows the rules described on the <a href="/rules">rules page</a>:
+          React and TypeScript. Quantum chess here follows the rules described on the <Link to="/rules">rules page</Link>:
           universes are merged whenever they are identical, so the universe count is always the number of truly different
           positions.
         </p>

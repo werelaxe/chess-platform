@@ -24,10 +24,6 @@ export class ApiError extends Error {
     super(message);
     this.name = "ApiError";
   }
-
-  get isNetwork(): boolean {
-    return this.status === 0;
-  }
 }
 
 export function isApiError(error: unknown): error is ApiError {
@@ -41,7 +37,7 @@ export function errorMessage(error: unknown): string {
   return "Something went wrong";
 }
 
-type Method = "GET" | "POST" | "DELETE";
+type Method = "GET" | "POST";
 
 const STATUS_MESSAGES: Record<number, string> = {
   400: "The request was rejected",
@@ -71,8 +67,6 @@ async function request<T>(method: Method, path: string, body?: unknown): Promise
   } catch {
     throw new ApiError(0, "network", "Cannot reach the server. Check your connection and try again.");
   }
-
-  if (response.status === 204) return undefined as T;
 
   const text = await response.text();
   let payload: unknown = null;
@@ -147,8 +141,5 @@ export const api = {
   },
   draw(id: string, action: DrawAction): Promise<GameDto> {
     return request("POST", `/api/games/${encodeURIComponent(id)}/draw`, { action });
-  },
-  health(): Promise<{ status: string }> {
-    return request("GET", "/api/health");
   },
 };

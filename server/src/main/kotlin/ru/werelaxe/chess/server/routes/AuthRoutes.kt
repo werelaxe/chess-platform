@@ -4,6 +4,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.auth.authenticate
 import io.ktor.server.auth.principal
+import io.ktor.server.plugins.ratelimit.rateLimit
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -12,6 +13,7 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import ru.werelaxe.chess.server.dto.CredentialsRequest
 import ru.werelaxe.chess.server.dto.UserRef
+import ru.werelaxe.chess.server.plugins.AUTH_RATE_LIMIT
 import ru.werelaxe.chess.server.plugins.JWT_AUTH
 import ru.werelaxe.chess.server.service.ApiException
 import ru.werelaxe.chess.server.service.AuthService
@@ -23,13 +25,15 @@ val ApplicationCall.user: UserPrincipal
 
 fun Route.authRoutes(auth: AuthService) {
     route("/api/auth") {
-        post("/register") {
-            val request = call.receive<CredentialsRequest>()
-            call.respond(HttpStatusCode.Created, auth.register(request.username, request.password))
-        }
-        post("/login") {
-            val request = call.receive<CredentialsRequest>()
-            call.respond(auth.login(request.username, request.password))
+        rateLimit(AUTH_RATE_LIMIT) {
+            post("/register") {
+                val request = call.receive<CredentialsRequest>()
+                call.respond(HttpStatusCode.Created, auth.register(request.username, request.password))
+            }
+            post("/login") {
+                val request = call.receive<CredentialsRequest>()
+                call.respond(auth.login(request.username, request.password))
+            }
         }
         authenticate(JWT_AUTH) {
             get("/me") {

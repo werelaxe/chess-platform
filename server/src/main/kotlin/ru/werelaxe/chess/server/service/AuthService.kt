@@ -16,10 +16,15 @@ class AuthService(
     private val clock: Clock,
     private val bcryptCost: Int = 12,
 ) {
+    /** bcrypt is deliberately slow; its own bounded dispatcher keeps it from starving the rest of the server. */
+    private val hashing = Dispatchers.Default.limitedParallelism(HASHING_PARALLELISM)
+
     suspend fun register(username: String, password: String): AuthResponse {
         validateUsername(username)
-        validatePassword(password)
-        val hash = withContext(Dispatchers.Default) {
+        if (!hasValidLength(password)) {
+            throw ApiException.validation("Password must be $MIN_PASSWORD_LENGTH-$MAX_PASSWORD_LENGTH characters")
+        }
+        val hash = withContext(hashing) {
             BCrypt.withDefaults().hashToString(bcryptCost, password.toCharArray())
         }
         val user = users.create(username, hash, clock.instant())
@@ -29,7 +34,10 @@ class AuthService(
 
     suspend fun login(username: String, password: String): AuthResponse {
         val user = users.findByUsername(username) ?: throw invalidCredentials()
-        val verified = withContext(Dispatchers.Default) {
+        // A password outside the accepted range cannot match any stored hash; this also keeps
+        // over-long input away from bcrypt, which rejects it with its own message.
+        if (!hasValidLength(password)) throw invalidCredentials()
+        val verified = withContext(hashing) {
             BCrypt.verifyer().verify(password.toCharArray(), user.passwordHash).verified
         }
         if (!verified) throw invalidCredentials()
@@ -49,17 +57,14 @@ class AuthService(
         }
     }
 
-    private fun validatePassword(password: String) {
-        if (password.length !in MIN_PASSWORD_LENGTH..MAX_PASSWORD_LENGTH ||
-            password.toByteArray(Charsets.UTF_8).size > MAX_PASSWORD_LENGTH
-        ) {
-            throw ApiException.validation("Password must be $MIN_PASSWORD_LENGTH-$MAX_PASSWORD_LENGTH characters")
-        }
-    }
+    private fun hasValidLength(password: String): Boolean =
+        password.length in MIN_PASSWORD_LENGTH..MAX_PASSWORD_LENGTH &&
+            password.toByteArray(Charsets.UTF_8).size <= MAX_PASSWORD_LENGTH
 
     private companion object {
         val USERNAME_PATTERN = Regex("[A-Za-z0-9_]{3,20}")
         const val MIN_PASSWORD_LENGTH = 8
         const val MAX_PASSWORD_LENGTH = 72
+        const val HASHING_PARALLELISM = 2
     }
 }

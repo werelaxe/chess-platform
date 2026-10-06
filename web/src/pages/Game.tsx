@@ -67,10 +67,13 @@ export function GamePage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
-  const token = useAuthStore((state) => state.token);
 
   const localRef = useRef<LocalGame | null>(null);
   const loadSequence = useRef(0);
+  /** Highest move count reported by the socket, tracked even while no local game is ready to apply events. */
+  const serverMoveCount = useRef(0);
+  /** Server count a follow-up load was already started for, so a persistent mismatch cannot loop. */
+  const followUpTarget = useRef(0);
   const busyRef = useRef(false);
   const observeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -126,6 +129,12 @@ export function GamePage() {
         setAwaitingObservation(false);
         clearObserveTimer();
         clearSelection();
+        // A move committed while the fetch was in flight is missing from the response, and its
+        // event was ignored because no local game was ready: fetch again when the socket saw more.
+        if (local.moveCount() < serverMoveCount.current && followUpTarget.current !== serverMoveCount.current) {
+          followUpTarget.current = serverMoveCount.current;
+          void load(false);
+        }
       } catch (error) {
         if (sequence !== loadSequence.current) return;
         if (initial) setLoadError(error);
@@ -141,6 +150,8 @@ export function GamePage() {
 
   useEffect(() => {
     localRef.current = null;
+    serverMoveCount.current = 0;
+    followUpTarget.current = 0;
     setGame(null);
     setSnapshot(null);
     setMode("normal");
@@ -156,16 +167,19 @@ export function GamePage() {
     (event: ServerEvent) => {
       const local = localRef.current;
       if (event.type === "game") {
+        const serverCount = event.game.moves.length;
+        serverMoveCount.current = Math.max(serverMoveCount.current, serverCount);
         setGame(event.game);
         if (!local) return;
-        const serverCount = event.game.moves.length;
         const localCount = local.moveCount();
         // The server being ahead means we missed something; being behind while idle means our
         // optimistic state is stale (for example the game was reset or replayed differently).
         if (serverCount > localCount || (serverCount < localCount && !busyRef.current)) resync();
         return;
       }
-      if (event.type !== "move" || !local) return;
+      if (event.type !== "move") return;
+      serverMoveCount.current = Math.max(serverMoveCount.current, event.ply + 1);
+      if (!local) return;
       const count = local.moveCount();
       if (event.ply === count) {
         try {
@@ -188,7 +202,8 @@ export function GamePage() {
     [resync, clearObserveTimer, clearSelection],
   );
 
-  const socketState = useGameSocket(id || undefined, token, onEvent);
+  // No feed while the page shows the load error: an unknown or deleted game would otherwise be retried forever.
+  const socketState = useGameSocket(loadError || !id ? undefined : id, onEvent);
 
   const viewerColor = useMemo<Color | null>(() => {
     if (!game || !user) return null;
@@ -248,6 +263,7 @@ export function GamePage() {
       observable,
       lastMove: lastMoveSquares(snapshot?.view.lastMove ?? null),
       inspected: hovered ?? pinned,
+      pinned,
     };
   }, [selection, splitFirst, observable, snapshot, hovered, pinned]);
 
@@ -486,6 +502,7 @@ export function GamePage() {
             highlights={highlights}
             interactive={interactive}
             busy={busy}
+            inert={promotion !== null}
             onCellClick={handleCellClick}
             onCellHover={setHovered}
           >
@@ -507,7 +524,7 @@ export function GamePage() {
             onResign={onResign}
             onDraw={onDraw}
           />
-          <DistributionPanel cell={inspectedCell} quantum={quantum} />
+          <DistributionPanel cell={inspectedCell} quantum={quantum} pinned={hovered === null && pinned !== null} />
           <MoveList moves={snapshot.history} />
         </div>
       </div>

@@ -8,7 +8,14 @@ export interface AsyncState<T> {
   reload: (silent?: boolean) => void;
 }
 
-/** Runs an async loader when `deps` change; ignores results of superseded runs. */
+function sameDeps(a: DependencyList, b: DependencyList): boolean {
+  return a.length === b.length && a.every((value, index) => Object.is(value, b[index]));
+}
+
+/**
+ * Runs an async loader when `deps` change; ignores results of superseded runs. New inputs start
+ * from an empty state so the previous result is never shown under the new label; reloads keep it.
+ */
 export function useAsync<T>(loader: () => Promise<T>, deps: DependencyList): AsyncState<T> {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -16,11 +23,18 @@ export function useAsync<T>(loader: () => Promise<T>, deps: DependencyList): Asy
   const [tick, setTick] = useState(0);
   const silentRef = useRef(false);
   const loaderRef = useRef(loader);
+  const previousDeps = useRef<DependencyList | null>(null);
   loaderRef.current = loader;
 
   useEffect(() => {
     let cancelled = false;
-    if (!silentRef.current) setLoading(true);
+    const changed = previousDeps.current !== null && !sameDeps(previousDeps.current, deps);
+    previousDeps.current = deps;
+    if (changed) {
+      setData(null);
+      setError(null);
+    }
+    if (changed || !silentRef.current) setLoading(true);
     silentRef.current = false;
     loaderRef
       .current()

@@ -95,6 +95,24 @@ class GameTest {
         val aliceMine = client.get("/api/games/mine") { bearerAuth(alice) }.body<GamesResponse>().games
         assertEquals(5, aliceMine.size)
         assertTrue(private.id in aliceMine.map { it.id })
+        // Every game was created at the same fixed instant, so the id breaks the tie.
+        assertEquals(aliceMine.map { it.id }.sortedDescending(), aliceMine.map { it.id })
+
+        suspend fun mine(query: String): List<String> =
+            client.get("/api/games/mine$query") { bearerAuth(alice) }.body<GamesResponse>().games.map { it.id }
+        assertEquals(aliceMine.map { it.id }.subList(1, 3), mine("?limit=2&offset=1"))
+        assertEquals(1, mine("?limit=0").size)
+        assertEquals(5, mine("?limit=999&offset=-3").size)
+    }
+
+    @Test
+    fun malformedGameIdsAreNotFound() = serverTest {
+        val alice = token("alice")
+        getGame("short").assertError(HttpStatusCode.NotFound, "not_found")
+        getGame("a".repeat(13)).assertError(HttpStatusCode.NotFound, "not_found")
+        getGame("bad-id_12345").assertError(HttpStatusCode.NotFound, "not_found")
+        joinResponse(alice, "nope").assertError(HttpStatusCode.NotFound, "not_found")
+        moveResponse(alice, "nope", normal("e2e4")).assertError(HttpStatusCode.NotFound, "not_found")
     }
 
     @Test
@@ -183,7 +201,11 @@ class GameTest {
 
         val waiting = createGame(alice)
         resign(bob, waiting.id).assertError(HttpStatusCode.Forbidden, "not_a_player")
-        assertEquals(HttpStatusCode.OK, resign(alice, waiting.id).status)
+        val cancelled = resign(alice, waiting.id)
+        assertEquals(HttpStatusCode.OK, cancelled.status)
+        val cancelledDto = cancelled.body<GameDto>()
+        assertEquals(GamePhase.FINISHED, cancelledDto.status)
+        assertEquals(GameResult(null, EndReason.ABANDONMENT), cancelledDto.result)
         getGame(waiting.id).assertError(HttpStatusCode.NotFound, "not_found")
     }
 
@@ -218,6 +240,21 @@ class GameTest {
         assertEquals(GameResult(null, EndReason.DRAW_AGREEMENT), accepted.result)
         assertNull(accepted.drawOfferedBy)
         draw(alice, game.id, DrawAction.OFFER).assertError(HttpStatusCode.Conflict, "game_finished")
+    }
+
+    @Test
+    fun drawOfferSurvivesTheOfferersOwnMove() = serverTest {
+        val alice = token("alice")
+        val bob = token("bob")
+        val game = activeGame(alice, bob)
+
+        assertEquals(HttpStatusCode.OK, draw(alice, game.id, DrawAction.OFFER).status)
+        move(alice, game.id, "e2e4")
+        assertEquals(Color.WHITE, game(game.id).drawOfferedBy)
+
+        val accepted = draw(bob, game.id, DrawAction.ACCEPT).body<GameDto>()
+        assertEquals(GamePhase.FINISHED, accepted.status)
+        assertEquals(GameResult(null, EndReason.DRAW_AGREEMENT), accepted.result)
     }
 
     @Test

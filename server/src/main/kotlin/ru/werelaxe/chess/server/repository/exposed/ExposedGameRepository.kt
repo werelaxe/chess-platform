@@ -56,16 +56,18 @@ class ExposedGameRepository(private val db: Database) : GameRepository {
         if (kind != null) condition = condition and (Games.kind eq kind)
         Games.selectAll()
             .where(condition)
-            .orderBy(Games.createdAt, SortOrder.DESC)
+            .orderBy(Games.createdAt to SortOrder.DESC, Games.id to SortOrder.DESC)
             .limit(limit)
             .offset(offset.toLong())
             .map { it.toRecord() }
     }
 
-    override suspend fun listForUser(userId: Long): List<GameRecord> = tx {
+    override suspend fun listForUser(userId: Long, limit: Int, offset: Int): List<GameRecord> = tx {
         Games.selectAll()
             .where { (Games.creatorId eq userId) or (Games.whiteId eq userId) or (Games.blackId eq userId) }
-            .orderBy(Games.createdAt, SortOrder.DESC)
+            .orderBy(Games.createdAt to SortOrder.DESC, Games.id to SortOrder.DESC)
+            .limit(limit)
+            .offset(offset.toLong())
             .map { it.toRecord() }
     }
 

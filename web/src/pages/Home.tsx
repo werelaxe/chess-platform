@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import type { GameFilter } from "../api/types";
+import type { GameFilter, GameSummary } from "../api/types";
 import { CreateGameForm } from "../components/CreateGameForm";
 import { GameList } from "../components/GameList";
 import { ErrorNotice, Loading } from "../components/ui";
@@ -8,6 +8,12 @@ import { useAsync } from "../hooks/useAsync";
 import { useAuthStore } from "../store/auth";
 
 const REFRESH_MS = 15_000;
+/** The lobby shows at most this many games; a full list is counted as "50+". */
+const LOBBY_LIMIT = 50;
+
+function countLabel(games: GameSummary[]): string {
+  return games.length >= LOBBY_LIMIT ? `${LOBBY_LIMIT}+` : String(games.length);
+}
 
 const TABS: { filter: GameFilter; label: string; empty: string }[] = [
   { filter: "open", label: "Open games", empty: "No open games right now. Create one and share the link, or wait a moment." },
@@ -17,7 +23,7 @@ const TABS: { filter: GameFilter; label: string; empty: string }[] = [
 export function HomePage() {
   const user = useAuthStore((state) => state.user);
   const [filter, setFilter] = useState<GameFilter>("open");
-  const { data, error, loading, reload } = useAsync(() => api.listGames({ filter, limit: 50 }), [filter]);
+  const { data, error, loading, reload } = useAsync(() => api.listGames({ filter, limit: LOBBY_LIMIT }), [filter]);
 
   useEffect(() => {
     const timer = setInterval(() => reload(true), REFRESH_MS);
@@ -40,7 +46,7 @@ export function HomePage() {
         </div>
         <div className="hero__aside reveal" style={{ "--i": 2 } as React.CSSProperties}>
           <div className="hero__stat">
-            <span className="hero__stat-value">{data ? data.length : "–"}</span>
+            <span className="hero__stat-value">{data ? countLabel(data) : "–"}</span>
             <span>{tab.label.toLowerCase()}</span>
           </div>
           <div className="hero__stat">
@@ -61,7 +67,7 @@ export function HomePage() {
                   onClick={() => setFilter(entry.filter)}
                 >
                   {entry.label}
-                  {entry.filter === filter && data ? <span className="tab__count">{data.length}</span> : null}
+                  {entry.filter === filter && data ? <span className="tab__count">{countLabel(data)}</span> : null}
                 </button>
               ))}
             </div>

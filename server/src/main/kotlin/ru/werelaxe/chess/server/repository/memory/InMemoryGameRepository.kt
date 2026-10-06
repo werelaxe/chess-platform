@@ -15,14 +15,11 @@ class InMemoryGameRepository : GameRepository {
     private val mutex = Mutex()
     private val games = LinkedHashMap<String, GameRecord>()
     private val moves = HashMap<String, MutableList<GameMove>>()
-    private var insertionCounter = 0L
-    private val insertionOrder = HashMap<String, Long>()
 
     override suspend fun create(game: GameRecord): GameRecord = mutex.withLock {
         require(game.id !in games) { "Duplicate game id ${game.id}" }
         games[game.id] = game
         moves[game.id] = ArrayList()
-        insertionOrder[game.id] = insertionCounter++
         game
     }
 
@@ -39,7 +36,6 @@ class InMemoryGameRepository : GameRepository {
         mutex.withLock {
             games.remove(id)
             moves.remove(id)
-            insertionOrder.remove(id)
         }
     }
 
@@ -54,8 +50,8 @@ class InMemoryGameRepository : GameRepository {
                 .take(limit)
         }
 
-    override suspend fun listForUser(userId: Long): List<GameRecord> = mutex.withLock {
-        games.values.filter { it.involves(userId) }.sortedNewestFirst()
+    override suspend fun listForUser(userId: Long, limit: Int, offset: Int): List<GameRecord> = mutex.withLock {
+        games.values.filter { it.involves(userId) }.sortedNewestFirst().drop(offset).take(limit)
     }
 
     override suspend fun moves(gameId: String): List<GameMove> = mutex.withLock {
@@ -71,6 +67,7 @@ class InMemoryGameRepository : GameRepository {
         }
     }
 
+    /** The same order as the SQL repository: `created_at DESC, id DESC`. */
     private fun List<GameRecord>.sortedNewestFirst(): List<GameRecord> =
-        sortedWith(compareByDescending<GameRecord> { it.createdAt }.thenByDescending { insertionOrder[it.id] ?: 0L })
+        sortedWith(compareByDescending<GameRecord> { it.createdAt }.thenByDescending { it.id })
 }

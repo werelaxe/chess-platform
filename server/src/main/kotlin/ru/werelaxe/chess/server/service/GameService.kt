@@ -68,11 +68,13 @@ class GameService(
     suspend fun listPublic(filter: GameFilter?, kind: GameKind?, limit: Int, offset: Int): List<GameSummary> =
         toSummaries(games.listPublic(filter, kind, limit, offset))
 
-    suspend fun listMine(user: UserPrincipal): List<GameSummary> = toSummaries(games.listForUser(user.id))
+    suspend fun listMine(user: UserPrincipal, limit: Int, offset: Int): List<GameSummary> =
+        toSummaries(games.listForUser(user.id, limit, offset))
 
-    suspend fun get(id: String): GameDto {
+    /** Reads the row and the moves under the game's lock so that they cannot straddle a move. */
+    suspend fun get(id: String): GameDto = cache.locked(id) {
         val record = games.findById(id) ?: throw ApiException.notFound("Game")
-        return toDto(record, games.moves(id))
+        toDto(record, games.moves(id))
     }
 
     suspend fun join(user: UserPrincipal, id: String): GameDto = cache.locked(id) {
@@ -108,11 +110,17 @@ class GameService(
         game.apply(move)
         val status = game.status()
         val now = clock.instant()
-        var updated = record.copy(moveCount = ply + 1, updatedAt = now, drawOfferedBy = null)
+        // A move by the opponent of the offerer answers the offer; the offerer's own move keeps it pending.
+        var updated = record.copy(
+            moveCount = ply + 1,
+            updatedAt = now,
+            drawOfferedBy = record.drawOfferedBy.takeIf { it == color },
+        )
         if (status is GameStatus.Finished) {
             updated = updated.copy(
                 phase = GamePhase.FINISHED,
                 result = GameResult(status.winner, status.reason),
+                drawOfferedBy = null,
                 finishedAt = now,
             )
         }
@@ -124,14 +132,18 @@ class GameService(
             throw e
         }
         events.publish(id, ServerEvent.Move(ply, move, status))
-        if (updated.phase == GamePhase.FINISHED || record.drawOfferedBy != null) {
+        // The `game` event only carries what the `move` event does not: a changed phase or draw offer.
+        if (updated.phase != record.phase || updated.drawOfferedBy != record.drawOfferedBy) {
             if (updated.phase == GamePhase.FINISHED) entry.game = null
             events.publish(id, ServerEvent.GameUpdated(toDto(updated, game.history.toList())))
         }
         MoveResponse(ply, move, status)
     }
 
-    /** Resigns an active game, or deletes a waiting game of which the caller is the creator. */
+    /**
+     * Resigns an active game, or deletes a waiting game of which the caller is the creator; the
+     * deleted game is reported (and published to its subscribers) as finished by abandonment.
+     */
     suspend fun resign(user: UserPrincipal, id: String): GameDto = cache.locked(id) { entry ->
         val record = games.findById(id) ?: throw ApiException.notFound("Game")
         when (record.phase) {
@@ -139,7 +151,16 @@ class GameService(
                 if (record.creatorId != user.id) throw notAPlayer()
                 games.delete(id)
                 entry.game = null
-                toDto(record, emptyList())
+                val now = clock.instant()
+                val cancelled = record.copy(
+                    phase = GamePhase.FINISHED,
+                    result = GameResult(null, EndReason.ABANDONMENT),
+                    updatedAt = now,
+                    finishedAt = now,
+                )
+                val dto = toDto(cancelled, emptyList())
+                events.publish(id, ServerEvent.GameUpdated(dto))
+                dto
             }
             GamePhase.FINISHED -> throw gameFinished()
             GamePhase.ACTIVE -> {

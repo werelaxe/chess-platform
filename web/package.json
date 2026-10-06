@@ -5,7 +5,7 @@
   "description": "Web client of the chess platform (classic and quantum chess)",
   "type": "module",
   "engines": {
-    "node": "^20.18.0 || >=22.12.0"
+    "node": ">=22.12.0"
   },
   "scripts": {
     "dev": "vite",

@@ -1,4 +1,4 @@
-import type { Color, EndReason, GameMove, GameStatus, Piece, PieceType } from "../api/types";
+import type { CellEntry, CellView, Color, EndReason, GameMove, GameStatus, Piece, PieceType } from "../api/types";
 
 const PROMOTION_LETTERS: Record<PieceType, string> = {
   PAWN: "P",
@@ -62,10 +62,6 @@ const END_REASONS: Record<EndReason, string> = {
   ABANDONMENT: "abandonment",
 };
 
-export function endReasonName(reason: EndReason): string {
-  return END_REASONS[reason];
-}
-
 /** Result line such as "White wins by checkmate" or "Draw by stalemate". */
 export function formatResult(winner: Color | null, reason: EndReason): string {
   const why = END_REASONS[reason];
@@ -82,6 +78,23 @@ export function formatProbability(probability: number): string {
   if (percent >= 99.5 && percent < 100) return "99%";
   if (percent > 0 && percent < 0.5) return "<1%";
   return `${Math.round(percent)}%`;
+}
+
+/** The entries of a square completed with the implicit "empty" share, so that they sum to one. */
+export function cellDistribution(cell: CellView): CellEntry[] {
+  if (cell.entries.length === 0) return [{ piece: null, probability: 1 }];
+  if (cell.entries.some((entry) => entry.piece === null)) return cell.entries;
+  const total = cell.entries.reduce((sum, entry) => sum + entry.probability, 0);
+  return total < 0.9995 ? [...cell.entries, { piece: null, probability: 1 - total }] : cell.entries;
+}
+
+/** Accessible description of a square: "e4: white pawn", "e4: empty" or "d5: white pawn 50%, empty 50%". */
+export function describeCell(cell: CellView): string {
+  const parts = cellDistribution(cell).map((entry) => {
+    const content = entry.piece ? pieceName(entry.piece) : "empty";
+    return entry.probability >= 1 ? content : `${content} ${formatProbability(entry.probability)}`;
+  });
+  return `${cell.square}: ${parts.join(", ")}`;
 }
 
 export function movesEqual(a: GameMove, b: GameMove): boolean {

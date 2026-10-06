@@ -14,7 +14,10 @@ export interface BoardHighlights {
   stay: number | null;
   observable: ReadonlySet<number>;
   lastMove: ReadonlySet<number>;
+  /** Square shown in the distribution panel: hovered, or pinned when nothing is hovered. */
   inspected: number | null;
+  /** Square kept in the distribution panel by a click or Enter. */
+  pinned: number | null;
 }
 
 export interface BoardProps {
@@ -24,6 +27,8 @@ export interface BoardProps {
   highlights: BoardHighlights;
   interactive: boolean;
   busy: boolean;
+  /** Blocks the squares for pointer, keyboard and assistive technology while an overlay is open. */
+  inert?: boolean;
   onCellClick: (index: number) => void;
   onCellHover: (index: number | null) => void;
   /** Overlays such as the promotion picker. */
@@ -32,6 +37,11 @@ export interface BoardProps {
 
 function hasKingOf(cell: CellView, color: BoardView["sideToMove"]): boolean {
   return cell.entries.some((entry) => entry.piece?.type === "KING" && entry.piece.color === color);
+}
+
+/** Targets are only offered to the side to move, so an enemy piece is one of the other colour. */
+function mayHoldEnemy(cell: CellView, mover: BoardView["sideToMove"]): boolean {
+  return cell.entries.some((entry) => entry.piece !== null && entry.piece.color !== mover);
 }
 
 export function Board(props: BoardProps) {
@@ -59,10 +69,11 @@ export function Board(props: BoardProps) {
 
   return (
     <div className="board-wrap">
-      <div className={classes.join(" ")} role="grid" aria-label="Chess board">
+      <div className={classes.join(" ")} role="group" aria-label="Chess board" inert={props.inert}>
         {order.map((index) => {
           const cell = view.cells[index];
           if (!cell) return null;
+          const target = highlights.targets.has(index);
           return (
             <Cell
               key={index}
@@ -72,11 +83,13 @@ export function Board(props: BoardProps) {
               showRank={(index & 7) === leftFile}
               selected={highlights.selected === index}
               lastMove={highlights.lastMove.has(index)}
-              target={highlights.targets.has(index)}
+              target={target}
+              capture={target && mayHoldEnemy(cell, view.sideToMove)}
               first={highlights.first === index}
               stay={highlights.stay === index}
               observable={highlights.observable.has(index)}
               inspected={highlights.inspected === index}
+              pinned={highlights.pinned === index}
               clickable={props.interactive}
               checkAlpha={checkAlpha > 0 && hasKingOf(cell, view.sideToMove) ? checkAlpha : 0}
               onClick={props.onCellClick}

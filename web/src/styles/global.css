@@ -402,12 +402,6 @@ code,
   border-color: var(--danger);
 }
 
-.btn--quantum {
-  color: var(--quantum);
-  border-color: var(--quantum-line);
-  background: var(--quantum-soft);
-}
-
 .btn--small {
   padding: 6px 11px;
   font-size: 0.84rem;
@@ -709,12 +703,6 @@ code,
 
 .small {
   font-size: 0.85rem;
-}
-
-.stack {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
 
 /* ---------------------------------------------------------------------------

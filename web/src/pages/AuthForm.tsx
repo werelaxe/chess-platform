@@ -6,19 +6,22 @@ import { Notice } from "../components/ui";
 
 const USERNAME_PATTERN = /^[A-Za-z0-9_]{3,20}$/;
 const PASSWORD_MIN = 8;
-const PASSWORD_MAX = 72;
+/** The server limits the UTF-8 encoding of the password (bcrypt input), not its character count. */
+const PASSWORD_MAX_BYTES = 72;
 
-export function validateUsername(username: string): string | null {
+function validateUsername(username: string): string | null {
   if (username.length === 0) return "Enter a username.";
   if (username.length < 3 || username.length > 20) return "Username must be 3 to 20 characters long.";
   if (!USERNAME_PATTERN.test(username)) return "Only letters, digits and underscores are allowed.";
   return null;
 }
 
-export function validatePassword(password: string): string | null {
+function validatePassword(password: string): string | null {
   if (password.length === 0) return "Enter a password.";
   if (password.length < PASSWORD_MIN) return `Password must be at least ${PASSWORD_MIN} characters long.`;
-  if (password.length > PASSWORD_MAX) return `Password must be at most ${PASSWORD_MAX} characters long.`;
+  if (new TextEncoder().encode(password).length > PASSWORD_MAX_BYTES) {
+    return `Password must be at most ${PASSWORD_MAX_BYTES} bytes long; a character outside ASCII takes 2 to 4 bytes.`;
+  }
   return null;
 }
 
@@ -103,7 +106,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
             type="password"
             value={password}
             autoComplete={isRegister ? "new-password" : "current-password"}
-            maxLength={72}
+            maxLength={PASSWORD_MAX_BYTES}
             aria-invalid={touched.password && passwordError !== null}
             onChange={(event) => setPassword(event.target.value)}
             onBlur={() => setTouched((state) => ({ ...state, password: true }))}
@@ -112,7 +115,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
             {touched.password && passwordError ? (
               <span className="field__error">{passwordError}</span>
             ) : isRegister ? (
-              <span className="field__hint">8 to 72 characters.</span>
+              <span className="field__hint">At least 8 characters and at most 72 bytes (a character outside ASCII takes 2 to 4).</span>
             ) : null}
           </div>
         </div>

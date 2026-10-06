@@ -15,24 +15,29 @@ deploy/   nginx configuration used by the web image
 ## Running with docker compose
 
 ```bash
-cp .env.example .env   # set POSTGRES_PASSWORD and JWT_SECRET
+cp .env.example .env   # set POSTGRES_PASSWORD and JWT_SECRET; compose refuses to start without them
 docker compose up --build
 ```
 
 The site is served on port 80 by nginx, which also proxies `/api` (REST and WebSockets) to the
-API container. PostgreSQL data lives in the `db-data` volume.
+API container; `web` starts once the API reports healthy. PostgreSQL data lives in the `db-data`
+volume, and the database is also published on `127.0.0.1:5432` for local development.
+
+The stack speaks plain HTTP. Before exposing it beyond your machine, put a TLS-terminating
+reverse proxy in front of port 80 (see docs/ARCHITECTURE.md, section 4).
 
 ## Development
 
 Requirements: JDK 17+ to run Gradle (a JDK 21 toolchain is provisioned automatically),
-Node 22, Docker for the database.
+Node 22 (`web/.nvmrc`), Docker for the database. The `.env` file from the previous section is
+needed here too: compose reads it even when only `db` is started.
 
 ```bash
-# database
+# database on 127.0.0.1:5432 (credentials from .env)
 docker compose up -d db
 
 # API on http://localhost:8080 (defaults match the compose database; see docs/ARCHITECTURE.md 2.1)
-DATABASE_PASSWORD=<POSTGRES_PASSWORD from .env> ./gradlew :server:run
+JWT_SECRET=<at least 16 characters> DATABASE_PASSWORD=<POSTGRES_PASSWORD from .env> ./gradlew :server:run
 
 # JS build of the rules library, consumed by the web client as a file: dependency
 ./gradlew :core:jsNodeProductionLibraryDistribution

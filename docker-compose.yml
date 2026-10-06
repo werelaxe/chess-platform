@@ -4,7 +4,10 @@ services:
     environment:
       POSTGRES_DB: chess
       POSTGRES_USER: chess
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      # Loopback only: lets `./gradlew :server:run` on the host reach the database in development.
+      - "127.0.0.1:5432:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:
@@ -22,14 +25,26 @@ services:
       PORT: "8080"
       DATABASE_URL: jdbc:postgresql://db:5432/chess
       DATABASE_USER: chess
-      DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
-      JWT_SECRET: ${JWT_SECRET}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       JWT_TTL_DAYS: "30"
       # nginx serves the client and the API from one origin, so CORS is disabled.
       CORS_ORIGINS: ""
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      # The runtime image ships no HTTP client, so bash's /dev/tcp performs the request.
+      test:
+        - CMD-SHELL
+        - >-
+          bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080
+          && printf "GET /api/health HTTP/1.0\r\n\r\n" >&3
+          && head -n1 <&3 | grep -q " 200 "' || exit 1
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
     restart: unless-stopped
 
   web:
@@ -40,7 +55,8 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

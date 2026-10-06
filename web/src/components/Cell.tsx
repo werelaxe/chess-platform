@@ -1,6 +1,6 @@
 import { memo } from "react";
 import type { CellEntry, CellView, Piece } from "../api/types";
-import { formatProbability } from "../core/notation";
+import { describeCell, formatProbability } from "../core/notation";
 import { FILES, fileOf, isLightSquare, rankOf } from "../core/squares";
 import { PieceImage } from "./Piece";
 
@@ -12,10 +12,15 @@ export interface CellProps {
   selected: boolean;
   lastMove: boolean;
   target: boolean;
+  /** The target may hold an enemy piece, so the move can capture there. */
+  capture: boolean;
   first: boolean;
   stay: boolean;
   observable: boolean;
   inspected: boolean;
+  /** Kept in the distribution panel by a click or Enter. */
+  pinned: boolean;
+  /** The viewer may move now; cells stay focusable for inspection regardless. */
   clickable: boolean;
   /** Opacity of the red check tint, 0..1. */
   checkAlpha: number;
@@ -82,7 +87,6 @@ function MiniGrid({ entries }: { entries: PieceEntry[] }) {
 function CellComponent(props: CellProps) {
   const { index, cell, onClick, onHover } = props;
   const pieces = pieceEntries(cell.entries);
-  const occupied = pieces.length > 0;
 
   const classes = ["cell", isLightSquare(index) ? "cell--light" : "cell--dark"];
   if (props.clickable) classes.push("cell--clickable");
@@ -91,19 +95,22 @@ function CellComponent(props: CellProps) {
   if (props.first) classes.push("cell--first");
   if (props.target) {
     classes.push("cell--target");
-    if (occupied) classes.push("cell--capture");
+    if (props.capture) classes.push("cell--capture");
   }
   if (props.stay) classes.push("cell--stay");
   if (props.observable) classes.push("cell--observable");
   if (props.inspected) classes.push("cell--inspected");
 
+  // Every square is a button: inspecting a square is possible for spectators and players alike,
+  // only moving is gated by the page. The label carries the content, which the image alt cannot.
   return (
     <div
       className={classes.join(" ")}
       data-square={cell.square}
-      role={props.clickable ? "button" : undefined}
-      tabIndex={props.clickable ? 0 : undefined}
-      aria-label={cell.square}
+      role="button"
+      tabIndex={0}
+      aria-label={describeCell(cell)}
+      aria-pressed={props.pinned}
       onClick={() => onClick(index)}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -117,6 +124,7 @@ function CellComponent(props: CellProps) {
       {props.checkAlpha > 0 ? (
         <div className="cell__layer cell__check" style={{ "--check": props.checkAlpha } as React.CSSProperties} />
       ) : null}
+      {props.observable ? <div className="cell__layer cell__observable" /> : null}
       {props.showRank ? <span className="cell__coord cell__coord--rank">{rankOf(index) + 1}</span> : null}
       {props.showFile ? <span className="cell__coord cell__coord--file">{FILES[fileOf(index)]}</span> : null}
       {pieces.length === 1 && pieces[0] ? <SinglePiece entry={pieces[0]} /> : null}

@@ -10,17 +10,28 @@ import java.util.concurrent.ConcurrentHashMap
  * that its socket coroutine drains; a client too slow to keep up loses the oldest events and
  * resynchronizes by refetching the game (the protocol tolerates gaps by comparing `ply`).
  */
-class GameHub : GameEvents {
+class GameHub(private val maxSubscribersPerGame: Int = MAX_SUBSCRIBERS_PER_GAME) : GameEvents {
     class Subscription internal constructor(val gameId: String) {
         val outbound: Channel<String> = Channel(capacity = QUEUE_CAPACITY, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     }
 
     private val subscribers = ConcurrentHashMap<String, MutableSet<Subscription>>()
 
-    fun subscribe(gameId: String): Subscription {
+    /** Registers a subscriber, or returns null when the game already has [maxSubscribersPerGame]. */
+    fun subscribe(gameId: String): Subscription? {
         val subscription = Subscription(gameId)
-        subscribers.computeIfAbsent(gameId) { ConcurrentHashMap.newKeySet() }.add(subscription)
-        return subscription
+        var added = false
+        // The add happens inside the compute so that it can never land in a set that a
+        // concurrent unsubscribe has just detached from the map.
+        subscribers.compute(gameId) { _, existing ->
+            val set = existing ?: ConcurrentHashMap.newKeySet()
+            if (set.size < maxSubscribersPerGame) {
+                set.add(subscription)
+                added = true
+            }
+            set.ifEmpty { null }
+        }
+        return subscription.takeIf { added }
     }
 
     fun unsubscribe(subscription: Subscription) {
@@ -30,6 +41,8 @@ class GameHub : GameEvents {
         }
         subscription.outbound.close()
     }
+
+    fun subscriberCount(gameId: String): Int = subscribers[gameId]?.size ?: 0
 
     /** Queues an event for one subscriber only (the initial snapshot, pong). */
     fun send(subscription: Subscription, event: ServerEvent) {
@@ -49,5 +62,6 @@ class GameHub : GameEvents {
 
     private companion object {
         const val QUEUE_CAPACITY = 256
+        const val MAX_SUBSCRIBERS_PER_GAME = 500
     }
 }

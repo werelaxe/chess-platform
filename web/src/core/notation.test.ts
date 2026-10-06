@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { formatMove, formatProbability, formatResult, formatStatus, movesEqual } from "./notation";
+import type { Piece } from "../api/types";
+import { cellDistribution, describeCell, formatMove, formatProbability, formatResult, formatStatus, movesEqual } from "./notation";
+
+const WHITE_PAWN: Piece = { color: "WHITE", type: "PAWN" };
+const BLACK_KNIGHT: Piece = { color: "BLACK", type: "KNIGHT" };
 
 describe("formatMove", () => {
   it("formats normal moves", () => {
@@ -50,6 +54,40 @@ describe("formatProbability", () => {
     expect(formatProbability(0.333)).toBe("33%");
     expect(formatProbability(0.999)).toBe("99%");
     expect(formatProbability(0.001)).toBe("<1%");
+  });
+});
+
+describe("cellDistribution", () => {
+  it("adds the implicit empty share only when the entries do not sum to one", () => {
+    expect(cellDistribution({ square: "e4", entries: [] })).toEqual([{ piece: null, probability: 1 }]);
+    expect(cellDistribution({ square: "e4", entries: [{ piece: WHITE_PAWN, probability: 1 }] })).toEqual([
+      { piece: WHITE_PAWN, probability: 1 },
+    ]);
+    expect(cellDistribution({ square: "e4", entries: [{ piece: WHITE_PAWN, probability: 0.25 }] })).toEqual([
+      { piece: WHITE_PAWN, probability: 0.25 },
+      { piece: null, probability: 0.75 },
+    ]);
+    const explicit = [
+      { piece: WHITE_PAWN, probability: 0.5 },
+      { piece: null, probability: 0.5 },
+    ];
+    expect(cellDistribution({ square: "e4", entries: explicit })).toBe(explicit);
+  });
+});
+
+describe("describeCell", () => {
+  it("names the square and every possible content with its probability", () => {
+    expect(describeCell({ square: "e4", entries: [] })).toBe("e4: empty");
+    expect(describeCell({ square: "e4", entries: [{ piece: WHITE_PAWN, probability: 1 }] })).toBe("e4: white pawn");
+    expect(
+      describeCell({
+        square: "d5",
+        entries: [
+          { piece: WHITE_PAWN, probability: 0.5 },
+          { piece: BLACK_KNIGHT, probability: 0.25 },
+        ],
+      }),
+    ).toBe("d5: white pawn 50%, black knight 25%, empty 25%");
   });
 });
 
