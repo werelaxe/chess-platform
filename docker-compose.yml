@@ -66,6 +66,7 @@ services:
     environment:
       # Public hostname; leave unset for plain HTTP on localhost (see deploy/Caddyfile).
       SITE_ADDRESS: ${SITE_ADDRESS:-http://localhost}
+      WWW_ADDRESS: ${WWW_ADDRESS:-http://www.localhost}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

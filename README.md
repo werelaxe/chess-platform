@@ -24,8 +24,9 @@ Caddy listens on ports 80 and 443 and forwards to nginx, which serves the client
 `/api` (REST and WebSockets) to the API container; `web` starts once the API reports healthy.
 Set `SITE_ADDRESS` in `.env` to the public hostname (for example `quantum-chess.fun`) and point
 the domain's A record at the host: Caddy then obtains and renews the Let's Encrypt certificate
-by itself and redirects HTTP to HTTPS for that hostname. Without `SITE_ADDRESS` the stack serves
-plain HTTP on localhost. PostgreSQL data lives in the `db-data` volume, and the database is also
+by itself and redirects HTTP to HTTPS for that hostname; `WWW_ADDRESS` (for example
+`www.quantum-chess.fun`, with its own DNS record) redirects to it. Without `SITE_ADDRESS` the
+stack serves plain HTTP on localhost. PostgreSQL data lives in the `db-data` volume, and the database is also
 published on `127.0.0.1:5432` for local development.
 
 ## Development

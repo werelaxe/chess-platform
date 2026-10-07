@@ -351,6 +351,7 @@ immutable, hides its version and adds `X-Content-Type-Options`, `X-Frame-Options
 TLS is terminated by Caddy. With `SITE_ADDRESS` set to the public hostname it obtains a
 Let's Encrypt certificate (ACME over HTTP, so the domain's A record must point at the host and
 port 80 must be reachable), renews it automatically, redirects HTTP to HTTPS for that hostname
-and adds `Strict-Transport-Security`. Certificates persist in the `caddy-data` volume. Requests
+and adds `Strict-Transport-Security`; `WWW_ADDRESS` names an optional `www.` host that only
+redirects to it. Certificates persist in the `caddy-data` volume. Requests
 for any other hostname (such as the bare IP address) are served over plain HTTP, and without
 `SITE_ADDRESS` the stack serves plain HTTP on localhost for development.
