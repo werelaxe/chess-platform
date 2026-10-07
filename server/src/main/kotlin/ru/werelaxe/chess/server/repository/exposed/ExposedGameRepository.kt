@@ -101,6 +101,7 @@ class ExposedGameRepository(private val db: Database) : GameRepository {
         this[Games.resultWinner] = game.result?.winner
         this[Games.resultReason] = game.result?.reason
         this[Games.drawOfferedBy] = game.drawOfferedBy
+        this[Games.botLevel] = game.botLevel
         this[Games.createdAt] = game.createdAt.atOffset(ZoneOffset.UTC)
         this[Games.updatedAt] = game.updatedAt.atOffset(ZoneOffset.UTC)
         this[Games.finishedAt] = game.finishedAt?.atOffset(ZoneOffset.UTC)
@@ -119,6 +120,7 @@ class ExposedGameRepository(private val db: Database) : GameRepository {
             moveCount = this[Games.moveCount],
             result = reason?.let { GameResult(this[Games.resultWinner], it) },
             drawOfferedBy = this[Games.drawOfferedBy],
+            botLevel = this[Games.botLevel],
             createdAt = this[Games.createdAt].toInstant(),
             updatedAt = this[Games.updatedAt].toInstant(),
             finishedAt = this[Games.finishedAt]?.toInstant(),

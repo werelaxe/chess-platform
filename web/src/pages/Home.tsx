@@ -16,7 +16,11 @@ function countLabel(games: GameSummary[]): string {
 }
 
 const TABS: { filter: GameFilter; label: string; empty: string }[] = [
-  { filter: "open", label: "Open games", empty: "No open games right now. Create one and share the link, or wait a moment." },
+  {
+    filter: "open",
+    label: "Open games",
+    empty: "No open games right now. Create one and share the link, play the computer, or wait a moment.",
+  },
   { filter: "active", label: "Live games", empty: "Nobody is playing in public at the moment." },
 ];
 
@@ -41,7 +45,7 @@ export function HomePage() {
           </h1>
           <p className="hero__lede">
             Play classic chess, or quantum chess where a single piece can stand on two squares until someone looks.
-            Pick an open game below or create your own.
+            Pick an open game below, create your own, or play against the computer.
           </p>
         </div>
         <div className="hero__aside reveal" style={{ "--i": 2 } as React.CSSProperties}>

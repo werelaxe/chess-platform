@@ -14,6 +14,7 @@ application {
 
 dependencies {
     implementation(project(":core"))
+    implementation(project(":engine"))
 
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)

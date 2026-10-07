@@ -1,4 +1,4 @@
-package ru.werelaxe.chess.core.engine
+package ru.werelaxe.chess.engine
 
 import ru.werelaxe.chess.core.Board
 import ru.werelaxe.chess.core.Color

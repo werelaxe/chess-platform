@@ -279,8 +279,9 @@ code,
   display: none;
 }
 
-/* Marks guest accounts wherever a username is shown. */
-.guest-tag {
+/* Marks guest accounts and the computer wherever a username is shown. */
+.guest-tag,
+.bot-tag {
   display: inline-block;
   margin-left: 6px;
   padding: 1px 6px;

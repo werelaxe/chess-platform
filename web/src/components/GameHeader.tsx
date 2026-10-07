@@ -1,6 +1,7 @@
-import type { Color, GameSummary, UserRef } from "../api/types";
+import type { BotLevel, Color, GameSummary, UserRef } from "../api/types";
 import type { SocketState } from "../api/ws";
 import type { GameSnapshot } from "../core/game";
+import { botColor } from "../core/computer";
 import { formatResult } from "../core/notation";
 import { KindPill, LifecyclePill, Username, VisibilityPill } from "./ui";
 
@@ -17,12 +18,14 @@ function PlayerRow({
   viewer,
   toMove,
   creator,
+  botLevel,
 }: {
   color: Color;
   player: UserRef | null;
   viewer: UserRef | null;
   toMove: boolean;
   creator: UserRef;
+  botLevel?: BotLevel | null;
 }) {
   const isViewer = player !== null && viewer !== null && player.id === viewer.id;
   return (
@@ -30,7 +33,7 @@ function PlayerRow({
       <span className={`player__dot player__dot--${color.toLowerCase()}`} aria-hidden="true" />
       {player ? (
         <span className="player__name">
-          <Username user={player} />
+          <Username user={player} botLevel={botLevel} />
           {isViewer ? <span className="faint"> (you)</span> : null}
         </span>
       ) : (
@@ -61,6 +64,8 @@ export function GameHeader({
         : null;
   const sideToMove = snapshot?.sideToMove ?? "WHITE";
   const live = game.status === "ACTIVE" && !finished;
+  // Computer games start active with both seats taken, so they never wait for an opponent.
+  const waiting = game.status === "WAITING" && botColor(game) === null;
 
   return (
     <section className="panel gh">
@@ -73,15 +78,29 @@ export function GameHeader({
         </span>
       </div>
       <div className="players">
-        <PlayerRow color="WHITE" player={game.white} viewer={viewer} toMove={live && sideToMove === "WHITE"} creator={game.creator} />
-        <PlayerRow color="BLACK" player={game.black} viewer={viewer} toMove={live && sideToMove === "BLACK"} creator={game.creator} />
+        <PlayerRow
+          color="WHITE"
+          player={game.white}
+          viewer={viewer}
+          toMove={live && sideToMove === "WHITE"}
+          creator={game.creator}
+          botLevel={game.botLevel}
+        />
+        <PlayerRow
+          color="BLACK"
+          player={game.black}
+          viewer={viewer}
+          toMove={live && sideToMove === "BLACK"}
+          creator={game.creator}
+          botLevel={game.botLevel}
+        />
       </div>
       <div className="gh__status">
         {result ? (
           <div className={`gh__result${result.winner === null ? " gh__result--draw" : ""}`}>
             {formatResult(result.winner, result.reason)}
           </div>
-        ) : game.status === "WAITING" ? (
+        ) : waiting ? (
           <div className="gh__line">
             <span>Waiting for an opponent to join.</span>
           </div>

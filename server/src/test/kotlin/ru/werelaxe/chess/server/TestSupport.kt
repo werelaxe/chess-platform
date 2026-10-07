@@ -15,11 +15,14 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.testApplication
+import kotlinx.coroutines.delay
 import ru.werelaxe.chess.core.ChessJson
 import ru.werelaxe.chess.core.GameKind
 import ru.werelaxe.chess.core.GameMove
 import ru.werelaxe.chess.core.PieceType
 import ru.werelaxe.chess.core.Square
+import ru.werelaxe.chess.engine.ChessEngine
+import ru.werelaxe.chess.engine.EngineLevel
 import ru.werelaxe.chess.server.config.AppConfig
 import ru.werelaxe.chess.server.dto.AuthResponse
 import ru.werelaxe.chess.server.dto.ColorChoice
@@ -29,8 +32,11 @@ import ru.werelaxe.chess.server.dto.DrawAction
 import ru.werelaxe.chess.server.dto.DrawRequest
 import ru.werelaxe.chess.server.dto.ErrorResponse
 import ru.werelaxe.chess.server.dto.GameDto
+import ru.werelaxe.chess.server.dto.GameSummary
+import ru.werelaxe.chess.server.dto.GamesResponse
 import ru.werelaxe.chess.server.dto.MoveRequest
 import ru.werelaxe.chess.server.dto.MoveResponse
+import ru.werelaxe.chess.server.dto.Opponent
 import ru.werelaxe.chess.server.model.Visibility
 import ru.werelaxe.chess.server.repository.Repositories
 import ru.werelaxe.chess.server.repository.memory.InMemoryGameRepository
@@ -40,26 +46,43 @@ import java.time.Instant
 import java.time.ZoneOffset
 import kotlin.random.Random
 import kotlin.test.assertEquals
+import kotlin.test.fail
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeSource
 
 const val TEST_PASSWORD = "correct-horse"
 
 val TEST_CONFIG = AppConfig(jwtSecret = "test-secret", bcryptCost = 4)
 
-/** Runs [block] against a server wired with fresh in-memory repositories and no database. */
-fun serverTest(seed: Int = 42, block: suspend TestContext.() -> Unit) = testApplication {
-    val repositories = Repositories(InMemoryUserRepository(), InMemoryGameRepository())
-    val clock = Clock.fixed(Instant.parse("2026-10-07T10:00:00Z"), ZoneOffset.UTC)
-    application {
-        module(TEST_CONFIG, repositories, random = Random(seed), clock = clock)
+/**
+ * Runs [block] against a server wired with fresh in-memory repositories and no database. The
+ * computer plays at the easy level whatever level a game asks for, with a fresh seeded random
+ * for every move so that its choices are reproducible, and replies after [botPause].
+ */
+fun serverTest(seed: Int = 42, botPause: Duration = 10.milliseconds, block: suspend TestContext.() -> Unit) =
+    testApplication {
+        val repositories = Repositories(InMemoryUserRepository(), InMemoryGameRepository())
+        val clock = Clock.fixed(Instant.parse("2026-10-07T10:00:00Z"), ZoneOffset.UTC)
+        application {
+            module(
+                TEST_CONFIG,
+                repositories,
+                random = Random(seed),
+                clock = clock,
+                engines = { ChessEngine(EngineLevel.EASY, Random(seed)) },
+                botPause = botPause,
+            )
+        }
+        val client = createClient {
+            install(ContentNegotiation) { json(ChessJson.json) }
+            install(WebSockets)
+        }
+        TestContext(client, repositories).block()
     }
-    val client = createClient {
-        install(ContentNegotiation) { json(ChessJson.json) }
-        install(WebSockets)
-    }
-    TestContext(client).block()
-}
 
-class TestContext(val client: HttpClient) {
+class TestContext(val client: HttpClient, val repositories: Repositories) {
     suspend fun register(username: String, password: String = TEST_PASSWORD): HttpResponse =
         client.post("/api/auth/register") {
             contentType(ContentType.Application.Json)
@@ -93,10 +116,12 @@ class TestContext(val client: HttpClient) {
         kind: GameKind = GameKind.CLASSIC,
         visibility: Visibility = Visibility.PUBLIC,
         color: ColorChoice = ColorChoice.WHITE,
+        opponent: Opponent = Opponent.HUMAN,
+        level: EngineLevel? = null,
     ): HttpResponse = client.post("/api/games") {
         bearerAuth(token)
         contentType(ContentType.Application.Json)
-        setBody(CreateGameRequest(kind, visibility, color))
+        setBody(CreateGameRequest(kind, visibility, color, opponent, level))
     }
 
     suspend fun createGame(
@@ -104,10 +129,37 @@ class TestContext(val client: HttpClient) {
         kind: GameKind = GameKind.CLASSIC,
         visibility: Visibility = Visibility.PUBLIC,
         color: ColorChoice = ColorChoice.WHITE,
+        opponent: Opponent = Opponent.HUMAN,
+        level: EngineLevel? = null,
     ): GameDto {
-        val response = createGameResponse(token, kind, visibility, color)
+        val response = createGameResponse(token, kind, visibility, color, opponent, level)
         assertEquals(HttpStatusCode.Created, response.status, response.bodyAsString())
         return response.body()
+    }
+
+    /** Creates a game against the computer, in which the caller plays [color]. */
+    suspend fun computerGame(
+        token: String,
+        kind: GameKind = GameKind.CLASSIC,
+        color: ColorChoice = ColorChoice.WHITE,
+        level: EngineLevel = EngineLevel.EASY,
+    ): GameDto = createGame(token, kind, color = color, opponent = Opponent.COMPUTER, level = level)
+
+    suspend fun myGames(token: String): List<GameSummary> =
+        client.get("/api/games/mine") { bearerAuth(token) }.body<GamesResponse>().games
+
+    /**
+     * Waits until the game has at least [count] moves. Polls the caller's listing, which never
+     * wakes the computer, so that only the trigger under test can have made it move.
+     */
+    suspend fun awaitMoves(token: String, id: String, count: Int): GameSummary {
+        val deadline = TimeSource.Monotonic.markNow() + 10.seconds
+        while (true) {
+            val summary = myGames(token).firstOrNull { it.id == id } ?: fail("Game $id is not listed")
+            if (summary.moveCount >= count) return summary
+            if (deadline.hasPassedNow()) fail("Game $id has ${summary.moveCount} moves, expected $count")
+            delay(25)
+        }
     }
 
     suspend fun joinResponse(token: String, id: String): HttpResponse =

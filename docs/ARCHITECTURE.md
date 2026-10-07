@@ -7,7 +7,8 @@ so a client can validate and apply moves instantly while the server stays author
 ```
 chess-platform/
   core/      Kotlin Multiplatform library (JVM + JS): rules, move application, serialization
-  server/    Ktor HTTP + WebSocket API, PostgreSQL persistence (Exposed + Flyway)
+  engine/    Kotlin Multiplatform library (JVM): the computer player (search and evaluation)
+  server/    Ktor HTTP + WebSocket API, PostgreSQL persistence (Exposed + Flyway), computer opponent
   web/       React + TypeScript client (Vite); consumes the JS build of core
   deploy/    nginx config and other deployment files
   docs/      this document and the rules text
@@ -162,11 +163,12 @@ Flyway migrations in `server/src/main/resources/db/migration` run at startup.
 
 ```sql
 users(id BIGSERIAL PK, username VARCHAR(20), username_lower VARCHAR(20) UNIQUE,
-      password_hash TEXT NULL, is_guest BOOLEAN, created_at TIMESTAMPTZ)
+      password_hash TEXT NULL, is_guest BOOLEAN, is_bot BOOLEAN, created_at TIMESTAMPTZ)
 games(id VARCHAR(16) PK, kind VARCHAR(16), visibility VARCHAR(16), status VARCHAR(16),
       creator_id BIGINT FK users, white_id BIGINT FK users NULL, black_id BIGINT FK users NULL,
       move_count INT, result_winner VARCHAR(8) NULL, result_reason VARCHAR(32) NULL,
-      draw_offered_by VARCHAR(8) NULL, created_at, updated_at, finished_at TIMESTAMPTZ NULL)
+      draw_offered_by VARCHAR(8) NULL, bot_level VARCHAR(8) NULL,
+      created_at, updated_at, finished_at TIMESTAMPTZ NULL)
 moves(game_id FK games ON DELETE CASCADE, ply INT, move JSONB, created_at TIMESTAMPTZ, PK(game_id, ply))
 ```
 
@@ -181,7 +183,11 @@ is the only way to act as one. The prefix `guest-` is reserved (case-insensitive
 rejects such names with 400 `validation`, and logging in with one fails with 401
 `invalid_credentials` because the row has no password.
 
-### 2.3 REST API
+The computer is the `users` row named `computer` with `is_bot = true` and no password, created
+at startup when missing (the server refuses to start if a regular account holds the name). It
+cannot log in, and registering the name fails with 409 `username_taken` like any taken name.
+`games.bot_level` (`EASY`, `MEDIUM`, `HARD`) marks a game against the computer; in such a game
+the creator is the human and the computer holds the other seat.
 
 All endpoints under `/api`, JSON bodies, `Authorization: Bearer <jwt>` where required.
 Errors: `{"error":"<code>","message":"<human readable>"}` with a matching HTTP status
@@ -196,18 +202,24 @@ POST /api/auth/login      {username, password}        -> 200 {token, user}     4
 POST /api/auth/guest      (no body)                    -> 201 {token, user}     user.guest = true
 GET  /api/auth/me                                      -> 200 user             (auth)
 
-POST /api/games           {kind, visibility, color}   -> 201 GameDto          (auth)
-                            kind: CLASSIC|QUANTUM, visibility: PUBLIC|PRIVATE, color: WHITE|BLACK|RANDOM
+POST /api/games           {kind, visibility, color, opponent, level} -> 201 GameDto  (auth)
+                            kind: CLASSIC|QUANTUM, visibility: PUBLIC|PRIVATE, color: WHITE|BLACK|RANDOM,
+                            opponent: HUMAN (default) | COMPUTER, level: EASY|MEDIUM|HARD
+                            (required with COMPUTER: 400 validation without it; ignored with HUMAN)
 GET  /api/games?filter=open|active|finished&kind=&limit=&offset= -> {games:[GameSummary]}  (public games only)
 GET  /api/games/mine?limit=&offset=                    -> {games:[GameSummary]} (auth; newest first)
 GET  /api/games/{id}                                   -> GameDto              (anyone with the id)
-POST /api/games/{id}/join                              -> 200 GameDto          (auth; 409 unless WAITING; 400 if own game)
+POST /api/games/{id}/join                              -> 200 GameDto          (auth; 409 game_full unless WAITING,
+                                                                                 hence always for computer games;
+                                                                                 400 if own game)
 POST /api/games/{id}/moves {move: GameMove}            -> 200 {ply, move, status} (auth; player on turn)
                             400 illegal move, 403 not a player / not your turn,
                             409 game_not_started (WAITING) / game_finished
 POST /api/games/{id}/resign                            -> 200 GameDto          (auth; player of an ACTIVE game,
                                                                                  or creator of a WAITING game)
-POST /api/games/{id}/draw  {action: OFFER|ACCEPT|DECLINE|WITHDRAW} -> 200 GameDto (auth; player; ACTIVE only)
+POST /api/games/{id}/draw  {action: OFFER|ACCEPT|DECLINE|WITHDRAW} -> 200 GameDto (auth; player; ACTIVE only;
+                                                                                 409 draw_not_available
+                                                                                 in computer games)
 GET  /api/health                                       -> 200 {status:"ok"}
 ```
 
@@ -229,11 +241,12 @@ response (and the `game` event) carry the DTO with `status: "FINISHED"` and
 `game_finished`.
 
 ```jsonc
-UserRef     {"id": 1, "username": "alice", "guest": false}   // "guest" is omitted when false
+UserRef     {"id": 1, "username": "alice", "guest": false, "bot": false}   // "guest" and "bot" are omitted when false
 GameSummary {"id":"aZ3kq9...","kind":"QUANTUM","visibility":"PUBLIC","status":"ACTIVE",
              "white":UserRef|null,"black":UserRef|null,"creator":UserRef,
              "moveCount":12,"result":{"winner":"WHITE"|"BLACK"|null,"reason":"..."}|null,
-             "drawOfferedBy":"WHITE"|"BLACK"|null,"createdAt":"2026-10-07T10:00:00Z","updatedAt":"..."}
+             "drawOfferedBy":"WHITE"|"BLACK"|null,"botLevel":"EASY"|"MEDIUM"|"HARD"|null,
+             "createdAt":"2026-10-07T10:00:00Z","updatedAt":"..."}
 GameDto     GameSummary + "moves": [GameMove, ...]
 ```
 
@@ -262,6 +275,30 @@ ids are refused with a close frame. Server → client events (JSON, `type` discr
 
 Client → server: `{"type":"ping"}` every 30 s. The client applies a `move` event locally when
 `ply == localMoveCount`; otherwise it refetches the game and replays.
+
+### 2.6 Computer opponent
+
+A game created with `opponent: COMPUTER` is `ACTIVE` at once: the human takes the colour they
+chose (`RANDOM` is honoured) and the `computer` account takes the other seat. Its visibility is
+forced to `PRIVATE`: it never appears in the public listing but is reachable by its link and
+listed in `/api/games/mine`. `GameSummary.botLevel` carries the level, and the computer's
+`UserRef` has `"bot": true`. Draw offers are not available (409 `draw_not_available`); resigning
+works as usual, and joining is refused like for any `ACTIVE` game.
+
+The computer plays through `BotPlayer` using the engine in `engine/`
+(`ru.werelaxe.chess.engine.ChessEngine`, levels `EASY`/`MEDIUM`/`HARD` with thinking budgets of
+0.7/1.5/3.5 s). The service wakes it whenever it may be the computer's turn: right after
+creation when it plays white, after every move, and, as self-healing after a restart, whenever
+the game is fetched (`GET /api/games/{id}`) or a WebSocket connects to it. A wake-up checks the
+move count cheaply and, if it is the computer's turn, takes an immutable snapshot of the
+position under the game's lock and searches outside it on a dispatcher limited to two threads;
+a game is never searched twice at the same time, and a wake-up that arrives during a search is
+honoured afterwards. The chosen move goes through the normal move pipeline (`GameService.move`
+with the computer's principal), so observations get their outcome from the server and clients
+receive the usual `move` events. A reply to a human move is delayed so that at least 700 ms pass
+after the move (the search time counts towards it). A rejected move (the human resigned
+meanwhile, or the engine erred) is logged and followed by a fresh look at the game, a few times
+at most; any other failure is logged and left for the next wake-up.
 
 ## 3. Web client (`web`)
 

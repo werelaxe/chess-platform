@@ -7,7 +7,8 @@ Architecture and API: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Rules of bot
 
 ```
 core/     Kotlin Multiplatform library (JVM + JS): rules, move application, serialization
-server/   Ktor 3 API: auth, lobby, games, WebSocket events; Exposed + Flyway on PostgreSQL
+engine/   the computer player (search and evaluation for both variants); used by the server only
+server/   Ktor 3 API: auth, lobby, games, WebSocket events, computer opponent; Exposed + Flyway on PostgreSQL
 web/      React 19 + TypeScript (Vite) client using the JS build of core
 deploy/   nginx configuration used by the web image
 ```
@@ -49,7 +50,7 @@ cd web && npm install && npm run dev
 Tests:
 
 ```bash
-./gradlew :core:jvmTest :core:jsNodeTest :server:test
+./gradlew :core:jvmTest :core:jsNodeTest :engine:jvmTest :server:test
 cd web && npm run typecheck && npm run test
 ```
 

@@ -1,16 +1,26 @@
 import { Link } from "react-router";
-import type { GameSummary, UserRef } from "../api/types";
+import type { BotLevel, GameSummary, UserRef } from "../api/types";
 import { formatResult } from "../core/notation";
 import { EmptyState, KindPill, LifecyclePill, Username, VisibilityPill } from "./ui";
 
-function Seat({ player, color, viewer }: { player: UserRef | null; color: "white" | "black"; viewer: UserRef | null }) {
+function Seat({
+  player,
+  color,
+  viewer,
+  botLevel,
+}: {
+  player: UserRef | null;
+  color: "white" | "black";
+  viewer: UserRef | null;
+  botLevel?: BotLevel | null;
+}) {
   const you = player !== null && viewer !== null && player.id === viewer.id;
   return (
     <span className={`game-row__seat${player ? "" : " game-row__seat--open"}`}>
       <span className={`seat-dot seat-dot--${color}`} aria-hidden="true" />
       {player ? (
         <>
-          <Username user={player} />
+          <Username user={player} botLevel={botLevel} />
           {you ? <span className="faint"> (you)</span> : null}
         </>
       ) : (
@@ -41,9 +51,9 @@ export function GameList({ games, viewer, emptyText }: { games: GameSummary[]; v
         <Link key={game.id} to={`/games/${game.id}`} className="game-row reveal" style={{ "--i": Math.min(index, 8) } as React.CSSProperties}>
           <KindPill kind={game.kind} />
           <span className="game-row__players">
-            <Seat player={game.white} color="white" viewer={viewer} />
+            <Seat player={game.white} color="white" viewer={viewer} botLevel={game.botLevel} />
             <span className="game-row__vs">vs</span>
-            <Seat player={game.black} color="black" viewer={viewer} />
+            <Seat player={game.black} color="black" viewer={viewer} botLevel={game.botLevel} />
           </span>
           <span className="game-row__meta">
             <span>{game.moveCount} plies</span>

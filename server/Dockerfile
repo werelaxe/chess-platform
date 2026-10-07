@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Build context is the repository root (the server depends on the core library).
+# Build context is the repository root (the server depends on the core and engine libraries).
 #   docker build -f server/Dockerfile .
 
 FROM eclipse-temurin:21-jdk AS build
@@ -10,10 +10,12 @@ WORKDIR /src
 COPY gradlew settings.gradle.kts build.gradle.kts gradle.properties ./
 COPY gradle ./gradle
 COPY core/build.gradle.kts ./core/
+COPY engine/build.gradle.kts ./engine/
 COPY server/build.gradle.kts ./server/
 RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     chmod +x gradlew && ./gradlew :server:dependencies --no-daemon -q > /dev/null
 COPY core/src ./core/src
+COPY engine/src ./engine/src
 COPY server/src ./server/src
 RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :server:installDist --no-daemon -q

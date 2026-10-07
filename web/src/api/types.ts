@@ -19,6 +19,12 @@ export type GameLifecycle = "WAITING" | "ACTIVE" | "FINISHED";
 
 export type ColorChoice = Color | "RANDOM";
 
+/** Who the creator plays against: another person or the built-in engine. */
+export type Opponent = "HUMAN" | "COMPUTER";
+
+/** Strength of the built-in engine in a computer game. */
+export type BotLevel = "EASY" | "MEDIUM" | "HARD";
+
 export interface NormalMove {
   type: "normal";
   from: string;
@@ -98,6 +104,8 @@ export interface UserRef {
   username: string;
   /** True for guest accounts (`guest-NNNNNN`, no password); omitted or false for registered users. */
   guest?: boolean;
+  /** True for the system "computer" user that plays computer games; omitted or false otherwise. */
+  bot?: boolean;
 }
 
 export interface GameResult {
@@ -116,6 +124,8 @@ export interface GameSummary {
   moveCount: number;
   result: GameResult | null;
   drawOfferedBy: Color | null;
+  /** Engine strength of a computer game; null or absent for a game between people. */
+  botLevel?: BotLevel | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -147,6 +157,10 @@ export interface CreateGameRequest {
   kind: GameKind;
   visibility: Visibility;
   color: ColorChoice;
+  /** Defaults to HUMAN on the server. */
+  opponent?: Opponent;
+  /** Required when `opponent` is COMPUTER. */
+  level?: BotLevel;
 }
 
 export interface ApiErrorBody {

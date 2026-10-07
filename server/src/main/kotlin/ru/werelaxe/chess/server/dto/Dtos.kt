@@ -5,16 +5,17 @@ import ru.werelaxe.chess.core.Color
 import ru.werelaxe.chess.core.GameKind
 import ru.werelaxe.chess.core.GameMove
 import ru.werelaxe.chess.core.GameStatus
+import ru.werelaxe.chess.engine.EngineLevel
 import ru.werelaxe.chess.server.model.GamePhase
 import ru.werelaxe.chess.server.model.GameResult
 import ru.werelaxe.chess.server.model.User
 import ru.werelaxe.chess.server.model.Visibility
 
-/** [guest] is omitted from the JSON for registered users (defaults are not encoded). */
+/** [guest] and [bot] are omitted from the JSON when false (defaults are not encoded). */
 @Serializable
-data class UserRef(val id: Long, val username: String, val guest: Boolean = false) {
+data class UserRef(val id: Long, val username: String, val guest: Boolean = false, val bot: Boolean = false) {
     companion object {
-        fun of(user: User) = UserRef(user.id, user.username, user.isGuest)
+        fun of(user: User) = UserRef(user.id, user.username, user.isGuest, user.isBot)
     }
 }
 
@@ -32,10 +33,19 @@ enum class ColorChoice {
 }
 
 @Serializable
+enum class Opponent {
+    HUMAN,
+    COMPUTER,
+}
+
+/** [level] is required for a [Opponent.COMPUTER] opponent and ignored otherwise. */
+@Serializable
 data class CreateGameRequest(
     val kind: GameKind,
     val visibility: Visibility = Visibility.PUBLIC,
     val color: ColorChoice = ColorChoice.RANDOM,
+    val opponent: Opponent = Opponent.HUMAN,
+    val level: EngineLevel? = null,
 )
 
 @Serializable
@@ -50,6 +60,8 @@ data class GameSummary(
     val moveCount: Int,
     val result: GameResult?,
     val drawOfferedBy: Color?,
+    /** The computer's level in a game against it; null between people. */
+    val botLevel: EngineLevel?,
     val createdAt: String,
     val updatedAt: String,
 ) {
@@ -64,6 +76,7 @@ data class GameSummary(
         moveCount = moveCount,
         result = result,
         drawOfferedBy = drawOfferedBy,
+        botLevel = botLevel,
         createdAt = createdAt,
         updatedAt = updatedAt,
         moves = moves,
@@ -83,6 +96,7 @@ data class GameDto(
     val moveCount: Int,
     val result: GameResult?,
     val drawOfferedBy: Color?,
+    val botLevel: EngineLevel?,
     val createdAt: String,
     val updatedAt: String,
     val moves: List<GameMove>,

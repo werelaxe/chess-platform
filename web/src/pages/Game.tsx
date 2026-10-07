@@ -10,6 +10,7 @@ import { ModeBar } from "../components/ModeBar";
 import { MoveList } from "../components/MoveList";
 import { PromotionDialog } from "../components/PromotionDialog";
 import { ErrorNotice, Loading } from "../components/ui";
+import { botColor, playerLabel } from "../core/computer";
 import { IllegalMoveError, LocalGame, type GameSnapshot } from "../core/game";
 import { movesEqual } from "../core/notation";
 import { squareIndex, squareName } from "../core/squares";
@@ -231,8 +232,9 @@ export function GamePage() {
   useEffect(() => {
     const previous = document.title;
     if (game) {
-      const players = `${game.white?.username ?? "?"} vs ${game.black?.username ?? "?"}`;
-      document.title = `${players} - ${game.kind === "QUANTUM" ? "Quantum" : "Classic"} chess`;
+      const white = game.white ? playerLabel(game.white, game.botLevel) : "?";
+      const black = game.black ? playerLabel(game.black, game.botLevel) : "?";
+      document.title = `${white} vs ${black} - ${game.kind === "QUANTUM" ? "Quantum" : "Classic"} chess`;
     }
     return () => {
       document.title = previous;
@@ -472,11 +474,14 @@ export function GamePage() {
   const inspectedCell = inspectedIndex !== null ? (snapshot.view.cells[inspectedIndex] ?? null) : null;
   const shareUrl = `${window.location.origin}/games/${game.id}`;
   const showModeBar = quantum && viewerColor !== null && game.status === "ACTIVE" && snapshot.status.type === "ongoing";
+  const computerColor = botColor(game);
+  const computer = computerColor !== null;
+  const botToMove = computer && game.status === "ACTIVE" && snapshot.status.type === "ongoing" && snapshot.sideToMove === computerColor;
 
   let hint = "";
   if (awaitingObservation) hint = "Measuring the square, waiting for the outcome.";
   else if (busy) hint = "Sending your move.";
-  else if (!canAct) hint = viewerColor ? "Waiting for your opponent." : "";
+  else if (!canAct) hint = viewerColor ? (botToMove ? "Computer is thinking." : "Waiting for your opponent.") : "";
   else if (effectiveMode === "observe") hint = "Click an outlined square to measure it. The outcome is random and costs your turn.";
   else if (effectiveMode === "split") {
     hint = !selection
@@ -489,7 +494,7 @@ export function GamePage() {
   // The slot above the board is always rendered with a fixed height (see .banner-slot), so the
   // board stays put when the message appears, changes or goes away.
   let bannerText = "";
-  if (game.status === "WAITING") {
+  if (game.status === "WAITING" && !computer) {
     bannerText = viewerColor
       ? game.visibility === "PRIVATE"
         ? "Waiting for an opponent. Share the link to invite someone."
@@ -497,6 +502,8 @@ export function GamePage() {
       : "This game is waiting for a second player.";
   } else if (awaitingObservation) {
     bannerText = "Observing, waiting for the outcome from the server.";
+  } else if (botToMove) {
+    bannerText = "Computer is thinking\u2026";
   } else if (canAct && !busy) {
     bannerText = `Your move${snapshot.view.checkProbability > 0 ? ", you are in check" : ""}.`;
   }

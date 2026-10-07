@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router";
 import { api } from "../api/client";
-import type { ColorChoice, GameKind, Visibility } from "../api/types";
+import type { BotLevel, ColorChoice, GameKind, Opponent, Visibility } from "../api/types";
+import { BOT_LEVELS, BOT_LEVEL_HINTS, BOT_LEVEL_LABELS, createGameRequest } from "../core/computer";
 import { useAuthStore } from "../store/auth";
 import { Choice, ErrorNotice } from "./ui";
 
@@ -9,10 +10,13 @@ export function CreateGameForm() {
   const { user, setSession } = useAuthStore();
   const navigate = useNavigate();
   const [kind, setKind] = useState<GameKind>("QUANTUM");
+  const [opponent, setOpponent] = useState<Opponent>("HUMAN");
+  const [level, setLevel] = useState<BotLevel>("MEDIUM");
   const [visibility, setVisibility] = useState<Visibility>("PUBLIC");
   const [color, setColor] = useState<ColorChoice>("RANDOM");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const computer = opponent === "COMPUTER";
 
   async function create(asGuest: boolean) {
     setSubmitting(true);
@@ -22,7 +26,7 @@ export function CreateGameForm() {
         const session = await api.guest();
         setSession(session.token, session.user);
       }
-      const game = await api.createGame({ kind, visibility, color });
+      const game = await api.createGame(createGameRequest({ kind, visibility, color, opponent, level }));
       navigate(`/games/${game.id}`);
     } catch (cause) {
       setError(cause);
@@ -57,6 +61,32 @@ export function CreateGameForm() {
         />
       </div>
       <div className="field">
+        <span className="field__label">Opponent</span>
+        <Choice
+          name="Opponent"
+          value={opponent}
+          onChange={setOpponent}
+          disabled={submitting}
+          options={[
+            { value: "HUMAN", label: "Human" },
+            { value: "COMPUTER", label: "Computer" },
+          ]}
+        />
+      </div>
+      {computer ? (
+        <div className="field">
+          <span className="field__label">Level</span>
+          <Choice
+            name="Level"
+            value={level}
+            onChange={setLevel}
+            disabled={submitting}
+            options={BOT_LEVELS.map((value) => ({ value, label: BOT_LEVEL_LABELS[value] }))}
+          />
+          <span className="field__hint">{BOT_LEVEL_HINTS[level]}</span>
+        </div>
+      ) : null}
+      <div className="field">
         <span className="field__label">Your color</span>
         <Choice
           name="Color"
@@ -70,22 +100,28 @@ export function CreateGameForm() {
           ]}
         />
       </div>
-      <div className="field">
-        <span className="field__label">Visibility</span>
-        <Choice
-          name="Visibility"
-          value={visibility}
-          onChange={setVisibility}
-          disabled={submitting}
-          options={[
-            { value: "PUBLIC", label: "Public" },
-            { value: "PRIVATE", label: "Private" },
-          ]}
-        />
-        <span className="field__hint">
-          {visibility === "PUBLIC" ? "Listed in the lobby for anyone to join." : "Only people with the link can join or watch."}
-        </span>
-      </div>
+      {computer ? (
+        <div className="field">
+          <span className="field__hint">Computer games are unlisted: only people with the link can watch.</span>
+        </div>
+      ) : (
+        <div className="field">
+          <span className="field__label">Visibility</span>
+          <Choice
+            name="Visibility"
+            value={visibility}
+            onChange={setVisibility}
+            disabled={submitting}
+            options={[
+              { value: "PUBLIC", label: "Public" },
+              { value: "PRIVATE", label: "Private" },
+            ]}
+          />
+          <span className="field__hint">
+            {visibility === "PUBLIC" ? "Listed in the lobby for anyone to join." : "Only people with the link can join or watch."}
+          </span>
+        </div>
+      )}
       {error ? <ErrorNotice error={error} /> : null}
       {user ? (
         <button type="submit" className="btn btn--primary btn--block" disabled={submitting}>

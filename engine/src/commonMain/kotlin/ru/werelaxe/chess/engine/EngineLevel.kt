@@ -1,4 +1,4 @@
-package ru.werelaxe.chess.core.engine
+package ru.werelaxe.chess.engine
 
 import kotlinx.serialization.Serializable
 import kotlin.time.Duration

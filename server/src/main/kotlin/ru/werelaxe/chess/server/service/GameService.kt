@@ -7,17 +7,21 @@ import ru.werelaxe.chess.core.Game
 import ru.werelaxe.chess.core.GameKind
 import ru.werelaxe.chess.core.GameMove
 import ru.werelaxe.chess.core.GameStatus
+import ru.werelaxe.chess.engine.ChessEngine
+import ru.werelaxe.chess.engine.EngineLevel
 import ru.werelaxe.chess.server.dto.ColorChoice
 import ru.werelaxe.chess.server.dto.CreateGameRequest
 import ru.werelaxe.chess.server.dto.DrawAction
 import ru.werelaxe.chess.server.dto.GameDto
 import ru.werelaxe.chess.server.dto.GameSummary
 import ru.werelaxe.chess.server.dto.MoveResponse
+import ru.werelaxe.chess.server.dto.Opponent
 import ru.werelaxe.chess.server.dto.UserRef
 import ru.werelaxe.chess.server.model.GameFilter
 import ru.werelaxe.chess.server.model.GamePhase
 import ru.werelaxe.chess.server.model.GameRecord
 import ru.werelaxe.chess.server.model.GameResult
+import ru.werelaxe.chess.server.model.Visibility
 import ru.werelaxe.chess.server.repository.GameRepository
 import ru.werelaxe.chess.server.repository.UserRepository
 import ru.werelaxe.chess.server.ws.GameEvents
@@ -27,8 +31,14 @@ import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import kotlin.random.Random
+import kotlin.time.Duration
+import kotlin.time.TimeSource
 
-/** All game rules outside the chess rules themselves: lobby, turns, draw offers, resignation. */
+/**
+ * All game rules outside the chess rules themselves: lobby, turns, draw offers, resignation,
+ * and the computer opponent's seat. [engines] builds the engine for a level; tests inject a
+ * fast, seeded one. [botPause] is the shortest pause before the computer's reply to a move.
+ */
 class GameService(
     private val games: GameRepository,
     private val users: UserRepository,
@@ -36,8 +46,14 @@ class GameService(
     private val random: Random,
     private val clock: Clock,
     private val ids: GameIdGenerator = GameIdGenerator(),
+    engines: (EngineLevel) -> ChessEngine = { ChessEngine(it, random) },
+    botPause: Duration = BotPlayer.DEFAULT_PAUSE,
 ) {
     private val cache = GameCache()
+    private val bot = BotPlayer(this, engines, botPause)
+
+    /** Stops the computer player; call when the application shuts down. */
+    fun close() = bot.close()
 
     suspend fun create(user: UserPrincipal, request: CreateGameRequest): GameDto {
         val color = when (request.color) {
@@ -46,7 +62,7 @@ class GameService(
             ColorChoice.RANDOM -> if (random.nextBoolean()) Color.WHITE else Color.BLACK
         }
         val now = clock.instant()
-        val record = GameRecord(
+        val open = GameRecord(
             id = ids.next(),
             kind = request.kind,
             visibility = request.visibility,
@@ -57,11 +73,32 @@ class GameService(
             moveCount = 0,
             result = null,
             drawOfferedBy = null,
+            botLevel = null,
             createdAt = now,
             updatedAt = now,
             finishedAt = null,
         )
+        val record = when (request.opponent) {
+            Opponent.HUMAN -> open
+            Opponent.COMPUTER -> {
+                val level = request.level ?: throw ApiException.validation(
+                    "A level (EASY, MEDIUM or HARD) is required to play against the computer",
+                )
+                val computer = users.findByUsername(BotUser.USERNAME)?.takeIf { it.isBot }
+                    ?: throw IllegalStateException("The '${BotUser.USERNAME}' account is missing")
+                // The computer takes the other seat at once; the game is unlisted because there
+                // is nothing to join and nothing in it for the lobby.
+                open.copy(
+                    visibility = Visibility.PRIVATE,
+                    phase = GamePhase.ACTIVE,
+                    whiteId = open.whiteId ?: computer.id,
+                    blackId = open.blackId ?: computer.id,
+                    botLevel = level,
+                )
+            }
+        }
         games.create(record)
+        bot.wake(record)
         return toDto(record, emptyList())
     }
 
@@ -74,6 +111,8 @@ class GameService(
     /** Reads the row and the moves under the game's lock so that they cannot straddle a move. */
     suspend fun get(id: String): GameDto = cache.locked(id) {
         val record = games.findById(id) ?: throw ApiException.notFound("Game")
+        // A computer move lost to a restart is made as soon as somebody looks at the game.
+        bot.wake(record)
         toDto(record, games.moves(id))
     }
 
@@ -137,7 +176,26 @@ class GameService(
             if (updated.phase == GamePhase.FINISHED) entry.game = null
             events.publish(id, ServerEvent.GameUpdated(toDto(updated, game.history.toList())))
         }
+        bot.wake(updated, movedAt = TimeSource.Monotonic.markNow())
         MoveResponse(ply, move, status)
+    }
+
+    /**
+     * A snapshot of a game against the computer in which the computer is on turn, or null when
+     * it is not (the game is between people, is over, or the human is on turn). The state is
+     * immutable, so the search runs on it after the game's lock is released.
+     */
+    internal suspend fun botTurn(id: String): BotTurn? = cache.locked(id) { entry ->
+        val record = games.findById(id) ?: return@locked null
+        val level = record.botLevel ?: return@locked null
+        val color = record.botColor ?: return@locked null
+        if (record.phase != GamePhase.ACTIVE) return@locked null
+        val game = entry.game ?: Game.replay(record.kind, games.moves(id)).also { entry.game = it }
+        if (game.sideToMove != color) return@locked null
+        val computerId = checkNotNull(if (color == Color.WHITE) record.whiteId else record.blackId)
+        val computer = users.findById(computerId)
+        check(computer != null && computer.isBot) { "The $color seat of game $id is not the computer" }
+        BotTurn(UserPrincipal(computer.id, computer.username, guest = false), level, game.state)
     }
 
     /**
@@ -186,6 +244,13 @@ class GameService(
         val record = games.findById(id) ?: throw ApiException.notFound("Game")
         requireActive(record)
         val color = record.colorOf(user.id) ?: throw notAPlayer()
+        if (record.botLevel != null) {
+            throw ApiException(
+                HttpStatusCode.Conflict,
+                "draw_not_available",
+                "Draw offers are not available in games against the computer",
+            )
+        }
         val now = clock.instant()
         val updated = when (action) {
             DrawAction.OFFER -> {
@@ -256,6 +321,7 @@ class GameService(
                 moveCount = record.moveCount,
                 result = record.result,
                 drawOfferedBy = record.drawOfferedBy,
+                botLevel = record.botLevel,
                 createdAt = record.createdAt.toIso(),
                 updatedAt = record.updatedAt.toIso(),
             )

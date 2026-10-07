@@ -14,16 +14,25 @@ class InMemoryUserRepository : UserRepository {
     private var nextId = 1L
 
     override suspend fun create(username: String, passwordHash: String, createdAt: Instant): User? =
-        insert(username, passwordHash, isGuest = false, createdAt)
+        insert(username, passwordHash, isGuest = false, isBot = false, createdAt)
 
     override suspend fun createGuest(username: String, createdAt: Instant): User? =
-        insert(username, passwordHash = null, isGuest = true, createdAt)
+        insert(username, passwordHash = null, isGuest = true, isBot = false, createdAt)
 
-    private suspend fun insert(username: String, passwordHash: String?, isGuest: Boolean, createdAt: Instant): User? =
+    override suspend fun createBot(username: String, createdAt: Instant): User? =
+        insert(username, passwordHash = null, isGuest = false, isBot = true, createdAt)
+
+    private suspend fun insert(
+        username: String,
+        passwordHash: String?,
+        isGuest: Boolean,
+        isBot: Boolean,
+        createdAt: Instant,
+    ): User? =
         mutex.withLock {
             val key = username.lowercase()
             if (key in idByLowerName) return null
-            val user = User(nextId++, username, passwordHash, isGuest, createdAt)
+            val user = User(nextId++, username, passwordHash, isGuest, isBot, createdAt)
             byId[user.id] = user
             idByLowerName[key] = user.id
             user

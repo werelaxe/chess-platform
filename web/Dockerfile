@@ -11,7 +11,8 @@ WORKDIR /src
 COPY gradlew settings.gradle.kts build.gradle.kts gradle.properties ./
 COPY gradle ./gradle
 COPY core/build.gradle.kts ./core/
-# settings.gradle.kts includes the server project; its build file is enough for configuration.
+# settings.gradle.kts includes the engine and server projects; their build files are enough for configuration.
+COPY engine/build.gradle.kts ./engine/
 COPY server/build.gradle.kts ./server/
 RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     chmod +x gradlew && ./gradlew :core:dependencies --no-daemon -q > /dev/null

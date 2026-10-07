@@ -19,21 +19,31 @@ import java.time.ZoneOffset
 
 class ExposedUserRepository(private val db: Database) : UserRepository {
     override suspend fun create(username: String, passwordHash: String, createdAt: Instant): User? =
-        insert(username, passwordHash, isGuest = false, createdAt)
+        insert(username, passwordHash, isGuest = false, isBot = false, createdAt)
 
     override suspend fun createGuest(username: String, createdAt: Instant): User? =
-        insert(username, passwordHash = null, isGuest = true, createdAt)
+        insert(username, passwordHash = null, isGuest = true, isBot = false, createdAt)
 
-    private suspend fun insert(username: String, passwordHash: String?, isGuest: Boolean, createdAt: Instant): User? = tx {
+    override suspend fun createBot(username: String, createdAt: Instant): User? =
+        insert(username, passwordHash = null, isGuest = false, isBot = true, createdAt)
+
+    private suspend fun insert(
+        username: String,
+        passwordHash: String?,
+        isGuest: Boolean,
+        isBot: Boolean,
+        createdAt: Instant,
+    ): User? = tx {
         try {
             val id = Users.insert {
                 it[Users.username] = username
                 it[Users.usernameLower] = username.lowercase()
                 it[Users.passwordHash] = passwordHash
                 it[Users.isGuest] = isGuest
+                it[Users.isBot] = isBot
                 it[Users.createdAt] = createdAt.atOffset(ZoneOffset.UTC)
             }[Users.id]
-            User(id, username, passwordHash, isGuest, createdAt)
+            User(id, username, passwordHash, isGuest, isBot, createdAt)
         } catch (e: SQLException) {
             if (isUniqueViolation(e)) null else throw e
         }
@@ -62,6 +72,7 @@ class ExposedUserRepository(private val db: Database) : UserRepository {
         username = this[Users.username],
         passwordHash = this[Users.passwordHash],
         isGuest = this[Users.isGuest],
+        isBot = this[Users.isBot],
         createdAt = this[Users.createdAt].toInstant(),
     )
 

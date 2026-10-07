@@ -10,6 +10,9 @@ interface UserRepository {
     /** Inserts a guest, who has no password; returns null when the username is already taken. */
     suspend fun createGuest(username: String, createdAt: Instant): User?
 
+    /** Inserts the computer player, which has no password; returns null when the username is already taken. */
+    suspend fun createBot(username: String, createdAt: Instant): User?
+
     suspend fun findById(id: Long): User?
 
     /** Case-insensitive lookup. */

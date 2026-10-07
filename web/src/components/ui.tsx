@@ -1,13 +1,17 @@
 import type { ReactNode } from "react";
 import { errorMessage } from "../api/client";
-import type { GameKind, GameLifecycle, UserRef, Visibility } from "../api/types";
+import type { BotLevel, GameKind, GameLifecycle, UserRef, Visibility } from "../api/types";
+import { playerLabel } from "../core/computer";
 
-/** A user's name; guest accounts carry a small tag so they are recognisable but not loud. */
-export function Username({ user }: { user: UserRef }) {
+/**
+ * A user's name; guests and the computer carry a small tag so they are recognisable but not loud.
+ * The computer is shown with the level of the game when it is known ("Computer · Medium").
+ */
+export function Username({ user, botLevel }: { user: UserRef; botLevel?: BotLevel | null }) {
   return (
     <>
-      {user.username}
-      {user.guest ? <span className="guest-tag">guest</span> : null}
+      {playerLabel(user, botLevel)}
+      {user.bot ? <span className="bot-tag">bot</span> : user.guest ? <span className="guest-tag">guest</span> : null}
     </>
   );
 }

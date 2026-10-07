@@ -1,10 +1,13 @@
 package ru.werelaxe.chess.server
 
 import io.ktor.server.application.Application
+import io.ktor.server.application.ApplicationStopping
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.routing.routing
 import org.slf4j.LoggerFactory
+import ru.werelaxe.chess.engine.ChessEngine
+import ru.werelaxe.chess.engine.EngineLevel
 import ru.werelaxe.chess.server.config.AppConfig
 import ru.werelaxe.chess.server.db.DatabaseFactory
 import ru.werelaxe.chess.server.plugins.configureCallLogging
@@ -23,6 +26,8 @@ import ru.werelaxe.chess.server.routes.gameRoutes
 import ru.werelaxe.chess.server.routes.healthRoutes
 import ru.werelaxe.chess.server.routes.webSocketRoutes
 import ru.werelaxe.chess.server.service.AuthService
+import ru.werelaxe.chess.server.service.BotPlayer
+import ru.werelaxe.chess.server.service.BotUser
 import ru.werelaxe.chess.server.service.GameService
 import ru.werelaxe.chess.server.service.JwtService
 import ru.werelaxe.chess.server.ws.GameHub
@@ -51,19 +56,34 @@ fun main() {
 }
 
 /**
- * Wires the whole application. Tests call it directly with in-memory repositories,
- * a seeded [random] and a fixed [clock]; [main] calls it with the PostgreSQL repositories.
+ * Wires the whole application. Tests call it directly with in-memory repositories, a seeded
+ * [random], a fixed [clock] and a fast engine; [main] calls it with the PostgreSQL repositories.
  */
-fun Application.module(
+suspend fun Application.module(
     config: AppConfig,
     repositories: Repositories,
     random: Random = Random.Default,
     clock: Clock = Clock.systemUTC(),
+    engines: (EngineLevel) -> ChessEngine = { ChessEngine(it, random) },
+    botPause: kotlin.time.Duration = BotPlayer.DEFAULT_PAUSE,
 ) {
+    // After the migrations (main connects before starting the server) and before the first
+    // request; the in-memory repositories of the tests start empty, so this runs every time.
+    BotUser.ensure(repositories.users, clock)
+
     val jwt = JwtService(config.jwtSecret, Duration.ofDays(config.jwtTtlDays), clock)
     val authService = AuthService(repositories.users, jwt, random, clock, config.bcryptCost)
     val hub = GameHub()
-    val gameService = GameService(repositories.games, repositories.users, hub, random, clock)
+    val gameService = GameService(
+        repositories.games,
+        repositories.users,
+        hub,
+        random,
+        clock,
+        engines = engines,
+        botPause = botPause,
+    )
+    monitor.subscribe(ApplicationStopping) { gameService.close() }
 
     configureSerialization()
     configureStatusPages()

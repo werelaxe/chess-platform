@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import type { Color, DrawAction, GameSummary, UserRef } from "../api/types";
+import { botColor } from "../core/computer";
 
 export function GameControls({
   game,
@@ -26,6 +27,8 @@ export function GameControls({
   const [copied, setCopied] = useState(false);
   const isCreator = viewer !== null && viewer.id === game.creator.id;
   const isPlayer = viewerColor !== null;
+  // Computer games start active, so they are never joined, and draw offers are not available in them.
+  const computer = botColor(game) !== null;
 
   async function copyLink() {
     try {
@@ -43,7 +46,7 @@ export function GameControls({
   }
 
   let buttons: React.ReactNode = null;
-  if (game.status === "WAITING") {
+  if (game.status === "WAITING" && !computer) {
     if (isCreator) {
       buttons = (
         <button type="button" className="btn btn--danger" disabled={busy} onClick={confirmResign}>
@@ -72,7 +75,7 @@ export function GameControls({
     const offer = game.drawOfferedBy;
     buttons = (
       <>
-        {offer === null ? (
+        {computer ? null : offer === null ? (
           <button type="button" className="btn" disabled={busy} onClick={() => onDraw("OFFER")}>
             Offer draw
           </button>
@@ -121,7 +124,9 @@ export function GameControls({
             </button>
           </div>
           <p className="faint small" style={{ marginTop: 8 }}>
-            This game is private: only people with the link can find it.
+            {computer
+              ? "Computer games are unlisted: only people with the link can watch."
+              : "This game is private: only people with the link can find it."}
           </p>
         </>
       ) : null}
