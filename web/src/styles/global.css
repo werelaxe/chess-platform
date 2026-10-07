@@ -232,6 +232,8 @@ code,
   color: var(--ink-muted);
   font-weight: 500;
   font-size: 0.95rem;
+  /* Labels differ in length between languages; never break them into two lines. */
+  white-space: nowrap;
   transition: color 0.15s, background-color 0.15s;
 }
 
@@ -301,6 +303,7 @@ code,
 /* Language switcher: a small segmented control, EN / RU. */
 .nav__lang {
   display: inline-flex;
+  flex-shrink: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius-s);
   overflow: hidden;
@@ -308,6 +311,7 @@ code,
 
 .nav__lang-btn {
   padding: 5px 9px;
+  white-space: nowrap;
   border: 0;
   background: transparent;
   color: var(--ink-muted);
