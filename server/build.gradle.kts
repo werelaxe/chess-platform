@@ -31,6 +31,9 @@ dependencies {
     implementation(libs.ktor.server.call.logging)
     implementation(libs.ktor.server.rate.limit)
     implementation(libs.ktor.server.default.headers)
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.cio)
+    implementation(libs.ktor.client.content.negotiation)
 
     implementation(libs.exposed.core)
     implementation(libs.exposed.jdbc)
@@ -46,6 +49,7 @@ dependencies {
     testImplementation(libs.ktor.server.test.host)
     testImplementation(libs.ktor.client.content.negotiation)
     testImplementation(libs.ktor.client.websockets)
+    testImplementation(libs.ktor.client.mock)
 }
 
 tasks.withType<Test>().configureEach {

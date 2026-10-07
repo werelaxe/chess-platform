@@ -156,6 +156,11 @@ replayed games and the WebSocket subscriber registry; PostgreSQL is the source o
 | `JWT_SECRET` | none: required (at least 16 characters), the server refuses to start without it | HS256 key |
 | `JWT_TTL_DAYS` | `30` | token lifetime |
 | `CORS_ORIGINS` | `http://localhost:5173` | comma-separated allowed origins (dev only; in production nginx serves both) |
+| `ENGINE_URL` | unset | base URL of the engine service (section 2.7); unset means the in-process engine |
+| `ENGINE_RETRY_SECONDS` | `30` | how long to retry an overloaded engine service before falling back |
+| `BOT_PARALLELISM` | `2` | concurrent in-process searches (fallback only) |
+| `BOT_REMOTE_CONCURRENCY` | `64` | concurrent requests to the engine service |
+| `GAME_IDLE_MINUTES` | `30` | idle time after which a cached game is dropped from memory |
 
 Flyway migrations in `server/src/main/resources/db/migration` run at startup.
 
@@ -308,14 +313,51 @@ The computer plays through `BotPlayer` using the engine in `engine/`
 creation when it plays white, after every move, and, as self-healing after a restart, whenever
 the game is fetched (`GET /api/games/{id}`) or a WebSocket connects to it. A wake-up checks the
 move count cheaply and, if it is the computer's turn, takes an immutable snapshot of the
-position under the game's lock and searches outside it on a dispatcher limited to two threads;
-a game is never searched twice at the same time, and a wake-up that arrives during a search is
-honoured afterwards. The chosen move goes through the normal move pipeline (`GameService.move`
+position under the game's lock and asks for a move outside it: normally from the engine
+service (section 2.7) through `ENGINE_URL`, with the in-process engine as a fallback when the
+service is unavailable or `ENGINE_URL` is unset (then at most `BOT_PARALLELISM` searches run
+at a time, default 2). A game is never searched twice at the same time, and a wake-up that
+arrives during a search is honoured afterwards. The chosen move goes through the normal move pipeline (`GameService.move`
 with the computer's principal), so observations get their outcome from the server and clients
 receive the usual `move` events. A reply to a human move is delayed so that at least 700 ms pass
 after the move (the search time counts towards it). A rejected move (the human resigned
 meanwhile, or the engine erred) is logged and followed by a fresh look at the game, a few times
 at most; any other failure is logged and left for the next wake-up.
+
+### 2.7 Engine service (`engine-service`)
+
+Searching is the only CPU-heavy work of the platform, so it runs in its own stateless
+service that can be scaled independently of the API (`docker compose up -d --scale engine=N`,
+or replicas on other hosts). It is a small Ktor application around `engine/`:
+
+```
+POST /think   {"gameId":"aZ3kq9...","kind":"QUANTUM","level":"MEDIUM","moves":[GameMove, ...]}
+              -> 200 {"move": GameMove, "elapsedMillis": 1234}   (an Observe move has no outcome)
+              -> 204 when the game is already over
+              -> 400 {"error":"validation","message":"..."} for an invalid or illegal history
+              -> 503 {"error":"overloaded","message":"..."} when the queue is full (the API retries)
+GET  /health  -> 200 {"status":"ok","parallelism":8,"inFlight":3,"queued":0}
+```
+
+The service replays the move list with `Game.replay` (sub-millisecond for classic chess, about
+10 ms for a long quantum game with hundreds of universes, i.e. about 1% of a search) and keeps
+a small LRU cache of replayed states keyed by `(gameId, ply)` so that the next request for the
+same game only applies the new moves. Searches run on a dispatcher of `ENGINE_PARALLELISM`
+threads (default: the CPUs available to the container); requests beyond that wait in a bounded
+queue (`ENGINE_QUEUE_LIMIT`, default 4 x parallelism) and are refused with 503 above it. Under
+load the thinking budget shrinks: with `w` requests waiting and `p` threads the budget is
+multiplied by `min(1, p / w)` but never below `ENGINE_MIN_BUDGET_RATIO` (default 0.25), which
+keeps the reply latency bounded instead of letting the queue grow.
+
+Configuration: `PORT` (default 8081), `ENGINE_PARALLELISM`, `ENGINE_QUEUE_LIMIT`,
+`ENGINE_MIN_BUDGET_RATIO`. The API uses `ENGINE_URL` (compose: `http://engine:8081`), retries
+503 with backoff for up to `ENGINE_RETRY_SECONDS` (default 30) and falls back to its in-process
+engine after that or on connection errors, so a restart of the service never stalls a game.
+The API keeps at most `BOT_REMOTE_CONCURRENCY` (default 64) requests in flight.
+
+Games the API keeps in memory (`GameCache`) are dropped not only by the LRU bound but also after
+`GAME_IDLE_MINUTES` (default 30) without activity; they are replayed from the database on the
+next access.
 
 ## 3. Web client (`web`)
 
@@ -349,7 +391,8 @@ Game page behaviour:
 
 ## 4. Deployment
 
-`docker-compose.yml` runs four services: `db` (postgres:17, named volume; published on
+`docker-compose.yml` runs five services: `engine` (`engine-service/Dockerfile`, no published
+port, CPU-bound, scalable with `--scale engine=N`), `db` (postgres:17, named volume; published on
 `127.0.0.1:5432` only, so that a server started from Gradle can use it), `api`
 (`server/Dockerfile`: multi-stage Gradle build on Temurin 21, runs as an unprivileged user,
 healthcheck on `/api/health`) and `web` (`web/Dockerfile`: builds the core JS library and the
@@ -369,7 +412,7 @@ real client address in its access log and in `X-Real-IP` to the API (which rate 
 Container logs go to Docker's json-file driver with rotation (`docker compose logs <service>`).
 
 Deployments are done by the GitHub Actions workflow `deploy.yml`, started by hand from the
-Actions tab and only on `master`: it builds both images, pushes
+Actions tab and only on `master`: it builds the three images, pushes
 them to GHCR tagged with the commit SHA and `latest`, copies the compose files to the server and
 runs `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` there over SSH with
 `IMAGE_TAG` set to the SHA, then checks `/api/health`. Rolling back is the same workflow run on

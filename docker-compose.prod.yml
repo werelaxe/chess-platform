@@ -2,6 +2,11 @@
 # locally. Usage on the server (IMAGE_TAG is a git SHA or "latest"):
 #   IMAGE_TAG=<tag> docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 services:
+  engine:
+    build: !reset null
+    image: ghcr.io/werelaxe/chess-platform-engine:${IMAGE_TAG:-latest}
+    pull_policy: always
+
   api:
     build: !reset null
     image: ghcr.io/werelaxe/chess-platform-api:${IMAGE_TAG:-latest}

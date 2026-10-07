@@ -27,8 +27,10 @@ import ru.werelaxe.chess.server.model.GameRecord
 import ru.werelaxe.chess.server.model.GameResult
 import ru.werelaxe.chess.server.model.Visibility
 import ru.werelaxe.chess.server.service.BotUser
+import ru.werelaxe.chess.server.service.MoveProvider
 import ru.werelaxe.chess.server.ws.ServerEvent
 import java.time.Instant
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -117,6 +119,38 @@ class ComputerOpponentTest {
         move(alice, created.id, "d2d4")
         assertEquals(4, awaitMoves(alice, created.id, 4).moveCount)
         assertReplays(game(created.id))
+    }
+
+    /** What the computer player asked a provider for. */
+    private data class Think(val gameId: String, val kind: GameKind, val level: EngineLevel, val moves: List<GameMove>)
+
+    @Test
+    fun computerMovesComeFromTheInjectedProviderWithTheGameSnapshot() {
+        val thinks = CopyOnWriteArrayList<Think>()
+        val scripted = object : MoveProvider {
+            override suspend fun chooseMove(gameId: String, kind: GameKind, level: EngineLevel, moves: List<GameMove>): GameMove? {
+                thinks += Think(gameId, kind, level, moves)
+                return when (moves.size) {
+                    1 -> normal("e7e5")
+                    3 -> normal("b8c6")
+                    else -> null
+                }
+            }
+        }
+        serverTest(moveProvider = scripted) {
+            val alice = token("alice")
+            val created = computerGame(alice, kind = GameKind.CLASSIC, color = ColorChoice.WHITE, level = EngineLevel.HARD)
+            move(alice, created.id, "e2e4")
+            assertEquals(2, awaitMoves(alice, created.id, 2).moveCount)
+            assertEquals(listOf(normal("e2e4"), normal("e7e5")), game(created.id).moves)
+            assertEquals(listOf(Think(created.id, GameKind.CLASSIC, EngineLevel.HARD, listOf(normal("e2e4")))), thinks)
+
+            move(alice, created.id, "g1f3")
+            assertEquals(4, awaitMoves(alice, created.id, 4).moveCount)
+            assertEquals(normal("b8c6"), game(created.id).moves[3])
+            assertEquals(listOf(normal("e2e4"), normal("e7e5"), normal("g1f3")), thinks.last().moves)
+            assertEquals(2, thinks.size, "one request per computer move")
+        }
     }
 
     @Test

@@ -45,6 +45,8 @@ import ru.werelaxe.chess.server.model.Visibility
 import ru.werelaxe.chess.server.repository.Repositories
 import ru.werelaxe.chess.server.repository.memory.InMemoryGameRepository
 import ru.werelaxe.chess.server.repository.memory.InMemoryUserRepository
+import ru.werelaxe.chess.server.service.InProcessMoveProvider
+import ru.werelaxe.chess.server.service.MoveProvider
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -62,29 +64,34 @@ val TEST_CONFIG = AppConfig(jwtSecret = "test-secret", bcryptCost = 4)
 
 /**
  * Runs [block] against a server wired with fresh in-memory repositories and no database. The
- * computer plays at the easy level whatever level a game asks for, with a fresh seeded random
- * for every move so that its choices are reproducible, and replies after [botPause].
+ * computer's moves come from [moveProvider]: by default the in-process engine at the easy
+ * level whatever level a game asks for, with a fresh seeded random for every move so that its
+ * choices are reproducible. The computer replies after [botPause].
  */
-fun serverTest(seed: Int = 42, botPause: Duration = 10.milliseconds, block: suspend TestContext.() -> Unit) =
-    testApplication {
-        val repositories = Repositories(InMemoryUserRepository(), InMemoryGameRepository())
-        val clock = Clock.fixed(Instant.parse("2026-10-07T10:00:00Z"), ZoneOffset.UTC)
-        application {
-            module(
-                TEST_CONFIG,
-                repositories,
-                random = Random(seed),
-                clock = clock,
-                engines = { ChessEngine(EngineLevel.EASY, Random(seed)) },
-                botPause = botPause,
-            )
-        }
-        val client = createClient {
-            install(ContentNegotiation) { json(ChessJson.json) }
-            install(WebSockets)
-        }
-        TestContext(client, repositories).block()
+fun serverTest(
+    seed: Int = 42,
+    botPause: Duration = 10.milliseconds,
+    moveProvider: MoveProvider = InProcessMoveProvider({ ChessEngine(EngineLevel.EASY, Random(seed)) }),
+    block: suspend TestContext.() -> Unit,
+) = testApplication {
+    val repositories = Repositories(InMemoryUserRepository(), InMemoryGameRepository())
+    val clock = Clock.fixed(Instant.parse("2026-10-07T10:00:00Z"), ZoneOffset.UTC)
+    application {
+        module(
+            TEST_CONFIG,
+            repositories,
+            random = Random(seed),
+            clock = clock,
+            moveProvider = moveProvider,
+            botPause = botPause,
+        )
     }
+    val client = createClient {
+        install(ContentNegotiation) { json(ChessJson.json) }
+        install(WebSockets)
+    }
+    TestContext(client, repositories).block()
+}
 
 class TestContext(val client: HttpClient, val repositories: Repositories) {
     suspend fun register(username: String, password: String = TEST_PASSWORD): HttpResponse =
