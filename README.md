@@ -43,7 +43,7 @@ GitHub Actions do the deployments (`.github/workflows/deploy.yml`): the `api` an
 are built in CI, pushed to GHCR (`ghcr.io/werelaxe/chess-platform-api|web`, tagged with the
 commit SHA and `latest`) and the server is updated over SSH with
 `docker-compose.prod.yml`, which runs those images instead of building. Trigger it from the
-Actions tab ("Deploy", any branch or tag) or by pushing a tag such as `v1.2.3`. The workflow
+Actions tab ("Deploy" on `master`; runs on other branches are skipped). The workflow
 needs the secret `DEPLOY_SSH_KEY` and the variables `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`
 and `SITE_URL`. On the server itself only `.env`, the compose files and `deploy/Caddyfile` live
 in `DEPLOY_PATH`. `ci.yml` runs all tests on every push and pull request.
