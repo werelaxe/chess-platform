@@ -20,7 +20,7 @@ services:
       resources:
         limits:
           # Searching is the only CPU-heavy work; leave cores for the API and the database.
-          cpus: ${ENGINE_CPUS:-6}
+          cpus: ${ENGINE_CPUS:-0}
     healthcheck:
       # The runtime image ships no HTTP client, so bash's /dev/tcp performs the request.
       test:
