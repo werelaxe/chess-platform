@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { api, isApiError } from "../api/client";
 import { BRAND_NAME, BRAND_TAGLINE } from "../brand";
 import { useAuthStore } from "../store/auth";
+import { Username } from "./ui";
 
 function navClass({ isActive }: { isActive: boolean }): string {
   return `nav__link${isActive ? " is-active" : ""}`;
@@ -70,7 +71,15 @@ export function Layout() {
             <div className="nav__user">
               {user ? (
                 <>
-                  <span className="nav__username">{user.username}</span>
+                  <span className="nav__username">
+                    <Username user={user} />
+                  </span>
+                  {user.guest ? (
+                    <Link to="/register" className="nav__hint">
+                      <span className="nav__hint-long">Register to keep your games</span>
+                      <span className="nav__hint-short">Register</span>
+                    </Link>
+                  ) : null}
                   <button type="button" className="btn btn--ghost btn--small" onClick={logout}>
                     Log out
                   </button>

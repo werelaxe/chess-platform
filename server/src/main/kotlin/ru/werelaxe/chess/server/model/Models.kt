@@ -24,10 +24,12 @@ enum class GamePhase {
 @Serializable
 data class GameResult(val winner: Color?, val reason: EndReason)
 
+/** [passwordHash] is null for guests, who cannot log in and exist only through their token. */
 data class User(
     val id: Long,
     val username: String,
-    val passwordHash: String,
+    val passwordHash: String?,
+    val isGuest: Boolean,
     val createdAt: Instant,
 )
 

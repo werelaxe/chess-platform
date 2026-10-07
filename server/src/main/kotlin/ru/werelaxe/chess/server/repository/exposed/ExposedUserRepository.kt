@@ -18,15 +18,22 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 class ExposedUserRepository(private val db: Database) : UserRepository {
-    override suspend fun create(username: String, passwordHash: String, createdAt: Instant): User? = tx {
+    override suspend fun create(username: String, passwordHash: String, createdAt: Instant): User? =
+        insert(username, passwordHash, isGuest = false, createdAt)
+
+    override suspend fun createGuest(username: String, createdAt: Instant): User? =
+        insert(username, passwordHash = null, isGuest = true, createdAt)
+
+    private suspend fun insert(username: String, passwordHash: String?, isGuest: Boolean, createdAt: Instant): User? = tx {
         try {
             val id = Users.insert {
                 it[Users.username] = username
                 it[Users.usernameLower] = username.lowercase()
                 it[Users.passwordHash] = passwordHash
+                it[Users.isGuest] = isGuest
                 it[Users.createdAt] = createdAt.atOffset(ZoneOffset.UTC)
             }[Users.id]
-            User(id, username, passwordHash, createdAt)
+            User(id, username, passwordHash, isGuest, createdAt)
         } catch (e: SQLException) {
             if (isUniqueViolation(e)) null else throw e
         }
@@ -54,6 +61,7 @@ class ExposedUserRepository(private val db: Database) : UserRepository {
         id = this[Users.id],
         username = this[Users.username],
         passwordHash = this[Users.passwordHash],
+        isGuest = this[Users.isGuest],
         createdAt = this[Users.createdAt].toInstant(),
     )
 

@@ -61,7 +61,7 @@ fun Application.module(
     clock: Clock = Clock.systemUTC(),
 ) {
     val jwt = JwtService(config.jwtSecret, Duration.ofDays(config.jwtTtlDays), clock)
-    val authService = AuthService(repositories.users, jwt, clock, config.bcryptCost)
+    val authService = AuthService(repositories.users, jwt, random, clock, config.bcryptCost)
     val hub = GameHub()
     val gameService = GameService(repositories.games, repositories.users, hub, random, clock)
 

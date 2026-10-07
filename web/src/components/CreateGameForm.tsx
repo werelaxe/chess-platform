@@ -6,7 +6,7 @@ import { useAuthStore } from "../store/auth";
 import { Choice, ErrorNotice } from "./ui";
 
 export function CreateGameForm() {
-  const user = useAuthStore((state) => state.user);
+  const { user, setSession } = useAuthStore();
   const navigate = useNavigate();
   const [kind, setKind] = useState<GameKind>("QUANTUM");
   const [visibility, setVisibility] = useState<Visibility>("PUBLIC");
@@ -14,17 +14,25 @@ export function CreateGameForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
+  async function create(asGuest: boolean) {
     setSubmitting(true);
     setError(null);
     try {
+      if (asGuest) {
+        const session = await api.guest();
+        setSession(session.token, session.user);
+      }
       const game = await api.createGame({ kind, visibility, color });
       navigate(`/games/${game.id}`);
     } catch (cause) {
       setError(cause);
       setSubmitting(false);
     }
+  }
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    void create(false);
   }
 
   return (
@@ -84,9 +92,17 @@ export function CreateGameForm() {
           {submitting ? "Creating" : "Create game"}
         </button>
       ) : (
-        <p className="muted small">
-          <Link to="/login">Log in</Link> or <Link to="/register">register</Link> to create a game.
-        </p>
+        <div className="stack">
+          <Link to="/login" className="btn btn--primary btn--block">
+            Log in
+          </Link>
+          <button type="button" className="btn btn--block" disabled={submitting} onClick={() => void create(true)}>
+            {submitting ? "Creating" : "Continue as guest"}
+          </button>
+          <p className="faint small">
+            No account yet? <Link to="/register">Register</Link>, or continue as a guest to create this game right away.
+          </p>
+        </div>
       )}
     </form>
   );

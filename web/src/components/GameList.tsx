@@ -1,7 +1,7 @@
 import { Link } from "react-router";
 import type { GameSummary, UserRef } from "../api/types";
 import { formatResult } from "../core/notation";
-import { EmptyState, KindPill, LifecyclePill, VisibilityPill } from "./ui";
+import { EmptyState, KindPill, LifecyclePill, Username, VisibilityPill } from "./ui";
 
 function Seat({ player, color, viewer }: { player: UserRef | null; color: "white" | "black"; viewer: UserRef | null }) {
   const you = player !== null && viewer !== null && player.id === viewer.id;
@@ -10,7 +10,7 @@ function Seat({ player, color, viewer }: { player: UserRef | null; color: "white
       <span className={`seat-dot seat-dot--${color}`} aria-hidden="true" />
       {player ? (
         <>
-          {player.username}
+          <Username user={player} />
           {you ? <span className="faint"> (you)</span> : null}
         </>
       ) : (

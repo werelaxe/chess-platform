@@ -109,6 +109,10 @@ export const api = {
   login(username: string, password: string): Promise<AuthResponse> {
     return request("POST", "/api/auth/login", { username, password });
   },
+  /** Creates a fresh guest account (`guest-NNNNNN`) and signs it in. */
+  guest(): Promise<AuthResponse> {
+    return request("POST", "/api/auth/guest");
+  },
   me(): Promise<UserRef> {
     return request("GET", "/api/auth/me");
   },

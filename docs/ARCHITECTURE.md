@@ -162,7 +162,7 @@ Flyway migrations in `server/src/main/resources/db/migration` run at startup.
 
 ```sql
 users(id BIGSERIAL PK, username VARCHAR(20), username_lower VARCHAR(20) UNIQUE,
-      password_hash TEXT, created_at TIMESTAMPTZ)
+      password_hash TEXT NULL, is_guest BOOLEAN, created_at TIMESTAMPTZ)
 games(id VARCHAR(16) PK, kind VARCHAR(16), visibility VARCHAR(16), status VARCHAR(16),
       creator_id BIGINT FK users, white_id BIGINT FK users NULL, black_id BIGINT FK users NULL,
       move_count INT, result_winner VARCHAR(8) NULL, result_reason VARCHAR(32) NULL,
@@ -175,6 +175,12 @@ Game ids are 12 random base62 characters; a path id of any other shape is answer
 without touching the database. Usernames: 3–20 characters `[A-Za-z0-9_]`, unique
 case-insensitively; passwords 8–72 characters, stored as bcrypt (cost 12).
 
+Guests are ordinary `users` rows named `guest-NNNNNN` (six random digits 100000–999999, drawn
+again on collision) with `is_guest = true` and no `password_hash`; the token issued at creation
+is the only way to act as one. The prefix `guest-` is reserved (case-insensitively): registration
+rejects such names with 400 `validation`, and logging in with one fails with 401
+`invalid_credentials` because the row has no password.
+
 ### 2.3 REST API
 
 All endpoints under `/api`, JSON bodies, `Authorization: Bearer <jwt>` where required.
@@ -184,8 +190,10 @@ Errors: `{"error":"<code>","message":"<human readable>"}` with a matching HTTP s
 the server answers 429 `rate_limited`.
 
 ```
-POST /api/auth/register   {username, password}        -> 201 {token, user}     409 username_taken
-POST /api/auth/login      {username, password}        -> 200 {token, user}     401 on bad credentials
+POST /api/auth/register   {username, password}        -> 201 {token, user}     409 username_taken;
+                                                                                 400 validation for guest-* names
+POST /api/auth/login      {username, password}        -> 200 {token, user}     401 on bad credentials or a guest name
+POST /api/auth/guest      (no body)                    -> 201 {token, user}     user.guest = true
 GET  /api/auth/me                                      -> 200 user             (auth)
 
 POST /api/games           {kind, visibility, color}   -> 201 GameDto          (auth)
@@ -205,6 +213,10 @@ GET  /api/health                                       -> 200 {status:"ok"}
 
 In both listings `limit` defaults to 50 and is clamped to 1..200; `offset` defaults to 0.
 
+A guest token has the same lifetime as a registered user's and grants the same rights: guests
+create, join and play games exactly like registered users and appear in `GameSummary` with
+`"guest": true`.
+
 Draw offers: `OFFER` records the color (409 `draw_pending` while one is open); `ACCEPT` by the
 opponent finishes the game with `DRAW_AGREEMENT`; `DECLINE` (opponent) and `WITHDRAW` (offerer)
 clear it, and so does a move by the opponent, whereas the offerer's own move keeps the offer
@@ -217,7 +229,7 @@ response (and the `game` event) carry the DTO with `status: "FINISHED"` and
 `game_finished`.
 
 ```jsonc
-UserRef     {"id": 1, "username": "alice"}
+UserRef     {"id": 1, "username": "alice", "guest": false}   // "guest" is omitted when false
 GameSummary {"id":"aZ3kq9...","kind":"QUANTUM","visibility":"PUBLIC","status":"ACTIVE",
              "white":UserRef|null,"black":UserRef|null,"creator":UserRef,
              "moveCount":12,"result":{"winner":"WHITE"|"BLACK"|null,"reason":"..."}|null,

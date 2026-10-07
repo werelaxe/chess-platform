@@ -10,10 +10,11 @@ import ru.werelaxe.chess.server.model.GameResult
 import ru.werelaxe.chess.server.model.User
 import ru.werelaxe.chess.server.model.Visibility
 
+/** [guest] is omitted from the JSON for registered users (defaults are not encoded). */
 @Serializable
-data class UserRef(val id: Long, val username: String) {
+data class UserRef(val id: Long, val username: String, val guest: Boolean = false) {
     companion object {
-        fun of(user: User) = UserRef(user.id, user.username)
+        fun of(user: User) = UserRef(user.id, user.username, user.isGuest)
     }
 }
 

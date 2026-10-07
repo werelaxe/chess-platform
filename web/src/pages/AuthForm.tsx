@@ -1,29 +1,9 @@
 import { useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { api, errorMessage, isApiError } from "../api/client";
+import { PASSWORD_MAX_BYTES, validatePassword, validateUsername } from "../api/credentials";
 import { useAuthStore } from "../store/auth";
-import { Notice } from "../components/ui";
-
-const USERNAME_PATTERN = /^[A-Za-z0-9_]{3,20}$/;
-const PASSWORD_MIN = 8;
-/** The server limits the UTF-8 encoding of the password (bcrypt input), not its character count. */
-const PASSWORD_MAX_BYTES = 72;
-
-function validateUsername(username: string): string | null {
-  if (username.length === 0) return "Enter a username.";
-  if (username.length < 3 || username.length > 20) return "Username must be 3 to 20 characters long.";
-  if (!USERNAME_PATTERN.test(username)) return "Only letters, digits and underscores are allowed.";
-  return null;
-}
-
-function validatePassword(password: string): string | null {
-  if (password.length === 0) return "Enter a password.";
-  if (password.length < PASSWORD_MIN) return `Password must be at least ${PASSWORD_MIN} characters long.`;
-  if (new TextEncoder().encode(password).length > PASSWORD_MAX_BYTES) {
-    return `Password must be at most ${PASSWORD_MAX_BYTES} bytes long; a character outside ASCII takes 2 to 4 bytes.`;
-  }
-  return null;
-}
+import { Notice, Username } from "../components/ui";
 
 interface LocationState {
   from?: string;
@@ -32,14 +12,14 @@ interface LocationState {
 export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const setSession = useAuthStore((state) => state.setSession);
+  const { user, setSession } = useAuthStore();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [touched, setTouched] = useState({ username: false, password: false });
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 
-  const usernameError = validateUsername(username);
+  const usernameError = validateUsername(username, mode);
   const passwordError = validatePassword(password);
   const isRegister = mode === "register";
   const from = (location.state as LocationState | null)?.from ?? "/";
@@ -62,6 +42,19 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
     }
   }
 
+  async function playAsGuest() {
+    setSubmitting(true);
+    setServerError(null);
+    try {
+      const response = await api.guest();
+      setSession(response.token, response.user);
+      navigate(from, { replace: true });
+    } catch (error) {
+      setServerError(errorMessage(error));
+      setSubmitting(false);
+    }
+  }
+
   return (
     <div className="page page--narrow">
       <div className="page__header reveal">
@@ -71,6 +64,12 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           {isRegister ? "Pick a name other players will see." : "Sign in to create games, join open ones and make moves."}
         </p>
       </div>
+      {isRegister && user?.guest ? (
+        <Notice kind="info">
+          You are playing as <Username user={user} />. Creating an account starts a new session; games played as a guest stay with the
+          guest.
+        </Notice>
+      ) : null}
       <form className="card reveal" style={{ "--i": 1 } as React.CSSProperties} onSubmit={submit} noValidate>
         <div className="field">
           <label className="field__label" htmlFor="username">
@@ -135,6 +134,19 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           )}
         </p>
       </form>
+      {user ? null : (
+        <div className="guest-entry reveal" style={{ "--i": 2 } as React.CSSProperties}>
+          <div className="guest-entry__rule">
+            <span>or</span>
+          </div>
+          <button type="button" className="btn btn--block" disabled={submitting} onClick={() => void playAsGuest()}>
+            Play as guest
+          </button>
+          <p className="faint small guest-entry__hint">
+            No password: guest games are tied to this browser session and are lost when it is cleared.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

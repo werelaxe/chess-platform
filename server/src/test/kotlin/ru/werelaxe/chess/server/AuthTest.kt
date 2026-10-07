@@ -78,6 +78,7 @@ class AuthTest {
         assertTrue(responses.take(20).all { it.status == HttpStatusCode.Unauthorized })
         responses.last().assertError(HttpStatusCode.TooManyRequests, "rate_limited")
         register("alice").assertError(HttpStatusCode.TooManyRequests, "rate_limited")
+        guestResponse().assertError(HttpStatusCode.TooManyRequests, "rate_limited")
         // Other routes are not throttled.
         assertEquals(HttpStatusCode.OK, client.get("/api/health").status)
     }

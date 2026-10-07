@@ -79,6 +79,15 @@ class TestContext(val client: HttpClient) {
             setBody(CredentialsRequest(username, password))
         }
 
+    suspend fun guestResponse(): HttpResponse = client.post("/api/auth/guest")
+
+    /** Creates a guest account and returns its token and user. */
+    suspend fun guest(): AuthResponse {
+        val response = guestResponse()
+        assertEquals(HttpStatusCode.Created, response.status, response.bodyAsString())
+        return response.body()
+    }
+
     suspend fun createGameResponse(
         token: String,
         kind: GameKind = GameKind.CLASSIC,

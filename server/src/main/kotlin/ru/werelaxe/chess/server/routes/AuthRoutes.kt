@@ -34,6 +34,9 @@ fun Route.authRoutes(auth: AuthService) {
                 val request = call.receive<CredentialsRequest>()
                 call.respond(auth.login(request.username, request.password))
             }
+            post("/guest") {
+                call.respond(HttpStatusCode.Created, auth.createGuest())
+            }
         }
         authenticate(JWT_AUTH) {
             get("/me") {

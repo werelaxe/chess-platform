@@ -13,14 +13,21 @@ class InMemoryUserRepository : UserRepository {
     private val idByLowerName = HashMap<String, Long>()
     private var nextId = 1L
 
-    override suspend fun create(username: String, passwordHash: String, createdAt: Instant): User? = mutex.withLock {
-        val key = username.lowercase()
-        if (key in idByLowerName) return null
-        val user = User(nextId++, username, passwordHash, createdAt)
-        byId[user.id] = user
-        idByLowerName[key] = user.id
-        user
-    }
+    override suspend fun create(username: String, passwordHash: String, createdAt: Instant): User? =
+        insert(username, passwordHash, isGuest = false, createdAt)
+
+    override suspend fun createGuest(username: String, createdAt: Instant): User? =
+        insert(username, passwordHash = null, isGuest = true, createdAt)
+
+    private suspend fun insert(username: String, passwordHash: String?, isGuest: Boolean, createdAt: Instant): User? =
+        mutex.withLock {
+            val key = username.lowercase()
+            if (key in idByLowerName) return null
+            val user = User(nextId++, username, passwordHash, isGuest, createdAt)
+            byId[user.id] = user
+            idByLowerName[key] = user.id
+            user
+        }
 
     override suspend fun findById(id: Long): User? = mutex.withLock { byId[id] }
 

@@ -759,15 +759,35 @@
   color: #bfeee5;
 }
 
-.banner {
+/* The slot keeps its height whether or not there is a message, so the board below never moves.
+   Narrow screens reserve two lines because the longest message wraps there. */
+.banner-slot {
+  --banner-lines: 1;
   width: 100%;
+  height: calc(var(--banner-lines) * 1.35em + 22px);
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0 14px;
+  overflow: hidden;
   text-align: center;
-  padding: 10px 14px;
   border-radius: var(--radius-m);
   border: 1px solid var(--accent-line);
   background: var(--accent-soft);
   color: var(--accent-bright);
-  font-size: 0.92rem;
+  transition: opacity 0.18s, visibility 0.18s;
+}
+
+.banner--hidden {
+  opacity: 0;
+  visibility: hidden;
 }
 
 @keyframes fade {
@@ -794,6 +814,10 @@
 }
 
 @media (max-width: 720px) {
+  .banner-slot {
+    --banner-lines: 2;
+  }
+
   .board-wrap {
     width: 100%;
   }

@@ -96,6 +96,8 @@ export interface BoardView {
 export interface UserRef {
   id: number;
   username: string;
+  /** True for guest accounts (`guest-NNNNNN`, no password); omitted or false for registered users. */
+  guest?: boolean;
 }
 
 export interface GameResult {

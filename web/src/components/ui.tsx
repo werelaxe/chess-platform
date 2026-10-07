@@ -1,6 +1,16 @@
 import type { ReactNode } from "react";
 import { errorMessage } from "../api/client";
-import type { GameKind, GameLifecycle, Visibility } from "../api/types";
+import type { GameKind, GameLifecycle, UserRef, Visibility } from "../api/types";
+
+/** A user's name; guest accounts carry a small tag so they are recognisable but not loud. */
+export function Username({ user }: { user: UserRef }) {
+  return (
+    <>
+      {user.username}
+      {user.guest ? <span className="guest-tag">guest</span> : null}
+    </>
+  );
+}
 
 export function KindPill({ kind }: { kind: GameKind }) {
   return <span className={`pill pill--${kind === "QUANTUM" ? "quantum" : "classic"}`}>{kind === "QUANTUM" ? "Quantum" : "Classic"}</span>;

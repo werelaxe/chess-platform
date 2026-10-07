@@ -14,7 +14,9 @@ object Users : Table("users") {
     val id = long("id").autoIncrement()
     val username = varchar("username", 20)
     val usernameLower = varchar("username_lower", 20).uniqueIndex()
-    val passwordHash = text("password_hash")
+    /** Null for guests, who have no password. */
+    val passwordHash = text("password_hash").nullable()
+    val isGuest = bool("is_guest")
     val createdAt = timestampWithTimeZone("created_at")
 
     override val primaryKey = PrimaryKey(id)

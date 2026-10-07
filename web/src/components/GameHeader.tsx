@@ -2,7 +2,7 @@ import type { Color, GameSummary, UserRef } from "../api/types";
 import type { SocketState } from "../api/ws";
 import type { GameSnapshot } from "../core/game";
 import { formatResult } from "../core/notation";
-import { KindPill, LifecyclePill, VisibilityPill } from "./ui";
+import { KindPill, LifecyclePill, Username, VisibilityPill } from "./ui";
 
 const SOCKET_LABELS: Record<SocketState, string> = {
   connecting: "Connecting",
@@ -30,7 +30,7 @@ function PlayerRow({
       <span className={`player__dot player__dot--${color.toLowerCase()}`} aria-hidden="true" />
       {player ? (
         <span className="player__name">
-          {player.username}
+          <Username user={player} />
           {isViewer ? <span className="faint"> (you)</span> : null}
         </span>
       ) : (

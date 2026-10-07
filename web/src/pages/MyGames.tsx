@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { GameLifecycle } from "../api/types";
 import { GameList } from "../components/GameList";
-import { ErrorNotice, Loading } from "../components/ui";
+import { ErrorNotice, Loading, Username } from "../components/ui";
 import { useAsync } from "../hooks/useAsync";
 import { useAuthStore } from "../store/auth";
 
@@ -28,7 +28,7 @@ export function MyGamesPage() {
   return (
     <div className="page">
       <div className="page__header reveal">
-        <div className="page__eyebrow">{user?.username}</div>
+        <div className="page__eyebrow">{user ? <Username user={user} /> : null}</div>
         <h1 className="page__title">My games</h1>
         <p className="page__lede">Every game you created or joined, newest first.</p>
       </div>

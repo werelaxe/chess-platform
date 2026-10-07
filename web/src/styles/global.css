@@ -260,11 +260,41 @@ code,
   font-family: var(--font-mono);
   font-size: 0.85rem;
   color: var(--ink-muted);
+  white-space: nowrap;
 }
 
 .nav__username::before {
   content: "@";
   color: var(--ink-faint);
+}
+
+.nav__hint {
+  font-size: 0.8rem;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+/* The full wording needs a wide bar; mid widths show the short form, the open mobile menu the full one. */
+.nav__hint-short {
+  display: none;
+}
+
+/* Marks guest accounts wherever a username is shown. */
+.guest-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 400;
+  font-style: normal;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.5;
+  color: var(--ink-faint);
+  vertical-align: 0.1em;
 }
 
 .nav__burger {
@@ -701,6 +731,40 @@ code,
   color: var(--ink-faint);
 }
 
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* "Play as guest" below the login and register forms. */
+.guest-entry {
+  margin-top: 18px;
+}
+
+.guest-entry__rule {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  color: var(--ink-faint);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.guest-entry__rule::before,
+.guest-entry__rule::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--line);
+}
+
+.guest-entry__hint {
+  margin-top: 10px;
+  text-align: center;
+}
+
 .small {
   font-size: 0.85rem;
 }
@@ -992,22 +1056,24 @@ code,
 /* ---------------------------------------------------------------------------
    Responsive
    --------------------------------------------------------------------------- */
-@media (max-width: 960px) {
-  .lobby {
-    grid-template-columns: 1fr;
-  }
-
-  .lobby__aside {
-    position: static;
-  }
-
-  .hero {
-    grid-template-columns: 1fr;
-    padding-bottom: 28px;
+/* The bar is too narrow for the tagline, the links and a long or guest username before this. */
+@media (max-width: 1199px) {
+  .nav__brand-sub {
+    display: none;
   }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 1099px) {
+  .nav__hint-long {
+    display: none;
+  }
+
+  .nav__hint-short {
+    display: inline;
+  }
+}
+
+@media (max-width: 960px) {
   .nav__inner {
     gap: 12px;
     padding: 0 14px;
@@ -1054,7 +1120,8 @@ code,
     padding: 11px 12px;
   }
 
-  .nav--open .nav__username {
+  .nav--open .nav__username,
+  .nav--open .nav__hint {
     padding: 6px 12px;
   }
 
@@ -1062,6 +1129,29 @@ code,
     display: none;
   }
 
+  .nav--open .nav__hint-long {
+    display: inline;
+  }
+
+  .nav--open .nav__hint-short {
+    display: none;
+  }
+
+  .lobby {
+    grid-template-columns: 1fr;
+  }
+
+  .lobby__aside {
+    position: static;
+  }
+
+  .hero {
+    grid-template-columns: 1fr;
+    padding-bottom: 28px;
+  }
+}
+
+@media (max-width: 720px) {
   .page {
     padding: 24px 14px 48px;
   }

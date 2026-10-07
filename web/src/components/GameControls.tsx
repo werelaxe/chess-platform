@@ -9,6 +9,7 @@ export function GameControls({
   busy,
   shareUrl,
   onJoin,
+  onJoinAsGuest,
   onResign,
   onDraw,
 }: {
@@ -18,6 +19,7 @@ export function GameControls({
   busy: boolean;
   shareUrl: string;
   onJoin: () => void;
+  onJoinAsGuest: () => void;
   onResign: () => void;
   onDraw: (action: DrawAction) => void;
 }) {
@@ -56,9 +58,14 @@ export function GameControls({
       );
     } else {
       buttons = (
-        <Link to="/login" state={{ from: `/games/${game.id}` }} className="btn btn--primary">
-          Sign in to join
-        </Link>
+        <>
+          <Link to="/login" state={{ from: `/games/${game.id}` }} className="btn btn--primary">
+            Sign in to join
+          </Link>
+          <button type="button" className="btn" disabled={busy} onClick={onJoinAsGuest}>
+            Continue as guest
+          </button>
+        </>
       );
     }
   } else if (game.status === "ACTIVE" && isPlayer) {

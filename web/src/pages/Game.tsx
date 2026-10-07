@@ -67,6 +67,7 @@ export function GamePage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
+  const setSession = useAuthStore((state) => state.setSession);
 
   const localRef = useRef<LocalGame | null>(null);
   const loadSequence = useRef(0);
@@ -420,6 +421,18 @@ export function GamePage() {
     void runAction("Joining", () => api.joinGame(id), () => resync());
   }
 
+  function onJoinAsGuest() {
+    void runAction(
+      "Joining as guest",
+      async () => {
+        const session = await api.guest();
+        setSession(session.token, session.user);
+        return api.joinGame(id);
+      },
+      () => resync(),
+    );
+  }
+
   function onResign() {
     if (game?.status === "WAITING") {
       // Leaving a game nobody joined deletes it.
@@ -473,28 +486,28 @@ export function GamePage() {
         : "Choose the second destination, or the origin square to stay.";
   } else hint = selection ? "Choose a destination." : "Select a piece to move.";
 
-  let banner: React.ReactNode = null;
+  // The slot above the board is always rendered with a fixed height (see .banner-slot), so the
+  // board stays put when the message appears, changes or goes away.
+  let bannerText = "";
   if (game.status === "WAITING") {
-    banner = (
-      <div className="banner">
-        {viewerColor
-          ? game.visibility === "PRIVATE"
-            ? "Waiting for an opponent. Share the link from the panel to invite someone."
-            : "Waiting for an opponent to join from the lobby."
-          : "This game is waiting for a second player."}
-      </div>
-    );
+    bannerText = viewerColor
+      ? game.visibility === "PRIVATE"
+        ? "Waiting for an opponent. Share the link to invite someone."
+        : "Waiting for an opponent to join from the lobby."
+      : "This game is waiting for a second player.";
   } else if (awaitingObservation) {
-    banner = <div className="banner">Observing, waiting for the outcome from the server.</div>;
+    bannerText = "Observing, waiting for the outcome from the server.";
   } else if (canAct && !busy) {
-    banner = <div className="banner">Your move{snapshot.view.checkProbability > 0 ? ", you are in check" : ""}.</div>;
+    bannerText = `Your move${snapshot.view.checkProbability > 0 ? ", you are in check" : ""}.`;
   }
 
   return (
     <div className="page">
       <div className="game">
         <div className="game__stage reveal">
-          {banner}
+          <div className="banner-slot" role="status">
+            <div className={`banner${bannerText ? "" : " banner--hidden"}`}>{bannerText || "\u00A0"}</div>
+          </div>
           <Board
             view={snapshot.view}
             flipped={viewerColor === "BLACK"}
@@ -521,6 +534,7 @@ export function GamePage() {
             busy={busy}
             shareUrl={shareUrl}
             onJoin={onJoin}
+            onJoinAsGuest={onJoinAsGuest}
             onResign={onResign}
             onDraw={onDraw}
           />
