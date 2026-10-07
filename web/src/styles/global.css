@@ -298,6 +298,40 @@ code,
   vertical-align: 0.1em;
 }
 
+/* Language switcher: a small segmented control, EN / RU. */
+.nav__lang {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  overflow: hidden;
+}
+
+.nav__lang-btn {
+  padding: 5px 9px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.nav__lang-btn + .nav__lang-btn {
+  border-left: 1px solid var(--line);
+}
+
+.nav__lang-btn:hover {
+  color: var(--ink);
+  background: var(--line);
+}
+
+.nav__lang-btn.is-active {
+  color: var(--ink);
+  background: var(--bg-elev-2);
+}
+
 .nav__burger {
   display: none;
   width: 40px;
@@ -1124,6 +1158,15 @@ code,
   .nav--open .nav__username,
   .nav--open .nav__hint {
     padding: 6px 12px;
+  }
+
+  .nav--open .nav__lang {
+    align-self: stretch;
+  }
+
+  .nav--open .nav__lang-btn {
+    flex: 1;
+    padding: 10px 12px;
   }
 
   .nav__spacer {

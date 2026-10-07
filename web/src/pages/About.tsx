@@ -1,19 +1,24 @@
+import { Trans, useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import { BRAND_NAME } from "../brand";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
+
+function external(href: string) {
+  return <a href={href} target="_blank" rel="noreferrer" />;
+}
 
 export function AboutPage() {
+  const { t } = useTranslation();
+  useDocumentTitle(t("titles.about", { brand: BRAND_NAME }));
   return (
     <div className="page page--prose prose">
       <div className="page__header reveal">
-        <div className="page__eyebrow">Credits</div>
-        <h1 className="page__title">About {BRAND_NAME}</h1>
-        <p className="page__lede">
-          A small platform for classic and quantum chess. The rules engine is one shared library that runs both in the
-          browser, so your moves are validated instantly, and on the server, which stays the authority.
-        </p>
+        <div className="page__eyebrow">{t("about.eyebrow")}</div>
+        <h1 className="page__title">{t("about.title", { brand: BRAND_NAME })}</h1>
+        <p className="page__lede">{t("about.lede")}</p>
       </div>
       <div className="reveal" style={{ "--i": 1 } as React.CSSProperties}>
-        <h2>Credits</h2>
+        <h2>{t("about.credits")}</h2>
         <div className="credits">
           <div className="credits__item">
             <div className="credits__pieces" aria-hidden="true">
@@ -23,37 +28,26 @@ export function AboutPage() {
               <img src="/pieces/Chess_rlt45.svg" alt="" />
             </div>
             <p>
-              Chess piece artwork by{" "}
-              <a href="https://en.wikipedia.org/wiki/User:Cburnett" target="_blank" rel="noreferrer">
-                Colin M.L. Burnett
-              </a>
-              , licensed under{" "}
-              <a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noreferrer">
-                CC BY-SA 3.0
-              </a>
-              , from{" "}
-              <a href="https://commons.wikimedia.org/wiki/Category:SVG_chess_pieces" target="_blank" rel="noreferrer">
-                Wikimedia Commons
-              </a>
-              .
+              <Trans
+                i18nKey="about.pieces"
+                components={{
+                  author: external("https://en.wikipedia.org/wiki/User:Cburnett"),
+                  license: external("https://creativecommons.org/licenses/by-sa/3.0/"),
+                  commons: external("https://commons.wikimedia.org/wiki/Category:SVG_chess_pieces"),
+                }}
+              />
             </p>
           </div>
           <div className="credits__item">
             <div style={{ fontFamily: "var(--font-display)", fontSize: "1.8rem", textAlign: "center" }} aria-hidden="true">
               Aa
             </div>
-            <p>
-              Typefaces: Fraunces by Undercase Type, Instrument Sans by Rodrigo Fuenzalida and Jordan Egstad, and IBM Plex
-              Mono by IBM, all under the SIL Open Font License.
-            </p>
+            <p>{t("about.typefaces")}</p>
           </div>
         </div>
-        <h2>Open source</h2>
+        <h2>{t("about.openSource")}</h2>
         <p>
-          The rules library is written in Kotlin Multiplatform; the server runs on Ktor with PostgreSQL; this client is
-          React and TypeScript. Quantum chess here follows the rules described on the <Link to="/rules">rules page</Link>:
-          universes are merged whenever they are identical, so the universe count is always the number of truly different
-          positions.
+          <Trans i18nKey="about.stack" components={{ rules: <Link to="/rules" /> }} />
         </p>
       </div>
     </div>

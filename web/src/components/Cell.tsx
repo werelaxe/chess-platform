@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { useTranslation } from "react-i18next";
 import type { CellEntry, CellView, Piece } from "../api/types";
 import { describeCell, formatProbability } from "../core/notation";
 import { FILES, fileOf, isLightSquare, rankOf } from "../core/squares";
@@ -85,6 +86,8 @@ function MiniGrid({ entries }: { entries: PieceEntry[] }) {
 }
 
 function CellComponent(props: CellProps) {
+  // The cell is memoised, so it subscribes to language changes itself to refresh its description.
+  useTranslation();
   const { index, cell, onClick, onHover } = props;
   const pieces = pieceEntries(cell.entries);
 

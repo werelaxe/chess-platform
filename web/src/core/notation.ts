@@ -1,5 +1,11 @@
-import type { CellEntry, CellView, Color, EndReason, GameMove, GameStatus, Piece, PieceType } from "../api/types";
+// Text for moves, results and squares in the UI language. The functions read the current
+// language on every call; components that show them re-render on a language change through
+// `useTranslation`.
 
+import type { CellEntry, CellView, Color, EndReason, GameMove, GameStatus, Piece, PieceType } from "../api/types";
+import { i18n } from "../i18n";
+
+/** Promotion letters are algebraic notation and the same in every language. */
 const PROMOTION_LETTERS: Record<PieceType, string> = {
   PAWN: "P",
   KNIGHT: "N",
@@ -9,25 +15,13 @@ const PROMOTION_LETTERS: Record<PieceType, string> = {
   KING: "K",
 };
 
-const PIECE_NAMES: Record<PieceType, string> = {
-  PAWN: "pawn",
-  KNIGHT: "knight",
-  BISHOP: "bishop",
-  ROOK: "rook",
-  QUEEN: "queen",
-  KING: "king",
-};
-
-export function colorName(color: Color): string {
-  return color === "WHITE" ? "white" : "black";
-}
-
+/** "white pawn"; one key per color and type, since the adjective agrees with the noun in some languages. */
 export function pieceName(piece: Piece): string {
-  return `${colorName(piece.color)} ${PIECE_NAMES[piece.type]}`;
+  return i18n.t(`pieces.${piece.color}.${piece.type}`);
 }
 
 export function pieceTypeName(type: PieceType): string {
-  return PIECE_NAMES[type];
+  return i18n.t(`pieceTypes.${type}`);
 }
 
 /** Human-readable move: "e2-e4", "e7-e8=Q", "g1->f3|h3", "e2->e4|stay", "observe e4 = white pawn". */
@@ -38,39 +32,28 @@ export function formatMove(move: GameMove): string {
       return `${move.from}-${move.to}${promotion}`;
     }
     case "split": {
-      const second = move.second === move.from ? "stay" : move.second;
+      const second = move.second === move.from ? i18n.t("notation.stay") : move.second;
       const promotion = move.promotion ? `=${PROMOTION_LETTERS[move.promotion]}` : "";
       return `${move.from}->${move.first}|${second}${promotion}`;
     }
     case "observe": {
-      if (move.outcome === undefined || move.outcome === null) return `observe ${move.square}`;
-      const result = move.outcome.piece ? pieceName(move.outcome.piece) : "empty";
-      return `observe ${move.square} = ${result}`;
+      const observe = i18n.t("notation.observe");
+      if (move.outcome === undefined || move.outcome === null) return `${observe} ${move.square}`;
+      const result = move.outcome.piece ? pieceName(move.outcome.piece) : i18n.t("notation.empty");
+      return `${observe} ${move.square} = ${result}`;
     }
   }
 }
 
-const END_REASONS: Record<EndReason, string> = {
-  CHECKMATE: "checkmate",
-  STALEMATE: "stalemate",
-  INSUFFICIENT_MATERIAL: "insufficient material",
-  FIFTY_MOVE_RULE: "fifty-move rule",
-  THREEFOLD_REPETITION: "threefold repetition",
-  KING_CAPTURED: "king captured",
-  RESIGNATION: "resignation",
-  DRAW_AGREEMENT: "agreement",
-  ABANDONMENT: "abandonment",
-};
-
 /** Result line such as "White wins by checkmate" or "Draw by stalemate". */
 export function formatResult(winner: Color | null, reason: EndReason): string {
-  const why = END_REASONS[reason];
-  if (winner === null) return `Draw by ${why}`;
-  return `${winner === "WHITE" ? "White" : "Black"} wins by ${why}`;
+  const why = i18n.t(`notation.reasons.${reason}`);
+  if (winner === null) return i18n.t("notation.draw", { reason: why });
+  return i18n.t(winner === "WHITE" ? "notation.whiteWins" : "notation.blackWins", { reason: why });
 }
 
 export function formatStatus(status: GameStatus): string {
-  return status.type === "ongoing" ? "In progress" : formatResult(status.winner, status.reason);
+  return status.type === "ongoing" ? i18n.t("notation.inProgress") : formatResult(status.winner, status.reason);
 }
 
 export function formatProbability(probability: number): string {
@@ -91,7 +74,7 @@ export function cellDistribution(cell: CellView): CellEntry[] {
 /** Accessible description of a square: "e4: white pawn", "e4: empty" or "d5: white pawn 50%, empty 50%". */
 export function describeCell(cell: CellView): string {
   const parts = cellDistribution(cell).map((entry) => {
-    const content = entry.piece ? pieceName(entry.piece) : "empty";
+    const content = entry.piece ? pieceName(entry.piece) : i18n.t("notation.empty");
     return entry.probability >= 1 ? content : `${content} ${formatProbability(entry.probability)}`;
   });
   return `${cell.square}: ${parts.join(", ")}`;

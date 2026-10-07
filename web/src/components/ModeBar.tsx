@@ -1,9 +1,10 @@
+import { useTranslation } from "react-i18next";
 import type { BoardMode } from "./Board";
 
-const MODES: { value: BoardMode; label: string; className: string }[] = [
-  { value: "normal", label: "Move", className: "modebar__btn modebar__btn--normal" },
-  { value: "split", label: "Split", className: "modebar__btn" },
-  { value: "observe", label: "Observe", className: "modebar__btn" },
+const MODES: { value: BoardMode; className: string }[] = [
+  { value: "normal", className: "modebar__btn modebar__btn--normal" },
+  { value: "split", className: "modebar__btn" },
+  { value: "observe", className: "modebar__btn" },
 ];
 
 export function ModeBar({
@@ -17,10 +18,11 @@ export function ModeBar({
   disabled: boolean;
   hint: string;
 }) {
+  const { t } = useTranslation();
   return (
     <section className="panel">
-      <div className="panel__title">Quantum move</div>
-      <div className="modebar" role="radiogroup" aria-label="Move type">
+      <div className="panel__title">{t("modes.title")}</div>
+      <div className="modebar" role="radiogroup" aria-label={t("modes.label")}>
         {MODES.map((entry) => (
           <button
             key={entry.value}
@@ -31,7 +33,7 @@ export function ModeBar({
             disabled={disabled}
             onClick={() => onChange(entry.value)}
           >
-            {entry.label}
+            {t(`modes.${entry.value}`)}
           </button>
         ))}
       </div>

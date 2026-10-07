@@ -19,4 +19,7 @@ interface UserRepository {
     suspend fun findByUsername(username: String): User?
 
     suspend fun findByIds(ids: Collection<Long>): Map<Long, User>
+
+    /** Stores the UI language of the user (null clears it); returns the updated user, or null for an unknown id. */
+    suspend fun updateLocale(id: Long, locale: String?): User?
 }

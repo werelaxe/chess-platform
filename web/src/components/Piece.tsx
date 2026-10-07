@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { Piece, PieceType } from "../api/types";
 import { pieceName } from "../core/notation";
 
@@ -16,5 +17,6 @@ function pieceUrl(piece: Piece): string {
 }
 
 export function PieceImage({ piece, className, style }: { piece: Piece; className?: string; style?: React.CSSProperties }) {
+  useTranslation();
   return <img className={className} style={style} src={pieceUrl(piece)} alt={pieceName(piece)} draggable={false} />;
 }

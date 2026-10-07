@@ -10,6 +10,7 @@ import org.jetbrains.exposed.v1.jdbc.JdbcTransaction
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
+import org.jetbrains.exposed.v1.jdbc.update
 import ru.werelaxe.chess.server.db.Users
 import ru.werelaxe.chess.server.model.User
 import ru.werelaxe.chess.server.repository.UserRepository
@@ -43,7 +44,7 @@ class ExposedUserRepository(private val db: Database) : UserRepository {
                 it[Users.isBot] = isBot
                 it[Users.createdAt] = createdAt.atOffset(ZoneOffset.UTC)
             }[Users.id]
-            User(id, username, passwordHash, isGuest, isBot, createdAt)
+            User(id, username, passwordHash, isGuest, isBot, createdAt, locale = null)
         } catch (e: SQLException) {
             if (isUniqueViolation(e)) null else throw e
         }
@@ -64,6 +65,11 @@ class ExposedUserRepository(private val db: Database) : UserRepository {
         }
     }
 
+    override suspend fun updateLocale(id: Long, locale: String?): User? = tx {
+        Users.update({ Users.id eq id }) { it[Users.locale] = locale }
+        Users.selectAll().where { Users.id eq id }.singleOrNull()?.toUser()
+    }
+
     private fun isUniqueViolation(e: SQLException): Boolean =
         generateSequence<Throwable>(e) { it.cause }.any { (it as? SQLException)?.sqlState == UNIQUE_VIOLATION }
 
@@ -74,6 +80,7 @@ class ExposedUserRepository(private val db: Database) : UserRepository {
         isGuest = this[Users.isGuest],
         isBot = this[Users.isBot],
         createdAt = this[Users.createdAt].toInstant(),
+        locale = this[Users.locale],
     )
 
     private suspend fun <T> tx(block: JdbcTransaction.() -> T): T = withContext(Dispatchers.IO) {

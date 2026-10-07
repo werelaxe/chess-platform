@@ -6,6 +6,7 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
+import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
@@ -37,6 +38,9 @@ import ru.werelaxe.chess.server.dto.GamesResponse
 import ru.werelaxe.chess.server.dto.MoveRequest
 import ru.werelaxe.chess.server.dto.MoveResponse
 import ru.werelaxe.chess.server.dto.Opponent
+import ru.werelaxe.chess.server.dto.UpdateProfileRequest
+import ru.werelaxe.chess.server.dto.UserProfile
+import ru.werelaxe.chess.server.dto.UserRef
 import ru.werelaxe.chess.server.model.Visibility
 import ru.werelaxe.chess.server.repository.Repositories
 import ru.werelaxe.chess.server.repository.memory.InMemoryGameRepository
@@ -110,6 +114,19 @@ class TestContext(val client: HttpClient, val repositories: Repositories) {
         assertEquals(HttpStatusCode.Created, response.status, response.bodyAsString())
         return response.body()
     }
+
+    suspend fun me(token: String): UserProfile {
+        val response = client.get("/api/auth/me") { bearerAuth(token) }
+        assertEquals(HttpStatusCode.OK, response.status, response.bodyAsString())
+        return response.body()
+    }
+
+    suspend fun setLocale(token: String, locale: String?): HttpResponse =
+        client.patch("/api/auth/me") {
+            bearerAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody(UpdateProfileRequest(locale))
+        }
 
     suspend fun createGameResponse(
         token: String,
@@ -228,3 +245,6 @@ fun split(from: String, first: String, second: String): GameMove =
     GameMove.Split(Square.parse(from), Square.parse(first), Square.parse(second))
 
 fun observe(square: String): GameMove = GameMove.Observe(Square.parse(square))
+
+/** The own profile as other players see it inside game DTOs. */
+fun UserProfile.ref(): UserRef = UserRef(id, username, guest, bot)

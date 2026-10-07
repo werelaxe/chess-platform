@@ -13,6 +13,14 @@ web/      React 19 + TypeScript (Vite) client using the JS build of core
 deploy/   nginx configuration used by the web image
 ```
 
+The web UI is available in English (the default) and Russian; the switcher in the navigation
+stores the choice in the browser and, for a signed-in user or guest, on the account
+(`PATCH /api/auth/me`). The texts live in `web/src/i18n/<language>.json`. To add a language,
+copy `en.json` to a new file, translate every string, register the file in
+`web/src/i18n/locale.ts` (`LOCALES`) and `web/src/i18n/index.ts` (`resources`), and allow the code
+on the server (`SUPPORTED_LOCALES` in `AuthService`); a test checks that all files carry exactly
+the same keys.
+
 ## Running with docker compose
 
 ```bash

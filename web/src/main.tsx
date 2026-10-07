@@ -5,6 +5,8 @@ import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./styles/global.css";
 import "./styles/board.css";
+// Initialises the translations before anything renders.
+import "./i18n";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

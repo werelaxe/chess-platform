@@ -20,6 +20,8 @@ object Users : Table("users") {
     val isGuest = bool("is_guest")
     val isBot = bool("is_bot")
     val createdAt = timestampWithTimeZone("created_at")
+    /** The UI language chosen by the user (`en`, `ru`); null until set. */
+    val locale = varchar("locale", 8).nullable()
 
     override val primaryKey = PrimaryKey(id)
 }

@@ -1,4 +1,5 @@
 import { useMemo, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import type { BoardView, CellView } from "../api/types";
 import { squareAt } from "../core/squares";
 import { Cell } from "./Cell";
@@ -45,6 +46,7 @@ function mayHoldEnemy(cell: CellView, mover: BoardView["sideToMove"]): boolean {
 }
 
 export function Board(props: BoardProps) {
+  const { t } = useTranslation();
   const { view, flipped, highlights } = props;
 
   // Render order: white at the bottom unless flipped.
@@ -69,7 +71,7 @@ export function Board(props: BoardProps) {
 
   return (
     <div className="board-wrap">
-      <div className={classes.join(" ")} role="group" aria-label="Chess board" inert={props.inert}>
+      <div className={classes.join(" ")} role="group" aria-label={t("board.label")} inert={props.inert}>
         {order.map((index) => {
           const cell = view.cells[index];
           if (!cell) return null;

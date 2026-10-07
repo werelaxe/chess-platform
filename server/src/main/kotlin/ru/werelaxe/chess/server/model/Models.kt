@@ -27,7 +27,8 @@ data class GameResult(val winner: Color?, val reason: EndReason)
 
 /**
  * [passwordHash] is null for guests, who cannot log in and exist only through their token, and
- * for the computer player ([isBot]), which never logs in at all.
+ * for the computer player ([isBot]), which never logs in at all. [locale] is the UI language the
+ * user chose (`en` or `ru`), null until they pick one.
  */
 data class User(
     val id: Long,
@@ -36,6 +37,7 @@ data class User(
     val isGuest: Boolean,
     val isBot: Boolean,
     val createdAt: Instant,
+    val locale: String?,
 )
 
 /**

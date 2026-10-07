@@ -1,16 +1,42 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { api, isApiError } from "../api/client";
-import { BRAND_NAME, BRAND_TAGLINE } from "../brand";
+import { BRAND_NAME } from "../brand";
+import { LOCALES, currentLocale } from "../i18n";
 import { useAuthStore } from "../store/auth";
+import { changeLocale, startSession } from "../store/session";
 import { Username } from "./ui";
 
 function navClass({ isActive }: { isActive: boolean }): string {
   return `nav__link${isActive ? " is-active" : ""}`;
 }
 
+/** EN / RU toggle; the choice applies at once and is saved in the browser and on the account. */
+function LanguageSwitcher() {
+  const { t } = useTranslation();
+  const active = currentLocale();
+  return (
+    <div className="nav__lang" role="group" aria-label={t("nav.language")}>
+      {LOCALES.map((locale) => (
+        <button
+          key={locale}
+          type="button"
+          lang={locale}
+          className={`nav__lang-btn${locale === active ? " is-active" : ""}`}
+          aria-pressed={locale === active}
+          onClick={() => void changeLocale(locale)}
+        >
+          {locale.toUpperCase()}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function Layout() {
-  const { token, user, setSession, clearSession } = useAuthStore();
+  const { t } = useTranslation();
+  const { token, user, clearSession } = useAuthStore();
   const [open, setOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
@@ -25,7 +51,7 @@ export function Layout() {
     api
       .me()
       .then((me) => {
-        if (!cancelled) setSession(token, me);
+        if (!cancelled) startSession(token, me);
       })
       .catch((error: unknown) => {
         if (!cancelled && isApiError(error) && error.status === 401) clearSession();
@@ -45,29 +71,30 @@ export function Layout() {
     <div className="app">
       <header className={`nav${open ? " nav--open" : ""}`}>
         <div className="nav__inner">
-          <Link to="/" className="nav__brand" aria-label={`${BRAND_NAME} home`}>
+          <Link to="/" className="nav__brand" aria-label={t("nav.home", { brand: BRAND_NAME })}>
             <img className="nav__brand-mark" src="/pieces/Chess_nlt45.svg" alt="" aria-hidden="true" />
             <span>{BRAND_NAME}</span>
-            <span className="nav__brand-sub">{BRAND_TAGLINE}</span>
+            <span className="nav__brand-sub">{t("brand.tagline")}</span>
           </Link>
           <div className="nav__menu">
-            <nav className="nav__links" aria-label="Main">
+            <nav className="nav__links" aria-label={t("nav.main")}>
               <NavLink to="/" end className={navClass}>
-                Lobby
+                {t("nav.lobby")}
               </NavLink>
               {user ? (
                 <NavLink to="/games/mine" className={navClass}>
-                  My games
+                  {t("nav.myGames")}
                 </NavLink>
               ) : null}
               <NavLink to="/rules" className={navClass}>
-                Rules
+                {t("nav.rules")}
               </NavLink>
               <NavLink to="/about" className={navClass}>
-                About
+                {t("nav.about")}
               </NavLink>
             </nav>
             <div className="nav__spacer" />
+            <LanguageSwitcher />
             <div className="nav__user">
               {user ? (
                 <>
@@ -76,21 +103,21 @@ export function Layout() {
                   </span>
                   {user.guest ? (
                     <Link to="/register" className="nav__hint">
-                      <span className="nav__hint-long">Register to keep your games</span>
-                      <span className="nav__hint-short">Register</span>
+                      <span className="nav__hint-long">{t("nav.registerToKeep")}</span>
+                      <span className="nav__hint-short">{t("nav.register")}</span>
                     </Link>
                   ) : null}
                   <button type="button" className="btn btn--ghost btn--small" onClick={logout}>
-                    Log out
+                    {t("nav.logOut")}
                   </button>
                 </>
               ) : (
                 <>
                   <Link to="/login" className="btn btn--ghost btn--small">
-                    Log in
+                    {t("nav.logIn")}
                   </Link>
                   <Link to="/register" className="btn btn--primary btn--small">
-                    Register
+                    {t("nav.register")}
                   </Link>
                 </>
               )}
@@ -99,7 +126,7 @@ export function Layout() {
           <button
             type="button"
             className="nav__burger"
-            aria-label={open ? "Close menu" : "Open menu"}
+            aria-label={open ? t("nav.closeMenu") : t("nav.openMenu")}
             aria-expanded={open}
             onClick={() => setOpen((value) => !value)}
           >
@@ -113,10 +140,10 @@ export function Layout() {
       <footer className="footer">
         <div className="footer__inner">
           <span>
-            {BRAND_NAME} &middot; {BRAND_TAGLINE}
+            {BRAND_NAME} &middot; {t("brand.tagline")}
           </span>
           <span>
-            Chess pieces by Colin M.L. Burnett, CC BY-SA 3.0 &middot; <Link to="/about">About</Link>
+            {t("footer.credits")} &middot; <Link to="/about">{t("footer.about")}</Link>
           </span>
         </div>
       </footer>
