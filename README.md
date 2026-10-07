@@ -7,7 +7,8 @@ Architecture and API: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Rules of bot
 
 ```
 core/     Kotlin Multiplatform library (JVM + JS): rules, move application, serialization
-engine/   the computer player (search and evaluation for both variants); used by the server only
+engine/   the computer player (search and evaluation for both variants)
+engine-service/  stateless HTTP service around the engine; the API asks it for computer moves
 server/   Ktor 3 API: auth, lobby, games, WebSocket events, computer opponent; Exposed + Flyway on PostgreSQL
 web/      React 19 + TypeScript (Vite) client using the JS build of core
 deploy/   nginx configuration used by the web image
@@ -39,14 +40,24 @@ published on `127.0.0.1:5432` for local development.
 
 ## Deploying and operating the server
 
-GitHub Actions do the deployments (`.github/workflows/deploy.yml`): the `api` and `web` images
-are built in CI, pushed to GHCR (`ghcr.io/werelaxe/chess-platform-api|web`, tagged with the
-commit SHA and `latest`) and the server is updated over SSH with
+GitHub Actions do the deployments (`.github/workflows/deploy.yml`): the `api`, `engine` and
+`web` images are built in CI, pushed to GHCR (`ghcr.io/werelaxe/chess-platform-api|engine|web`,
+tagged with the commit SHA and `latest`) and the server is updated over SSH with
 `docker-compose.prod.yml`, which runs those images instead of building. Trigger it from the
 Actions tab ("Deploy" on `master`; runs on other branches are skipped). The workflow
 needs the secret `DEPLOY_SSH_KEY` and the variables `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`
 and `SITE_URL`. On the server itself only `.env`, the compose files and `deploy/Caddyfile` live
 in `DEPLOY_PATH`. `ci.yml` runs all tests on every push and pull request.
+
+The computer's moves are searched by the `engine` service (`engine-service/`), the only
+CPU-heavy part of the stack: the API asks it over HTTP (`ENGINE_URL`) and falls back to its
+own in-process engine while the service is unavailable, so the engine can be restarted or
+redeployed without stalling a game. `ENGINE_CPUS` in `.env` caps the cores one engine container
+may use (default 6), and `ENGINE_PARALLELISM` the number of concurrent searches (default: the
+cores it sees); requests beyond that wait in a bounded queue with a shrinking thinking budget
+and are refused once it is full, which the API retries. To add capacity, run more replicas:
+`docker compose up -d --scale engine=2` (also on top of the production override), and the API
+spreads its requests over them through the service name.
 
 To look at the running stack from your machine, point the Docker CLI at the server over SSH:
 

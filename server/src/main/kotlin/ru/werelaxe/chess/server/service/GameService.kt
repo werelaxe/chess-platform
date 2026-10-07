@@ -7,8 +7,6 @@ import ru.werelaxe.chess.core.Game
 import ru.werelaxe.chess.core.GameKind
 import ru.werelaxe.chess.core.GameMove
 import ru.werelaxe.chess.core.GameStatus
-import ru.werelaxe.chess.engine.ChessEngine
-import ru.werelaxe.chess.engine.EngineLevel
 import ru.werelaxe.chess.server.dto.ColorChoice
 import ru.werelaxe.chess.server.dto.CreateGameRequest
 import ru.werelaxe.chess.server.dto.DrawAction
@@ -36,8 +34,9 @@ import kotlin.time.TimeSource
 
 /**
  * All game rules outside the chess rules themselves: lobby, turns, draw offers, resignation,
- * and the computer opponent's seat. [engines] builds the engine for a level; tests inject a
- * fast, seeded one. [botPause] is the shortest pause before the computer's reply to a move.
+ * and the computer opponent's seat. [moveProvider] chooses the computer's moves; tests inject
+ * a fast, seeded one. [botPause] is the shortest pause before the computer's reply to a move.
+ * [cache] holds the replayed games; the caller owns it so that it can sweep it periodically.
  */
 class GameService(
     private val games: GameRepository,
@@ -45,12 +44,12 @@ class GameService(
     private val events: GameEvents,
     private val random: Random,
     private val clock: Clock,
+    moveProvider: MoveProvider,
     private val ids: GameIdGenerator = GameIdGenerator(),
-    engines: (EngineLevel) -> ChessEngine = { ChessEngine(it, random) },
+    private val cache: GameCache = GameCache(),
     botPause: Duration = BotPlayer.DEFAULT_PAUSE,
 ) {
-    private val cache = GameCache()
-    private val bot = BotPlayer(this, engines, botPause)
+    private val bot = BotPlayer(this, moveProvider, botPause)
 
     /** Stops the computer player; call when the application shuts down. */
     fun close() = bot.close()
@@ -182,8 +181,8 @@ class GameService(
 
     /**
      * A snapshot of a game against the computer in which the computer is on turn, or null when
-     * it is not (the game is between people, is over, or the human is on turn). The state is
-     * immutable, so the search runs on it after the game's lock is released.
+     * it is not (the game is between people, is over, or the human is on turn). The move list
+     * is a copy taken under the lock, so the search runs on it after the lock is released.
      */
     internal suspend fun botTurn(id: String): BotTurn? = cache.locked(id) { entry ->
         val record = games.findById(id) ?: return@locked null
@@ -195,7 +194,7 @@ class GameService(
         val computerId = checkNotNull(if (color == Color.WHITE) record.whiteId else record.blackId)
         val computer = users.findById(computerId)
         check(computer != null && computer.isBot) { "The $color seat of game $id is not the computer" }
-        BotTurn(UserPrincipal(computer.id, computer.username, guest = false), level, game.state)
+        BotTurn(id, record.kind, level, UserPrincipal(computer.id, computer.username, guest = false), game.history)
     }
 
     /**

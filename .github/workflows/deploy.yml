@@ -1,6 +1,6 @@
 name: Deploy
 
-# Builds the api and web images, publishes them to GHCR and updates the server over SSH.
+# Builds the api, engine and web images, publishes them to GHCR and updates the server over SSH.
 # Run it from the Actions tab on master; runs started from any other branch are skipped so
 # that only reviewed and merged code reaches the site.
 on:
@@ -24,10 +24,12 @@ jobs:
       packages: write
     strategy:
       matrix:
-        service: [api, web]
+        service: [api, engine, web]
         include:
           - service: api
             dockerfile: server/Dockerfile
+          - service: engine
+            dockerfile: engine-service/Dockerfile
           - service: web
             dockerfile: web/Dockerfile
     steps:

@@ -7,6 +7,34 @@ x-logging: &logging
       max-file: "5"
 
 services:
+  engine:
+    <<: *logging
+    build:
+      context: .
+      dockerfile: engine-service/Dockerfile
+    environment:
+      PORT: "8081"
+      # Search threads; empty means the CPUs the container sees (ENGINE_CPUS below).
+      ENGINE_PARALLELISM: ${ENGINE_PARALLELISM:-}
+    deploy:
+      resources:
+        limits:
+          # Searching is the only CPU-heavy work; leave cores for the API and the database.
+          cpus: ${ENGINE_CPUS:-6}
+    healthcheck:
+      # The runtime image ships no HTTP client, so bash's /dev/tcp performs the request.
+      test:
+        - CMD-SHELL
+        - >-
+          bash -c 'exec 3<>/dev/tcp/127.0.0.1/8081
+          && printf "GET /health HTTP/1.0\r\n\r\n" >&3
+          && head -n1 <&3 | grep -q " 200 "' || exit 1
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
   db:
     <<: *logging
     image: postgres:17-alpine
@@ -40,8 +68,13 @@ services:
       JWT_TTL_DAYS: "30"
       # nginx serves the client and the API from one origin, so CORS is disabled.
       CORS_ORIGINS: ""
+      # Computer moves come from the engine service; the API falls back to its own engine
+      # while the service is unavailable.
+      ENGINE_URL: http://engine:8081
     depends_on:
       db:
+        condition: service_healthy
+      engine:
         condition: service_healthy
     healthcheck:
       # The runtime image ships no HTTP client, so bash's /dev/tcp performs the request.
