@@ -351,6 +351,12 @@ nginx, nginx trusts the `X-Forwarded-For` header from the private network ranges
 real client address in its access log and in `X-Real-IP` to the API (which rate limits by it).
 Container logs go to Docker's json-file driver with rotation (`docker compose logs <service>`).
 
+Deployments are done by the GitHub Actions workflow `deploy.yml`: it builds both images, pushes
+them to GHCR tagged with the commit SHA and `latest`, copies the compose files to the server and
+runs `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` there over SSH with
+`IMAGE_TAG` set to the SHA, then checks `/api/health`. Rolling back is the same workflow run on
+an older commit. `ci.yml` runs the test suites on every push and pull request.
+
 TLS is terminated by Caddy. With `SITE_ADDRESS` set to the public hostname it obtains a
 Let's Encrypt certificate (ACME over HTTP, so the domain's A record must point at the host and
 port 80 must be reachable), renews it automatically, redirects HTTP to HTTPS for that hostname
