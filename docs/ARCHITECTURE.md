@@ -346,7 +346,10 @@ them); compose refuses to start when either is missing. Mobile clients will talk
 
 nginx serves `index.html` with `Cache-Control: no-cache` and the hashed `/assets/` as
 immutable, hides its version and adds `X-Content-Type-Options`, `X-Frame-Options` and
-`Referrer-Policy` to every response (`deploy/security-headers.conf`).
+`Referrer-Policy` to every response (`deploy/security-headers.conf`). Because only Caddy reaches
+nginx, nginx trusts the `X-Forwarded-For` header from the private network ranges and reports the
+real client address in its access log and in `X-Real-IP` to the API (which rate limits by it).
+Container logs go to Docker's json-file driver with rotation (`docker compose logs <service>`).
 
 TLS is terminated by Caddy. With `SITE_ADDRESS` set to the public hostname it obtains a
 Let's Encrypt certificate (ACME over HTTP, so the domain's A record must point at the host and
