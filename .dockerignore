@@ -1,0 +1,12 @@
+.git
+.gradle
+.kotlin
+**/build
+kotlin-js-store
+web/node_modules
+web/dist
+web/.vite
+.env*
+.idea
+*.iml
+**/.DS_Store

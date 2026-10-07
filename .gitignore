@@ -1,5 +1,18 @@
-.gradle
+.gradle/
 **/build/
-!src/**/build/
+.kotlin/
 .idea/
+*.iml
+.DS_Store
 
+# Kotlin/JS
+kotlin-js-store/
+
+# Web client
+web/node_modules/
+web/dist/
+web/.vite/
+
+# Local overrides
+.env
+.env.local
