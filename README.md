@@ -20,12 +20,13 @@ cp .env.example .env   # set POSTGRES_PASSWORD and JWT_SECRET; compose refuses t
 docker compose up --build
 ```
 
-The site is served on port 80 by nginx, which also proxies `/api` (REST and WebSockets) to the
-API container; `web` starts once the API reports healthy. PostgreSQL data lives in the `db-data`
-volume, and the database is also published on `127.0.0.1:5432` for local development.
-
-The stack speaks plain HTTP. Before exposing it beyond your machine, put a TLS-terminating
-reverse proxy in front of port 80 (see docs/ARCHITECTURE.md, section 4).
+Caddy listens on ports 80 and 443 and forwards to nginx, which serves the client and proxies
+`/api` (REST and WebSockets) to the API container; `web` starts once the API reports healthy.
+Set `SITE_ADDRESS` in `.env` to the public hostname (for example `quantum-chess.fun`) and point
+the domain's A record at the host: Caddy then obtains and renews the Let's Encrypt certificate
+by itself and redirects HTTP to HTTPS for that hostname. Without `SITE_ADDRESS` the stack serves
+plain HTTP on localhost. PostgreSQL data lives in the `db-data` volume, and the database is also
+published on `127.0.0.1:5432` for local development.
 
 ## Development
 

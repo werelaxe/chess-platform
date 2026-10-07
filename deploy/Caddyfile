@@ -1,0 +1,15 @@
+# Public entry point: terminates TLS (certificates from Let's Encrypt, renewed automatically)
+# and forwards everything to the nginx container, which serves the client and proxies the API.
+#
+# SITE_ADDRESS is the public hostname, e.g. "quantum-chess.fun". Without it the stack serves
+# plain HTTP on localhost, which is what local development needs.
+
+{$SITE_ADDRESS:http://localhost} {
+	reverse_proxy web:80
+	header Strict-Transport-Security "max-age=604800"
+}
+
+# Plain HTTP for any other host (for example the bare IP address) keeps working.
+http:// {
+	reverse_proxy web:80
+}

@@ -332,22 +332,25 @@ Game page behaviour:
 
 ## 4. Deployment
 
-`docker-compose.yml` runs three services: `db` (postgres:17, named volume; published on
+`docker-compose.yml` runs four services: `db` (postgres:17, named volume; published on
 `127.0.0.1:5432` only, so that a server started from Gradle can use it), `api`
 (`server/Dockerfile`: multi-stage Gradle build on Temurin 21, runs as an unprivileged user,
 healthcheck on `/api/health`) and `web` (`web/Dockerfile`: builds the core JS library and the
 Vite bundle, served by nginx which also proxies `/api` including WebSockets to `api`; starts
-once `api` is healthy). Both Dockerfiles copy the build scripts before the sources and keep the
-Gradle and npm caches in BuildKit cache mounts, so a source change does not download the
-dependencies again. Only `web` publishes a port (80). `POSTGRES_PASSWORD` and `JWT_SECRET` come
-from `.env` (`.env.example` lists them); compose refuses to start when either is missing.
-Mobile clients will talk to the same `/api` through nginx.
+once `api` is healthy) and `caddy` (`caddy:2-alpine`, `deploy/Caddyfile`: the only service with
+published ports, 80 and 443). Both Dockerfiles copy the build scripts before the sources and keep
+the Gradle and npm caches in BuildKit cache mounts, so a source change does not download the
+dependencies again. `POSTGRES_PASSWORD` and `JWT_SECRET` come from `.env` (`.env.example` lists
+them); compose refuses to start when either is missing. Mobile clients will talk to the same
+`/api` through Caddy and nginx.
 
 nginx serves `index.html` with `Cache-Control: no-cache` and the hashed `/assets/` as
 immutable, hides its version and adds `X-Content-Type-Options`, `X-Frame-Options` and
 `Referrer-Policy` to every response (`deploy/security-headers.conf`).
 
-TLS is a deployment prerequisite, not part of the stack: nginx listens on plain HTTP, so
-passwords and bearer tokens travel in clear text until a TLS-terminating reverse proxy (or load
-balancer) sits in front of port 80. That proxy owns the certificate, the HTTP-to-HTTPS redirect
-and `Strict-Transport-Security`; nginx forwards `X-Forwarded-Proto` to the API.
+TLS is terminated by Caddy. With `SITE_ADDRESS` set to the public hostname it obtains a
+Let's Encrypt certificate (ACME over HTTP, so the domain's A record must point at the host and
+port 80 must be reachable), renews it automatically, redirects HTTP to HTTPS for that hostname
+and adds `Strict-Transport-Security`. Certificates persist in the `caddy-data` volume. Requests
+for any other hostname (such as the bare IP address) are served over plain HTTP, and without
+`SITE_ADDRESS` the stack serves plain HTTP on localhost for development.
