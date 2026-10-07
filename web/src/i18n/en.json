@@ -1,9 +1,9 @@
 {
   "brand": {
-    "tagline": "classic & quantum chess"
+    "tagline": "classic & quantum rules"
   },
   "titles": {
-    "lobby": "{{brand}} - classic and quantum chess",
+    "lobby": "{{brand}} - classic and quantum rules",
     "login": "Log in - {{brand}}",
     "register": "Register - {{brand}}",
     "rules": "Rules - {{brand}}",
