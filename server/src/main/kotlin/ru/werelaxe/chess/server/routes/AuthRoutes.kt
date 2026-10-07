@@ -9,10 +9,12 @@ import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
+import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import ru.werelaxe.chess.server.dto.CredentialsRequest
-import ru.werelaxe.chess.server.dto.UserRef
+import ru.werelaxe.chess.server.dto.UpdateProfileRequest
+import ru.werelaxe.chess.server.dto.UserProfile
 import ru.werelaxe.chess.server.plugins.AUTH_RATE_LIMIT
 import ru.werelaxe.chess.server.plugins.JWT_AUTH
 import ru.werelaxe.chess.server.service.ApiException
@@ -40,7 +42,11 @@ fun Route.authRoutes(auth: AuthService) {
         }
         authenticate(JWT_AUTH) {
             get("/me") {
-                call.respond(UserRef.of(auth.me(call.user)))
+                call.respond(UserProfile.of(auth.me(call.user)))
+            }
+            patch("/me") {
+                val request = call.receive<UpdateProfileRequest>()
+                call.respond(UserProfile.of(auth.updateLocale(call.user, request.locale)))
             }
         }
     }

@@ -32,7 +32,7 @@ class InMemoryUserRepository : UserRepository {
         mutex.withLock {
             val key = username.lowercase()
             if (key in idByLowerName) return null
-            val user = User(nextId++, username, passwordHash, isGuest, isBot, createdAt)
+            val user = User(nextId++, username, passwordHash, isGuest, isBot, createdAt, locale = null)
             byId[user.id] = user
             idByLowerName[key] = user.id
             user
@@ -46,5 +46,9 @@ class InMemoryUserRepository : UserRepository {
 
     override suspend fun findByIds(ids: Collection<Long>): Map<Long, User> = mutex.withLock {
         ids.mapNotNull { id -> byId[id]?.let { id to it } }.toMap()
+    }
+
+    override suspend fun updateLocale(id: Long, locale: String?): User? = mutex.withLock {
+        byId[id]?.copy(locale = locale)?.also { byId[id] = it }
     }
 }

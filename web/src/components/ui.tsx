@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { errorMessage } from "../api/client";
 import type { BotLevel, GameKind, GameLifecycle, UserRef, Visibility } from "../api/types";
 import { playerLabel } from "../core/computer";
@@ -8,36 +9,38 @@ import { playerLabel } from "../core/computer";
  * The computer is shown with the level of the game when it is known ("Computer · Medium").
  */
 export function Username({ user, botLevel }: { user: UserRef; botLevel?: BotLevel | null }) {
+  const { t } = useTranslation();
   return (
     <>
       {playerLabel(user, botLevel)}
-      {user.bot ? <span className="bot-tag">bot</span> : user.guest ? <span className="guest-tag">guest</span> : null}
+      {user.bot ? (
+        <span className="bot-tag">{t("user.botTag")}</span>
+      ) : user.guest ? (
+        <span className="guest-tag">{t("user.guestTag")}</span>
+      ) : null}
     </>
   );
 }
 
 export function KindPill({ kind }: { kind: GameKind }) {
-  return <span className={`pill pill--${kind === "QUANTUM" ? "quantum" : "classic"}`}>{kind === "QUANTUM" ? "Quantum" : "Classic"}</span>;
+  const { t } = useTranslation();
+  return <span className={`pill pill--${kind === "QUANTUM" ? "quantum" : "classic"}`}>{t(`kinds.${kind}`)}</span>;
 }
 
-const LIFECYCLE_LABELS: Record<GameLifecycle, string> = {
-  WAITING: "Open",
-  ACTIVE: "Live",
-  FINISHED: "Finished",
-};
-
 export function LifecyclePill({ status }: { status: GameLifecycle }) {
+  const { t } = useTranslation();
   return (
     <span className={`pill pill--${status.toLowerCase()}`}>
       <span className="pill__dot" />
-      {LIFECYCLE_LABELS[status]}
+      {t(`lifecycle.${status}`)}
     </span>
   );
 }
 
 export function VisibilityPill({ visibility }: { visibility: Visibility }) {
+  const { t } = useTranslation();
   if (visibility === "PUBLIC") return null;
-  return <span className="pill pill--private">Private</span>;
+  return <span className="pill pill--private">{t("visibility.private")}</span>;
 }
 
 export function Notice({
@@ -58,13 +61,14 @@ export function Notice({
 }
 
 export function ErrorNotice({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
+  const { t } = useTranslation();
   return (
     <Notice
       kind="error"
       action={
         onRetry ? (
           <button type="button" className="btn btn--small" onClick={onRetry}>
-            Retry
+            {t("common.retry")}
           </button>
         ) : undefined
       }
@@ -74,11 +78,12 @@ export function ErrorNotice({ error, onRetry }: { error: unknown; onRetry?: () =
   );
 }
 
-export function Loading({ label = "Loading" }: { label?: string }) {
+export function Loading({ label }: { label?: string }) {
+  const { t } = useTranslation();
   return (
     <div className="loading" role="status">
       <span className="spinner" aria-hidden="true" />
-      {label}
+      {label ?? t("common.loading")}
     </div>
   );
 }

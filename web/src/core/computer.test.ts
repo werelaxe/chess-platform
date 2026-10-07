@@ -1,10 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { UserRef } from "../api/types";
-import { BOT_LEVELS, BOT_LEVEL_HINTS, BOT_LEVEL_LABELS, botColor, createGameRequest, playerLabel } from "./computer";
+import { i18n } from "../i18n";
+import ru from "../i18n/ru.json";
+import { BOT_LEVELS, botColor, botLevelHint, botLevelLabel, createGameRequest, playerLabel } from "./computer";
 
 const ALICE: UserRef = { id: 1, username: "alice" };
 const GUEST: UserRef = { id: 2, username: "guest-123456", guest: true };
 const COMPUTER: UserRef = { id: 3, username: "computer", bot: true };
+
+afterEach(() => i18n.changeLanguage("en"));
 
 describe("createGameRequest", () => {
   it("keeps the visibility choice and sends no level for a game between people", () => {
@@ -32,6 +36,12 @@ describe("playerLabel", () => {
     expect(playerLabel(COMPUTER)).toBe("Computer");
     expect(playerLabel(COMPUTER, null)).toBe("Computer");
   });
+
+  it("follows the UI language", async () => {
+    await i18n.changeLanguage("ru");
+    expect(playerLabel(COMPUTER, "MEDIUM")).toBe(`${ru.user.computer} · ${ru.levels.MEDIUM}`);
+    expect(playerLabel(ALICE)).toBe("alice");
+  });
 });
 
 describe("botColor", () => {
@@ -47,8 +57,8 @@ describe("level metadata", () => {
   it("has a label and a one-line hint for every level", () => {
     expect(BOT_LEVELS).toStrictEqual(["EASY", "MEDIUM", "HARD"]);
     for (const level of BOT_LEVELS) {
-      expect(BOT_LEVEL_LABELS[level]).toMatch(/^[A-Z][a-z]+$/);
-      expect(BOT_LEVEL_HINTS[level]).not.toContain("\n");
+      expect(botLevelLabel(level)).toMatch(/^[A-Z][a-z]+$/);
+      expect(botLevelHint(level)).not.toContain("\n");
     }
   });
 });

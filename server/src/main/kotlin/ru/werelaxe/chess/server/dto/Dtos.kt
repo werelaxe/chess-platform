@@ -19,11 +19,33 @@ data class UserRef(val id: Long, val username: String, val guest: Boolean = fals
     }
 }
 
+/**
+ * The caller's own account, returned by the auth endpoints only: the [UserRef] fields plus the
+ * settings that only the owner sees. [locale] is always encoded, as null until the user picks
+ * a language.
+ */
+@Serializable
+data class UserProfile(
+    val id: Long,
+    val username: String,
+    val guest: Boolean = false,
+    val bot: Boolean = false,
+    val locale: String?,
+) {
+    companion object {
+        fun of(user: User) = UserProfile(user.id, user.username, user.isGuest, user.isBot, user.locale)
+    }
+}
+
 @Serializable
 data class CredentialsRequest(val username: String, val password: String)
 
+/** [locale] is `en`, `ru` or null to clear it; the field itself is required. */
 @Serializable
-data class AuthResponse(val token: String, val user: UserRef)
+data class UpdateProfileRequest(val locale: String?)
+
+@Serializable
+data class AuthResponse(val token: String, val user: UserProfile)
 
 @Serializable
 enum class ColorChoice {

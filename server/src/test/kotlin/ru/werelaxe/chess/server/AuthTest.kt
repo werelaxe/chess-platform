@@ -11,7 +11,7 @@ import io.ktor.http.content.ByteArrayContent
 import io.ktor.http.contentType
 import ru.werelaxe.chess.server.dto.AuthResponse
 import ru.werelaxe.chess.server.dto.HealthResponse
-import ru.werelaxe.chess.server.dto.UserRef
+import ru.werelaxe.chess.server.dto.UserProfile
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -39,7 +39,7 @@ class AuthTest {
 
         val me = client.get("/api/auth/me") { bearerAuth(loginAuth.token) }
         assertEquals(HttpStatusCode.OK, me.status)
-        assertEquals(UserRef(auth.user.id, "Alice"), me.body<UserRef>())
+        assertEquals(UserProfile(auth.user.id, "Alice", locale = null), me.body<UserProfile>())
     }
 
     @Test

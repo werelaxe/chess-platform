@@ -1,9 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { Piece } from "../api/types";
+import { i18n } from "../i18n";
+import ru from "../i18n/ru.json";
 import { cellDistribution, describeCell, formatMove, formatProbability, formatResult, formatStatus, movesEqual } from "./notation";
 
 const WHITE_PAWN: Piece = { color: "WHITE", type: "PAWN" };
 const BLACK_KNIGHT: Piece = { color: "BLACK", type: "KNIGHT" };
+
+// The expectations below are the English resources; the default language in tests is English.
+afterEach(() => i18n.changeLanguage("en"));
 
 describe("formatMove", () => {
   it("formats normal moves", () => {
@@ -31,6 +36,18 @@ describe("formatMove", () => {
     );
     expect(formatMove({ type: "observe", square: "e4", outcome: { piece: null } })).toBe("observe e4 = empty");
   });
+
+  it("uses the words of the UI language", async () => {
+    await i18n.changeLanguage("ru");
+    expect(formatMove({ type: "normal", from: "e2", to: "e4" })).toBe("e2-e4");
+    expect(formatMove({ type: "split", from: "e2", first: "e4", second: "e2" })).toBe(`e2->e4|${ru.notation.stay}`);
+    expect(formatMove({ type: "observe", square: "e4", outcome: { piece: WHITE_PAWN } })).toBe(
+      `${ru.notation.observe} e4 = ${ru.pieces.WHITE.PAWN}`,
+    );
+    expect(formatMove({ type: "observe", square: "e4", outcome: { piece: null } })).toBe(
+      `${ru.notation.observe} e4 = ${ru.notation.empty}`,
+    );
+  });
 });
 
 describe("formatResult and formatStatus", () => {
@@ -44,6 +61,13 @@ describe("formatResult and formatStatus", () => {
   it("describes statuses", () => {
     expect(formatStatus({ type: "ongoing" })).toBe("In progress");
     expect(formatStatus({ type: "finished", winner: "BLACK", reason: "RESIGNATION" })).toBe("Black wins by resignation");
+  });
+
+  it("follows the UI language", async () => {
+    await i18n.changeLanguage("ru");
+    expect(formatResult(null, "STALEMATE")).toBe(ru.notation.draw.replace("{{reason}}", ru.notation.reasons.STALEMATE));
+    expect(formatResult("WHITE", "CHECKMATE")).toBe(ru.notation.whiteWins.replace("{{reason}}", ru.notation.reasons.CHECKMATE));
+    expect(formatStatus({ type: "ongoing" })).toBe(ru.notation.inProgress);
   });
 });
 

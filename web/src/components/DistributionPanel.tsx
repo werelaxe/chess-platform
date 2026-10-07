@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { CellView } from "../api/types";
 import { cellDistribution, formatProbability, pieceName } from "../core/notation";
 import { PieceImage } from "./Piece";
@@ -7,9 +8,10 @@ import { PieceImage } from "./Piece";
  * live only while a square is pinned: hover-driven updates would be announced for every square passed.
  */
 export function DistributionPanel({ cell, quantum, pinned }: { cell: CellView | null; quantum: boolean; pinned: boolean }) {
+  const { t } = useTranslation();
   return (
     <section className="panel dist" aria-live={pinned ? "polite" : undefined}>
-      <div className="panel__title">Square</div>
+      <div className="panel__title">{t("square.title")}</div>
       {cell ? (
         <>
           <div className="dist__square mono">{cell.square}</div>
@@ -20,7 +22,7 @@ export function DistributionPanel({ cell, quantum, pinned }: { cell: CellView | 
                   {entry.piece ? <PieceImage piece={entry.piece} /> : <span className="dist__icon--empty" aria-hidden="true" />}
                 </div>
                 <div>
-                  <div className="dist__label">{entry.piece ? pieceName(entry.piece) : "empty"}</div>
+                  <div className="dist__label">{entry.piece ? pieceName(entry.piece) : t("notation.empty")}</div>
                   <div className="dist__bar">
                     <div
                       className={`dist__bar-fill${entry.piece ? "" : " dist__bar-fill--empty"}`}
@@ -34,11 +36,7 @@ export function DistributionPanel({ cell, quantum, pinned }: { cell: CellView | 
           </div>
         </>
       ) : (
-        <p className="dist__placeholder">
-          {quantum
-            ? "Hover or tap a square to see every possible content with its probability."
-            : "Hover or tap a square to see what stands on it."}
-        </p>
+        <p className="dist__placeholder">{quantum ? t("square.placeholderQuantum") : t("square.placeholderClassic")}</p>
       )}
     </section>
   );

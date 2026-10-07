@@ -163,7 +163,8 @@ Flyway migrations in `server/src/main/resources/db/migration` run at startup.
 
 ```sql
 users(id BIGSERIAL PK, username VARCHAR(20), username_lower VARCHAR(20) UNIQUE,
-      password_hash TEXT NULL, is_guest BOOLEAN, is_bot BOOLEAN, created_at TIMESTAMPTZ)
+      password_hash TEXT NULL, is_guest BOOLEAN, is_bot BOOLEAN, locale VARCHAR(8) NULL,
+      created_at TIMESTAMPTZ)
 games(id VARCHAR(16) PK, kind VARCHAR(16), visibility VARCHAR(16), status VARCHAR(16),
       creator_id BIGINT FK users, white_id BIGINT FK users NULL, black_id BIGINT FK users NULL,
       move_count INT, result_winner VARCHAR(8) NULL, result_reason VARCHAR(32) NULL,
@@ -175,7 +176,9 @@ moves(game_id FK games ON DELETE CASCADE, ply INT, move JSONB, created_at TIMEST
 `games.status` is `WAITING` (one player, open for joining), `ACTIVE` or `FINISHED`.
 Game ids are 12 random base62 characters; a path id of any other shape is answered with 404
 without touching the database. Usernames: 3–20 characters `[A-Za-z0-9_]`, unique
-case-insensitively; passwords 8–72 characters, stored as bcrypt (cost 12).
+case-insensitively; passwords 8–72 characters, stored as bcrypt (cost 12). `users.locale` is the
+UI language the user picked through `PATCH /api/auth/me` (`en` or `ru`); it is null until they
+pick one, and the client then falls back to its default language, English.
 
 Guests are ordinary `users` rows named `guest-NNNNNN` (six random digits 100000–999999, drawn
 again on collision) with `is_guest = true` and no `password_hash`; the token issued at creation
@@ -189,6 +192,8 @@ cannot log in, and registering the name fails with 409 `username_taken` like any
 `games.bot_level` (`EASY`, `MEDIUM`, `HARD`) marks a game against the computer; in such a game
 the creator is the human and the computer holds the other seat.
 
+### 2.3 HTTP API
+
 All endpoints under `/api`, JSON bodies, `Authorization: Bearer <jwt>` where required.
 Errors: `{"error":"<code>","message":"<human readable>"}` with a matching HTTP status
 (400 validation / illegal move, 401 unauthenticated, 403 forbidden, 404 not found, 409 conflict,
@@ -200,7 +205,9 @@ POST /api/auth/register   {username, password}        -> 201 {token, user}     4
                                                                                  400 validation for guest-* names
 POST /api/auth/login      {username, password}        -> 200 {token, user}     401 on bad credentials or a guest name
 POST /api/auth/guest      (no body)                    -> 201 {token, user}     user.guest = true
-GET  /api/auth/me                                      -> 200 user             (auth)
+GET  /api/auth/me                                      -> 200 UserProfile      (auth)
+PATCH /api/auth/me        {locale: "en"|"ru"|null}     -> 200 UserProfile      (auth, guests too; 400 validation for
+                                                                                 any other value or a missing field)
 
 POST /api/games           {kind, visibility, color, opponent, level} -> 201 GameDto  (auth)
                             kind: CLASSIC|QUANTUM, visibility: PUBLIC|PRIVATE, color: WHITE|BLACK|RANDOM,
@@ -229,6 +236,14 @@ A guest token has the same lifetime as a registered user's and grants the same r
 create, join and play games exactly like registered users and appear in `GameSummary` with
 `"guest": true`.
 
+The `/api/auth/*` endpoints describe the caller's own account as a `UserProfile` (the `user` of
+the register, login and guest responses, and the body of `/api/auth/me`): the `UserRef` fields
+plus `locale`, the UI language chosen through `PATCH /api/auth/me`. Only `en` and `ru` are
+accepted; `null` clears the choice. The field is always present in the profile and null until
+set. Other players only ever appear as `UserRef` inside game DTOs, so the locale is never shown
+to anyone else. Guests set it like registered users; it lives with the account, so a registered
+user gets it back on every login.
+
 Draw offers: `OFFER` records the color (409 `draw_pending` while one is open); `ACCEPT` by the
 opponent finishes the game with `DRAW_AGREEMENT`; `DECLINE` (opponent) and `WITHDRAW` (offerer)
 clear it, and so does a move by the opponent, whereas the offerer's own move keeps the offer
@@ -242,6 +257,8 @@ response (and the `game` event) carry the DTO with `status: "FINISHED"` and
 
 ```jsonc
 UserRef     {"id": 1, "username": "alice", "guest": false, "bot": false}   // "guest" and "bot" are omitted when false
+UserProfile UserRef + "locale": "en"|"ru"|null                             // the caller's own account; "locale" is
+                                                                           // always present, null until set
 GameSummary {"id":"aZ3kq9...","kind":"QUANTUM","visibility":"PUBLIC","status":"ACTIVE",
              "white":UserRef|null,"black":UserRef|null,"creator":UserRef,
              "moveCount":12,"result":{"winner":"WHITE"|"BLACK"|null,"reason":"..."}|null,
@@ -351,7 +368,8 @@ nginx, nginx trusts the `X-Forwarded-For` header from the private network ranges
 real client address in its access log and in `X-Real-IP` to the API (which rate limits by it).
 Container logs go to Docker's json-file driver with rotation (`docker compose logs <service>`).
 
-Deployments are done by the GitHub Actions workflow `deploy.yml`: it builds both images, pushes
+Deployments are done by the GitHub Actions workflow `deploy.yml`, started by hand from the
+Actions tab and only on `master`: it builds both images, pushes
 them to GHCR tagged with the commit SHA and `latest`, copies the compose files to the server and
 runs `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` there over SSH with
 `IMAGE_TAG` set to the SHA, then checks `/api/health`. Rolling back is the same workflow run on

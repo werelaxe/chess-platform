@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import type { Color, DrawAction, GameSummary, UserRef } from "../api/types";
 import { botColor } from "../core/computer";
@@ -24,6 +25,7 @@ export function GameControls({
   onResign: () => void;
   onDraw: (action: DrawAction) => void;
 }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const isCreator = viewer !== null && viewer.id === game.creator.id;
   const isPlayer = viewerColor !== null;
@@ -41,7 +43,7 @@ export function GameControls({
   }
 
   function confirmResign() {
-    const question = game.status === "WAITING" ? "Cancel this game?" : "Resign this game?";
+    const question = game.status === "WAITING" ? t("controls.confirmCancel") : t("controls.confirmResign");
     if (window.confirm(question)) onResign();
   }
 
@@ -50,23 +52,23 @@ export function GameControls({
     if (isCreator) {
       buttons = (
         <button type="button" className="btn btn--danger" disabled={busy} onClick={confirmResign}>
-          Cancel game
+          {t("controls.cancelGame")}
         </button>
       );
     } else if (viewer) {
       buttons = (
         <button type="button" className="btn btn--primary" disabled={busy} onClick={onJoin}>
-          Join game
+          {t("controls.join")}
         </button>
       );
     } else {
       buttons = (
         <>
           <Link to="/login" state={{ from: `/games/${game.id}` }} className="btn btn--primary">
-            Sign in to join
+            {t("controls.signInToJoin")}
           </Link>
           <button type="button" className="btn" disabled={busy} onClick={onJoinAsGuest}>
-            Continue as guest
+            {t("controls.continueAsGuest")}
           </button>
         </>
       );
@@ -77,31 +79,31 @@ export function GameControls({
       <>
         {computer ? null : offer === null ? (
           <button type="button" className="btn" disabled={busy} onClick={() => onDraw("OFFER")}>
-            Offer draw
+            {t("controls.offerDraw")}
           </button>
         ) : offer === viewerColor ? (
           <button type="button" className="btn" disabled={busy} onClick={() => onDraw("WITHDRAW")}>
-            Withdraw draw offer
+            {t("controls.withdrawDraw")}
           </button>
         ) : (
           <>
             <button type="button" className="btn btn--primary" disabled={busy} onClick={() => onDraw("ACCEPT")}>
-              Accept draw
+              {t("controls.acceptDraw")}
             </button>
             <button type="button" className="btn" disabled={busy} onClick={() => onDraw("DECLINE")}>
-              Decline
+              {t("controls.declineDraw")}
             </button>
           </>
         )}
         <button type="button" className="btn btn--danger" disabled={busy} onClick={confirmResign}>
-          Resign
+          {t("controls.resign")}
         </button>
       </>
     );
   } else if (game.status === "FINISHED") {
     buttons = (
       <Link to="/" className="btn">
-        Back to lobby
+        {t("controls.backToLobby")}
       </Link>
     );
   }
@@ -115,18 +117,22 @@ export function GameControls({
       {showShare ? (
         <>
           <div className="panel__title" style={{ marginTop: buttons ? 14 : 0 }}>
-            Share link
+            {t("controls.shareLink")}
           </div>
           <div className="share" style={{ marginTop: 0 }}>
-            <input className="share__input" readOnly value={shareUrl} onFocus={(event) => event.currentTarget.select()} aria-label="Game link" />
+            <input
+              className="share__input"
+              readOnly
+              value={shareUrl}
+              onFocus={(event) => event.currentTarget.select()}
+              aria-label={t("controls.gameLink")}
+            />
             <button type="button" className="btn btn--small" onClick={() => void copyLink()}>
-              {copied ? "Copied" : "Copy"}
+              {copied ? t("controls.copied") : t("controls.copy")}
             </button>
           </div>
           <p className="faint small" style={{ marginTop: 8 }}>
-            {computer
-              ? "Computer games are unlisted: only people with the link can watch."
-              : "This game is private: only people with the link can find it."}
+            {computer ? t("controls.computerUnlisted") : t("controls.privateGame")}
           </p>
         </>
       ) : null}

@@ -1,0 +1,417 @@
+{
+  "brand": {
+    "tagline": "classic & quantum chess"
+  },
+  "titles": {
+    "lobby": "{{brand}} - classic and quantum chess",
+    "login": "Log in - {{brand}}",
+    "register": "Register - {{brand}}",
+    "rules": "Rules - {{brand}}",
+    "about": "About - {{brand}}",
+    "myGames": "My games - {{brand}}",
+    "notFound": "Page not found - {{brand}}",
+    "game": "{{white}} vs {{black}} - {{variant}}",
+    "gameLoading": "Game - {{brand}}",
+    "gameUnavailable": "Game unavailable - {{brand}}"
+  },
+  "nav": {
+    "home": "{{brand}} home",
+    "main": "Main",
+    "lobby": "Lobby",
+    "myGames": "My games",
+    "rules": "Rules",
+    "about": "About",
+    "registerToKeep": "Register to keep your games",
+    "register": "Register",
+    "logIn": "Log in",
+    "logOut": "Log out",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu",
+    "language": "Language"
+  },
+  "footer": {
+    "credits": "Chess pieces by Colin M.L. Burnett, CC BY-SA 3.0",
+    "about": "About"
+  },
+  "common": {
+    "loading": "Loading",
+    "retry": "Retry",
+    "refresh": "Refresh",
+    "backToLobby": "Back to the lobby",
+    "you": "(you)",
+    "unknownPlayer": "?"
+  },
+  "user": {
+    "guestTag": "guest",
+    "botTag": "bot",
+    "computer": "Computer",
+    "computerWithLevel": "Computer · {{level}}"
+  },
+  "levels": {
+    "EASY": "Easy",
+    "MEDIUM": "Medium",
+    "HARD": "Hard"
+  },
+  "levelHints": {
+    "EASY": "A shallow search with some randomness: forgiving, good for learning the moves.",
+    "MEDIUM": "Thinks a few moves ahead.",
+    "HARD": "Takes its full thinking time on every move."
+  },
+  "kinds": {
+    "CLASSIC": "Classic",
+    "QUANTUM": "Quantum"
+  },
+  "variants": {
+    "CLASSIC": "Classic chess",
+    "QUANTUM": "Quantum chess"
+  },
+  "lifecycle": {
+    "WAITING": "Open",
+    "ACTIVE": "Live",
+    "FINISHED": "Finished"
+  },
+  "visibility": {
+    "private": "Private"
+  },
+  "pieces": {
+    "WHITE": {
+      "PAWN": "white pawn",
+      "KNIGHT": "white knight",
+      "BISHOP": "white bishop",
+      "ROOK": "white rook",
+      "QUEEN": "white queen",
+      "KING": "white king"
+    },
+    "BLACK": {
+      "PAWN": "black pawn",
+      "KNIGHT": "black knight",
+      "BISHOP": "black bishop",
+      "ROOK": "black rook",
+      "QUEEN": "black queen",
+      "KING": "black king"
+    }
+  },
+  "pieceTypes": {
+    "PAWN": "pawn",
+    "KNIGHT": "knight",
+    "BISHOP": "bishop",
+    "ROOK": "rook",
+    "QUEEN": "queen",
+    "KING": "king"
+  },
+  "notation": {
+    "stay": "stay",
+    "observe": "observe",
+    "empty": "empty",
+    "inProgress": "In progress",
+    "whiteWins": "White wins by {{reason}}",
+    "blackWins": "Black wins by {{reason}}",
+    "draw": "Draw by {{reason}}",
+    "reasons": {
+      "CHECKMATE": "checkmate",
+      "STALEMATE": "stalemate",
+      "INSUFFICIENT_MATERIAL": "insufficient material",
+      "FIFTY_MOVE_RULE": "fifty-move rule",
+      "THREEFOLD_REPETITION": "threefold repetition",
+      "KING_CAPTURED": "king captured",
+      "RESIGNATION": "resignation",
+      "DRAW_AGREEMENT": "agreement",
+      "ABANDONMENT": "abandonment"
+    }
+  },
+  "counts": {
+    "plies_one": "{{count}} ply",
+    "plies_other": "{{count}} plies",
+    "universes_one": "universe",
+    "universes_other": "universes"
+  },
+  "errors": {
+    "unexpected": "Something went wrong",
+    "code": {
+      "network": "Cannot reach the server. Check your connection and try again.",
+      "validation": "The request was rejected",
+      "unauthorized": "You need to sign in",
+      "not_found": "Not found",
+      "username_taken": "That username is already taken.",
+      "invalid_credentials": "Wrong username or password.",
+      "rate_limited": "Too many attempts. Wait a minute and try again.",
+      "own_game": "You cannot join your own game.",
+      "game_full": "This game is no longer open for joining.",
+      "not_a_player": "You are not a player of this game.",
+      "not_your_turn": "It is not your turn.",
+      "illegal_move": "Illegal move",
+      "game_not_started": "The game has not started yet.",
+      "game_finished": "The game is already finished.",
+      "draw_pending": "A draw offer is already pending.",
+      "no_draw_offer": "There is no draw offer to answer.",
+      "draw_not_available": "Draw offers are not available in this game.",
+      "internal": "The server failed to handle the request"
+    },
+    "status": {
+      "400": "The request was rejected",
+      "401": "You need to sign in",
+      "403": "You are not allowed to do that",
+      "404": "Not found",
+      "409": "The game is not in the right state for that",
+      "429": "Too many requests. Try again later.",
+      "500": "The server failed to handle the request",
+      "502": "The server is unavailable right now",
+      "503": "The server is unavailable right now",
+      "504": "The server took too long to respond",
+      "other": "Request failed with status {{status}}"
+    }
+  },
+  "lobby": {
+    "heroTitle": "Chess, <em>in every universe</em> at once.",
+    "heroLede": "Play classic chess, or quantum chess where a single piece can stand on two squares until someone looks. Pick an open game below, create your own, or play against the computer.",
+    "variants": "variants",
+    "tabs": {
+      "open": "Open games",
+      "active": "Live games"
+    },
+    "empty": {
+      "open": "No open games right now. Create one and share the link, play the computer, or wait a moment.",
+      "active": "Nobody is playing in public at the moment."
+    },
+    "loading": "Loading games"
+  },
+  "list": {
+    "openSeat": "open seat",
+    "vs": "vs"
+  },
+  "create": {
+    "title": "New game",
+    "subtitle": {
+      "QUANTUM": "Split pieces across universes and observe to collapse them.",
+      "CLASSIC": "Standard FIDE rules with castling, en passant and promotion."
+    },
+    "variant": "Variant",
+    "opponent": "Opponent",
+    "human": "Human",
+    "computer": "Computer",
+    "level": "Level",
+    "yourColor": "Your color",
+    "color": "Color",
+    "white": "White",
+    "random": "Random",
+    "black": "Black",
+    "computerUnlisted": "Computer games are unlisted: only people with the link can watch.",
+    "visibility": "Visibility",
+    "public": "Public",
+    "private": "Private",
+    "publicHint": "Listed in the lobby for anyone to join.",
+    "privateHint": "Only people with the link can join or watch.",
+    "creating": "Creating",
+    "submit": "Create game",
+    "logIn": "Log in",
+    "continueAsGuest": "Continue as guest",
+    "noAccount": "No account yet? <register>Register</register>, or continue as a guest to create this game right away."
+  },
+  "auth": {
+    "login": {
+      "eyebrow": "Welcome back",
+      "title": "Log in",
+      "lede": "Sign in to create games, join open ones and make moves.",
+      "submit": "Log in",
+      "switch": "No account yet? <link>Register</link>"
+    },
+    "register": {
+      "eyebrow": "New account",
+      "title": "Register",
+      "lede": "Pick a name other players will see.",
+      "submit": "Create account",
+      "switch": "Already have an account? <link>Log in</link>"
+    },
+    "guestNotice": "You are playing as <user/>. Creating an account starts a new session; games played as a guest stay with the guest.",
+    "username": "Username",
+    "usernameHint": "3 to 20 characters: letters, digits and underscores.",
+    "usernameProblems": {
+      "empty": "Enter a username.",
+      "reserved": "Names starting with guest- are reserved",
+      "length": "Username must be 3 to 20 characters long.",
+      "characters": "Only letters, digits and underscores are allowed."
+    },
+    "password": "Password",
+    "passwordHint": "At least 8 characters and at most 72 bytes (a character outside ASCII takes 2 to 4).",
+    "passwordProblems": {
+      "empty": "Enter a password.",
+      "short": "Password must be at least {{min}} characters long.",
+      "long": "Password must be at most {{max}} bytes long; a character outside ASCII takes 2 to 4 bytes."
+    },
+    "pleaseWait": "Please wait",
+    "or": "or",
+    "playAsGuest": "Play as guest",
+    "guestHint": "No password: guest games are tied to this browser session and are lost when it is cleared."
+  },
+  "myGames": {
+    "title": "My games",
+    "lede": "Every game you created or joined, newest first.",
+    "filters": {
+      "ALL": "All",
+      "ACTIVE": "Live",
+      "WAITING": "Open",
+      "FINISHED": "Finished"
+    },
+    "loading": "Loading your games",
+    "empty": "Nothing here yet. Create a game from the lobby."
+  },
+  "notFound": {
+    "eyebrow": "404",
+    "title": "Nothing on this square",
+    "lede": "The page you asked for does not exist."
+  },
+  "about": {
+    "eyebrow": "Credits",
+    "title": "About {{brand}}",
+    "lede": "A small platform for classic and quantum chess. The rules engine is one shared library that runs both in the browser, so your moves are validated instantly, and on the server, which stays the authority.",
+    "credits": "Credits",
+    "pieces": "Chess piece artwork by <author>Colin M.L. Burnett</author>, licensed under <license>CC BY-SA 3.0</license>, from <commons>Wikimedia Commons</commons>.",
+    "typefaces": "Typefaces: Fraunces by Undercase Type, Instrument Sans by Rodrigo Fuenzalida and Jordan Egstad, and IBM Plex Mono by IBM, all under the SIL Open Font License.",
+    "openSource": "Open source",
+    "stack": "The rules library is written in Kotlin Multiplatform; the server runs on Ktor with PostgreSQL; this client is React and TypeScript. Quantum chess here follows the rules described on the <rules>rules page</rules>: universes are merged whenever they are identical, so the universe count is always the number of truly different positions."
+  },
+  "rules": {
+    "eyebrow": "How to play",
+    "title": "Rules",
+    "lede": "Two variants share one board: classic chess, and quantum chess played on a superposition of boards.",
+    "classic": {
+      "title": "Classic chess",
+      "p1": "Standard FIDE rules: pieces move as usual, castling requires an unmoved king and rook, empty squares between them and no attacked square on the king's path; pawns may capture en passant immediately after an enemy pawn's double step; a pawn reaching the last rank promotes to a queen, rook, bishop or knight of the player's choice.",
+      "p2": "The game ends by checkmate, stalemate (draw), insufficient material (draw), fifty moves by each side without a capture or pawn move (draw), threefold repetition of a position (draw), resignation or agreement."
+    },
+    "quantum": {
+      "title": "Quantum chess",
+      "lead": "Quantum chess is classic chess played on a superposition of boards. Think of it as many parallel universes, each holding an ordinary chess position. At the start there is one universe. Each universe has a probability, and a piece \"half on e4, half on e2\" simply means that it stands on e4 in half of the universes and on e2 in the other half.",
+      "moves": {
+        "title": "Moves",
+        "intro": "On your turn you may do one of three things.",
+        "normal": "<strong>Normal move.</strong> Pick a piece and a destination. The move is carried out in every universe where it is legal by classic rules. In universes where it is impossible (the piece is not there, the path is blocked, your king would be left in check), nothing happens: that universe simply passes the turn. A move is allowed as long as it is legal in at least one universe.",
+        "split": "<strong>Split.</strong> Pick a piece and two destinations (or one destination and \"stay\"). Every universe where both options are legal splits into two equally likely universes, one per option. A universe where only one option is legal follows that option; where neither is legal nothing happens. After a split the piece is in superposition.",
+        "observe": "<strong>Observe.</strong> Pick any square whose content is uncertain. The universe \"collapses\": one of the possible contents is drawn at random according to its probability, and every universe that disagrees with the result disappears. Observing costs your turn."
+      },
+      "end": {
+        "title": "Check, capture and the end of the game",
+        "p1": "Check is respected inside each universe: a move that would leave your king in check in some universe is not carried out there. Because of this, a move can leave your king in check in the universes where it could not be played, and your opponent may capture the king there.",
+        "p2": "A king that was captured in some universes still exists in the others. You lose only when your king is gone from <strong>every</strong> universe. You also lose when you have no legal move in any universe while being in check in at least one of them; having no legal move anywhere without check is a draw, like stalemate.",
+        "p3": "Draws also happen after fifty moves by each side without a capture or pawn move in any universe, by threefold repetition of the whole superposition, by agreement or when one side resigns (which is a loss for that side)."
+      },
+      "reading": {
+        "title": "Reading the board",
+        "p1": "A piece drawn with full strength is certain. A translucent piece with a percentage is present with that probability; a square can show several candidates. The side panel lists every possibility for the square under the cursor, including the chance that it is empty. Identical universes are merged automatically, so the number of universes shown is the number of truly different positions.",
+        "legendCertain": "A piece at full opacity is on that square in every universe.",
+        "legendUncertain": "A translucent piece with a percentage badge and an amber ring is there only with that probability; the ring fills proportionally.",
+        "legendObservable": "In Observe mode, squares whose content is uncertain are outlined; click one to measure it."
+      }
+    },
+    "ready": "Ready? <lobby>Find a game in the lobby.</lobby>"
+  },
+  "game": {
+    "loading": "Loading game",
+    "unavailable": "Game unavailable",
+    "couldNotLoad": "The game could not be loaded.",
+    "syncFailed": "Could not sync the game: {{message}}",
+    "illegalMove": "Illegal move: {{detail}}",
+    "rejectedMove": "The server rejected the move: {{message}}",
+    "observeHint": "Pick an outlined square: only uncertain squares can be observed.",
+    "failed": {
+      "join": "Joining failed: {{message}}",
+      "joinAsGuest": "Joining as guest failed: {{message}}",
+      "cancel": "Cancelling failed: {{message}}",
+      "resign": "Resigning failed: {{message}}",
+      "draw": "Draw request failed: {{message}}"
+    },
+    "hints": {
+      "browsing": "An earlier position is shown. Return to the live position to move.",
+      "measuring": "Measuring the square, waiting for the outcome.",
+      "sending": "Sending your move.",
+      "computerThinking": "Computer is thinking.",
+      "waitingOpponent": "Waiting for your opponent.",
+      "observe": "Click an outlined square to measure it. The outcome is random and costs your turn.",
+      "splitSelect": "Select a piece to split.",
+      "splitFirst": "Choose the first destination.",
+      "splitSecond": "Choose the second destination, or the origin square to stay.",
+      "destination": "Choose a destination.",
+      "select": "Select a piece to move."
+    },
+    "banners": {
+      "start": "Viewing the starting position",
+      "viewing": "Viewing move {{ply}} of {{total}}",
+      "waitingShare": "Waiting for an opponent. Share the link to invite someone.",
+      "waitingLobby": "Waiting for an opponent to join from the lobby.",
+      "waitingSpectator": "This game is waiting for a second player.",
+      "observing": "Observing, waiting for the outcome from the server.",
+      "computerThinking": "Computer is thinking…",
+      "yourMove": "Your move.",
+      "yourMoveCheck": "Your move, you are in check."
+    },
+    "backToLive": "Back to live"
+  },
+  "header": {
+    "socket": {
+      "connecting": "Connecting",
+      "open": "Connected",
+      "reconnecting": "Reconnecting",
+      "closed": "Offline"
+    },
+    "socketTitle": "Connection to the game feed",
+    "waitingPlayer": "waiting for a player",
+    "toMoveTag": "to move",
+    "creatorTag": "creator",
+    "waitingOpponent": "Waiting for an opponent to join.",
+    "whiteToMove": "White to move",
+    "blackToMove": "Black to move",
+    "check": "check",
+    "checkProbability": "check ({{percent}}%)",
+    "whiteOffersDraw": "White offers a draw.",
+    "blackOffersDraw": "Black offers a draw."
+  },
+  "controls": {
+    "confirmCancel": "Cancel this game?",
+    "confirmResign": "Resign this game?",
+    "cancelGame": "Cancel game",
+    "join": "Join game",
+    "signInToJoin": "Sign in to join",
+    "continueAsGuest": "Continue as guest",
+    "offerDraw": "Offer draw",
+    "withdrawDraw": "Withdraw draw offer",
+    "acceptDraw": "Accept draw",
+    "declineDraw": "Decline",
+    "resign": "Resign",
+    "backToLobby": "Back to lobby",
+    "shareLink": "Share link",
+    "gameLink": "Game link",
+    "copy": "Copy",
+    "copied": "Copied",
+    "computerUnlisted": "Computer games are unlisted: only people with the link can watch.",
+    "privateGame": "This game is private: only people with the link can find it."
+  },
+  "modes": {
+    "title": "Quantum move",
+    "label": "Move type",
+    "normal": "Move",
+    "split": "Split",
+    "observe": "Observe"
+  },
+  "moves": {
+    "title": "Moves",
+    "navigation": "Move navigation",
+    "first": "First position",
+    "previous": "Previous move",
+    "next": "Next move",
+    "last": "Last move",
+    "empty": "No moves yet."
+  },
+  "promotion": {
+    "dialog": "Choose a promotion piece",
+    "title": "Promote to",
+    "cancel": "Cancel"
+  },
+  "square": {
+    "title": "Square",
+    "placeholderQuantum": "Hover or tap a square to see every possible content with its probability.",
+    "placeholderClassic": "Hover or tap a square to see what stands on it."
+  },
+  "board": {
+    "label": "Chess board"
+  }
+}

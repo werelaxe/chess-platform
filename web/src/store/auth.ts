@@ -1,11 +1,11 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { UserRef } from "../api/types";
+import type { UserProfile } from "../api/types";
 
 interface AuthState {
   token: string | null;
-  user: UserRef | null;
-  setSession: (token: string, user: UserRef) => void;
+  user: UserProfile | null;
+  setSession: (token: string, user: UserProfile) => void;
   clearSession: () => void;
 }
 

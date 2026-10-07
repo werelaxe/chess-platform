@@ -1,16 +1,10 @@
+import { useTranslation } from "react-i18next";
 import type { BotLevel, Color, GameSummary, UserRef } from "../api/types";
 import type { SocketState } from "../api/ws";
 import type { GameSnapshot } from "../core/game";
 import { botColor } from "../core/computer";
 import { formatResult } from "../core/notation";
 import { KindPill, LifecyclePill, Username, VisibilityPill } from "./ui";
-
-const SOCKET_LABELS: Record<SocketState, string> = {
-  connecting: "Connecting",
-  open: "Connected",
-  reconnecting: "Reconnecting",
-  closed: "Offline",
-};
 
 function PlayerRow({
   color,
@@ -27,6 +21,7 @@ function PlayerRow({
   creator: UserRef;
   botLevel?: BotLevel | null;
 }) {
+  const { t } = useTranslation();
   const isViewer = player !== null && viewer !== null && player.id === viewer.id;
   return (
     <div className={`player player--${color.toLowerCase()}${toMove ? " player--to-move" : ""}`}>
@@ -34,12 +29,14 @@ function PlayerRow({
       {player ? (
         <span className="player__name">
           <Username user={player} botLevel={botLevel} />
-          {isViewer ? <span className="faint"> (you)</span> : null}
+          {isViewer ? <span className="faint"> {t("common.you")}</span> : null}
         </span>
       ) : (
-        <span className="player__name player__name--empty">waiting for a player</span>
+        <span className="player__name player__name--empty">{t("header.waitingPlayer")}</span>
       )}
-      <span className="player__tag">{toMove ? "to move" : player && player.id === creator.id ? "creator" : ""}</span>
+      <span className="player__tag">
+        {toMove ? t("header.toMoveTag") : player && player.id === creator.id ? t("header.creatorTag") : ""}
+      </span>
     </div>
   );
 }
@@ -55,6 +52,7 @@ export function GameHeader({
   viewer: UserRef | null;
   socketState: SocketState;
 }) {
+  const { t } = useTranslation();
   const finished = game.status === "FINISHED" || snapshot?.status.type === "finished";
   const result =
     game.status === "FINISHED" && game.result
@@ -73,8 +71,8 @@ export function GameHeader({
         <KindPill kind={game.kind} />
         <LifecyclePill status={finished ? "FINISHED" : game.status} />
         <VisibilityPill visibility={game.visibility} />
-        <span className={`conn conn--${socketState}`} title="Connection to the game feed">
-          {SOCKET_LABELS[socketState]}
+        <span className={`conn conn--${socketState}`} title={t("header.socketTitle")}>
+          {t(`header.socket.${socketState}`)}
         </span>
       </div>
       <div className="players">
@@ -102,14 +100,16 @@ export function GameHeader({
           </div>
         ) : waiting ? (
           <div className="gh__line">
-            <span>Waiting for an opponent to join.</span>
+            <span>{t("header.waitingOpponent")}</span>
           </div>
         ) : (
           <div className="gh__line">
-            <span>{sideToMove === "WHITE" ? "White" : "Black"} to move</span>
+            <span>{sideToMove === "WHITE" ? t("header.whiteToMove") : t("header.blackToMove")}</span>
             {snapshot && snapshot.view.checkProbability > 0 ? (
               <span style={{ color: "var(--danger)" }}>
-                check{game.kind === "QUANTUM" && snapshot.view.checkProbability < 1 ? ` (${Math.round(snapshot.view.checkProbability * 100)}%)` : ""}
+                {game.kind === "QUANTUM" && snapshot.view.checkProbability < 1
+                  ? t("header.checkProbability", { percent: Math.round(snapshot.view.checkProbability * 100) })
+                  : t("header.check")}
               </span>
             ) : null}
           </div>
@@ -118,18 +118,18 @@ export function GameHeader({
           <div className="gh__line" style={{ marginTop: 8 }}>
             <span className="gh__universes">
               <strong>{snapshot.universeCount}</strong>
-              {snapshot.universeCount === 1 ? "universe" : "universes"}
+              {t("counts.universes", { count: snapshot.universeCount })}
             </span>
-            <span className="faint small mono">{snapshot.moveCount} plies</span>
+            <span className="faint small mono">{t("counts.plies", { count: snapshot.moveCount })}</span>
           </div>
         ) : snapshot ? (
           <div className="gh__line" style={{ marginTop: 8 }}>
-            <span className="faint small mono">{snapshot.moveCount} plies</span>
+            <span className="faint small mono">{t("counts.plies", { count: snapshot.moveCount })}</span>
           </div>
         ) : null}
         {game.drawOfferedBy && !finished ? (
           <div className="gh__line" style={{ marginTop: 8, color: "var(--accent-bright)" }}>
-            <span>{game.drawOfferedBy === "WHITE" ? "White" : "Black"} offers a draw.</span>
+            <span>{game.drawOfferedBy === "WHITE" ? t("header.whiteOffersDraw") : t("header.blackOffersDraw")}</span>
           </div>
         ) : null}
       </div>

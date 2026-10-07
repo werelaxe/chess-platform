@@ -7,7 +7,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
 import ru.werelaxe.chess.server.dto.ColorChoice
-import ru.werelaxe.chess.server.dto.UserRef
+import ru.werelaxe.chess.server.dto.UserProfile
 import ru.werelaxe.chess.server.model.GamePhase
 import ru.werelaxe.chess.server.repository.memory.InMemoryUserRepository
 import ru.werelaxe.chess.server.service.AuthService
@@ -33,7 +33,7 @@ class GuestTest {
 
         val me = client.get("/api/auth/me") { bearerAuth(auth.token) }
         assertEquals(HttpStatusCode.OK, me.status)
-        assertEquals(auth.user, me.body<UserRef>())
+        assertEquals(auth.user, me.body<UserProfile>())
     }
 
     @Test
@@ -58,8 +58,8 @@ class GuestTest {
         val alice = token("alice")
 
         val created = createGame(host.token, color = ColorChoice.WHITE)
-        assertEquals(host.user, created.white)
-        assertEquals(host.user, created.creator)
+        assertEquals(host.user.ref(), created.white)
+        assertEquals(host.user.ref(), created.creator)
         assertTrue(created.creator.guest)
         val joined = join(alice, created.id)
         assertEquals(GamePhase.ACTIVE, joined.status)
@@ -71,7 +71,7 @@ class GuestTest {
         val visitor = guest()
         val hosted = createGame(alice, color = ColorChoice.WHITE)
         val visited = join(visitor.token, hosted.id)
-        assertEquals(visitor.user, visited.black)
+        assertEquals(visitor.user.ref(), visited.black)
         assertTrue(visited.black!!.guest)
         assertEquals(HttpStatusCode.OK, resign(visitor.token, hosted.id).status)
     }

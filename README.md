@@ -13,6 +13,14 @@ web/      React 19 + TypeScript (Vite) client using the JS build of core
 deploy/   nginx configuration used by the web image
 ```
 
+The web UI is available in English (the default) and Russian; the switcher in the navigation
+stores the choice in the browser and, for a signed-in user or guest, on the account
+(`PATCH /api/auth/me`). The texts live in `web/src/i18n/<language>.json`. To add a language,
+copy `en.json` to a new file, translate every string, register the file in
+`web/src/i18n/locale.ts` (`LOCALES`) and `web/src/i18n/index.ts` (`resources`), and allow the code
+on the server (`SUPPORTED_LOCALES` in `AuthService`); a test checks that all files carry exactly
+the same keys.
+
 ## Running with docker compose
 
 ```bash
@@ -35,7 +43,7 @@ GitHub Actions do the deployments (`.github/workflows/deploy.yml`): the `api` an
 are built in CI, pushed to GHCR (`ghcr.io/werelaxe/chess-platform-api|web`, tagged with the
 commit SHA and `latest`) and the server is updated over SSH with
 `docker-compose.prod.yml`, which runs those images instead of building. Trigger it from the
-Actions tab ("Deploy", any branch or tag) or by pushing a tag such as `v1.2.3`. The workflow
+Actions tab ("Deploy" on `master`; runs on other branches are skipped). The workflow
 needs the secret `DEPLOY_SSH_KEY` and the variables `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`
 and `SITE_URL`. On the server itself only `.env`, the compose files and `deploy/Caddyfile` live
 in `DEPLOY_PATH`. `ci.yml` runs all tests on every push and pull request.

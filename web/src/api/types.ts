@@ -1,6 +1,8 @@
 // TypeScript mirrors of the JSON formats produced by the core library (ARCHITECTURE.md 1.3)
 // and by the server (ARCHITECTURE.md 2.3 and 2.5).
 
+import type { Locale } from "../i18n/locale";
+
 export type Color = "WHITE" | "BLACK";
 
 export type PieceType = "PAWN" | "KNIGHT" | "BISHOP" | "ROOK" | "QUEEN" | "KING";
@@ -108,6 +110,14 @@ export interface UserRef {
   bot?: boolean;
 }
 
+/**
+ * The caller's own account as described by the auth endpoints: a `UserRef` plus the settings
+ * only the owner sees. `locale` is the UI language saved on the account, null until chosen.
+ */
+export interface UserProfile extends UserRef {
+  locale: Locale | null;
+}
+
 export interface GameResult {
   winner: Color | null;
   reason: EndReason;
@@ -136,7 +146,12 @@ export interface GameDto extends GameSummary {
 
 export interface AuthResponse {
   token: string;
-  user: UserRef;
+  user: UserProfile;
+}
+
+/** Body of PATCH /api/auth/me; null clears the saved language. */
+export interface UpdateProfileRequest {
+  locale: Locale | null;
 }
 
 export interface MoveResponse {

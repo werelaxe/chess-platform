@@ -1,4 +1,5 @@
 import { Suspense, lazy } from "react";
+import { useTranslation } from "react-i18next";
 import { Route, Routes } from "react-router";
 import { Layout } from "./components/Layout";
 import { RequireAuth } from "./components/RequireAuth";
@@ -15,11 +16,12 @@ import { RulesPage } from "./pages/Rules";
 const GamePage = lazy(() => import("./pages/Game").then((module) => ({ default: module.GamePage })));
 
 function GameRoute() {
+  const { t } = useTranslation();
   return (
     <Suspense
       fallback={
         <div className="page">
-          <Loading label="Loading game" />
+          <Loading label={t("game.loading")} />
         </div>
       }
     >

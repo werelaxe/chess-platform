@@ -702,14 +702,49 @@
   text-align: right;
 }
 
-.moves__ply {
+.moves__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.moves__head .panel__title {
+  margin-bottom: 0;
+}
+
+.moves__nav {
+  display: flex;
+  gap: 4px;
+}
+
+.moves__nav-btn {
+  min-width: 30px;
   padding: 3px 8px;
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  line-height: 1.2;
+}
+
+/* Every move is a button that shows the position after it. */
+.moves__ply {
+  display: block;
+  width: 100%;
+  padding: 3px 8px;
+  border: 0;
   border-radius: 4px;
   color: var(--ink);
   background: transparent;
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: background-color 0.12s;
+}
+
+.moves__ply:hover {
+  background: var(--line);
 }
 
 .moves__ply--split {
@@ -773,6 +808,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 12px;
   width: 100%;
   height: 100%;
   padding: 0 14px;
@@ -788,6 +824,16 @@
 .banner--hidden {
   opacity: 0;
   visibility: hidden;
+}
+
+.banner__text {
+  min-width: 0;
+}
+
+/* The button must fit the slot's fixed height next to the text, so it stays compact. */
+.banner__action {
+  flex: none;
+  padding: 4px 10px;
 }
 
 @keyframes fade {

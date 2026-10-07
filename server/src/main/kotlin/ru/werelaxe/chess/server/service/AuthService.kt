@@ -5,7 +5,7 @@ import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ru.werelaxe.chess.server.dto.AuthResponse
-import ru.werelaxe.chess.server.dto.UserRef
+import ru.werelaxe.chess.server.dto.UserProfile
 import ru.werelaxe.chess.server.model.User
 import ru.werelaxe.chess.server.repository.UserRepository
 import java.time.Clock
@@ -31,7 +31,7 @@ class AuthService(
         }
         val user = users.create(username, hash, clock.instant())
             ?: throw ApiException(HttpStatusCode.Conflict, "username_taken", "This username is already taken")
-        return AuthResponse(jwt.issue(user), UserRef.of(user))
+        return AuthResponse(jwt.issue(user), UserProfile.of(user))
     }
 
     suspend fun login(username: String, password: String): AuthResponse {
@@ -45,7 +45,7 @@ class AuthService(
             BCrypt.verifyer().verify(password.toCharArray(), hash).verified
         }
         if (!verified) throw invalidCredentials()
-        return AuthResponse(jwt.issue(user), UserRef.of(user))
+        return AuthResponse(jwt.issue(user), UserProfile.of(user))
     }
 
     /**
@@ -56,7 +56,7 @@ class AuthService(
         repeat(MAX_GUEST_ATTEMPTS) {
             val number = random.nextInt(MIN_GUEST_NUMBER, MAX_GUEST_NUMBER + 1)
             val user = users.createGuest("$GUEST_PREFIX$number", clock.instant()) ?: return@repeat
-            return AuthResponse(jwt.issue(user), UserRef.of(user))
+            return AuthResponse(jwt.issue(user), UserProfile.of(user))
         }
         throw IllegalStateException("No free guest name after $MAX_GUEST_ATTEMPTS attempts")
     }
@@ -64,6 +64,14 @@ class AuthService(
     /** The current user; fails when the account behind a valid token no longer exists. */
     suspend fun me(principal: UserPrincipal): User =
         users.findById(principal.id) ?: throw ApiException.unauthorized("Unknown user")
+
+    /** Stores the UI language of the current user; null clears it. */
+    suspend fun updateLocale(principal: UserPrincipal, locale: String?): User {
+        if (locale != null && locale !in SUPPORTED_LOCALES) {
+            throw ApiException.validation("Locale must be one of ${SUPPORTED_LOCALES.joinToString()}, or null to clear it")
+        }
+        return users.updateLocale(principal.id, locale) ?: throw ApiException.unauthorized("Unknown user")
+    }
 
     private fun invalidCredentials() =
         ApiException(HttpStatusCode.Unauthorized, "invalid_credentials", "Invalid username or password")
@@ -91,5 +99,7 @@ class AuthService(
         const val MIN_GUEST_NUMBER = 100_000
         const val MAX_GUEST_NUMBER = 999_999
         const val MAX_GUEST_ATTEMPTS = 20
+        /** The languages the web client is translated into. */
+        val SUPPORTED_LOCALES = setOf("en", "ru")
     }
 }

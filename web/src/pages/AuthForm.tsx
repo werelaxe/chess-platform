@@ -1,43 +1,47 @@
 import { useState, type FormEvent } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate } from "react-router";
-import { api, errorMessage, isApiError } from "../api/client";
-import { PASSWORD_MAX_BYTES, validatePassword, validateUsername } from "../api/credentials";
-import { useAuthStore } from "../store/auth";
+import { api, errorMessage } from "../api/client";
+import { PASSWORD_MAX_BYTES, PASSWORD_MIN, validatePassword, validateUsername } from "../api/credentials";
+import { BRAND_NAME } from "../brand";
 import { Notice, Username } from "../components/ui";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
+import { useAuthStore } from "../store/auth";
+import { startSession } from "../store/session";
 
 interface LocationState {
   from?: string;
 }
 
 export function AuthForm({ mode }: { mode: "login" | "register" }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, setSession } = useAuthStore();
+  const user = useAuthStore((state) => state.user);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [touched, setTouched] = useState({ username: false, password: false });
   const [submitting, setSubmitting] = useState(false);
-  const [serverError, setServerError] = useState<string | null>(null);
+  const [serverError, setServerError] = useState<unknown>(null);
 
-  const usernameError = validateUsername(username, mode);
-  const passwordError = validatePassword(password);
+  const usernameProblem = validateUsername(username, mode);
+  const passwordProblem = validatePassword(password);
   const isRegister = mode === "register";
   const from = (location.state as LocationState | null)?.from ?? "/";
+  useDocumentTitle(t(isRegister ? "titles.register" : "titles.login", { brand: BRAND_NAME }));
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setTouched({ username: true, password: true });
-    if (usernameError || passwordError) return;
+    if (usernameProblem || passwordProblem) return;
     setSubmitting(true);
     setServerError(null);
     try {
       const response = isRegister ? await api.register(username, password) : await api.login(username, password);
-      setSession(response.token, response.user);
+      startSession(response.token, response.user);
       navigate(from, { replace: true });
     } catch (error) {
-      if (isApiError(error) && error.status === 401 && !isRegister) setServerError("Wrong username or password.");
-      else if (isApiError(error) && (error.code === "username_taken" || (error.status === 409 && isRegister))) setServerError("That username is already taken.");
-      else setServerError(errorMessage(error));
+      setServerError(error);
       setSubmitting(false);
     }
   }
@@ -47,10 +51,10 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
     setServerError(null);
     try {
       const response = await api.guest();
-      setSession(response.token, response.user);
+      startSession(response.token, response.user);
       navigate(from, { replace: true });
     } catch (error) {
-      setServerError(errorMessage(error));
+      setServerError(error);
       setSubmitting(false);
     }
   }
@@ -58,22 +62,19 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   return (
     <div className="page page--narrow">
       <div className="page__header reveal">
-        <div className="page__eyebrow">{isRegister ? "New account" : "Welcome back"}</div>
-        <h1 className="page__title">{isRegister ? "Register" : "Log in"}</h1>
-        <p className="page__lede">
-          {isRegister ? "Pick a name other players will see." : "Sign in to create games, join open ones and make moves."}
-        </p>
+        <div className="page__eyebrow">{t(`auth.${mode}.eyebrow`)}</div>
+        <h1 className="page__title">{t(`auth.${mode}.title`)}</h1>
+        <p className="page__lede">{t(`auth.${mode}.lede`)}</p>
       </div>
       {isRegister && user?.guest ? (
         <Notice kind="info">
-          You are playing as <Username user={user} />. Creating an account starts a new session; games played as a guest stay with the
-          guest.
+          <Trans i18nKey="auth.guestNotice" components={{ user: <Username user={user} /> }} />
         </Notice>
       ) : null}
       <form className="card reveal" style={{ "--i": 1 } as React.CSSProperties} onSubmit={submit} noValidate>
         <div className="field">
           <label className="field__label" htmlFor="username">
-            Username
+            {t("auth.username")}
           </label>
           <input
             id="username"
@@ -83,21 +84,21 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
             autoCapitalize="none"
             spellCheck={false}
             maxLength={20}
-            aria-invalid={touched.username && usernameError !== null}
+            aria-invalid={touched.username && usernameProblem !== null}
             onChange={(event) => setUsername(event.target.value)}
             onBlur={() => setTouched((state) => ({ ...state, username: true }))}
           />
           <div className="field__meta">
-            {touched.username && usernameError ? (
-              <span className="field__error">{usernameError}</span>
+            {touched.username && usernameProblem ? (
+              <span className="field__error">{t(`auth.usernameProblems.${usernameProblem}`)}</span>
             ) : isRegister ? (
-              <span className="field__hint">3 to 20 characters: letters, digits and underscores.</span>
+              <span className="field__hint">{t("auth.usernameHint")}</span>
             ) : null}
           </div>
         </div>
         <div className="field">
           <label className="field__label" htmlFor="password">
-            Password
+            {t("auth.password")}
           </label>
           <input
             id="password"
@@ -106,45 +107,37 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
             value={password}
             autoComplete={isRegister ? "new-password" : "current-password"}
             maxLength={PASSWORD_MAX_BYTES}
-            aria-invalid={touched.password && passwordError !== null}
+            aria-invalid={touched.password && passwordProblem !== null}
             onChange={(event) => setPassword(event.target.value)}
             onBlur={() => setTouched((state) => ({ ...state, password: true }))}
           />
           <div className="field__meta">
-            {touched.password && passwordError ? (
-              <span className="field__error">{passwordError}</span>
+            {touched.password && passwordProblem ? (
+              <span className="field__error">
+                {t(`auth.passwordProblems.${passwordProblem}`, { min: PASSWORD_MIN, max: PASSWORD_MAX_BYTES })}
+              </span>
             ) : isRegister ? (
-              <span className="field__hint">At least 8 characters and at most 72 bytes (a character outside ASCII takes 2 to 4).</span>
+              <span className="field__hint">{t("auth.passwordHint")}</span>
             ) : null}
           </div>
         </div>
-        {serverError ? <Notice kind="error">{serverError}</Notice> : null}
+        {serverError ? <Notice kind="error">{errorMessage(serverError)}</Notice> : null}
         <button type="submit" className="btn btn--primary btn--block" disabled={submitting}>
-          {submitting ? "Please wait" : isRegister ? "Create account" : "Log in"}
+          {submitting ? t("auth.pleaseWait") : t(`auth.${mode}.submit`)}
         </button>
         <p className="muted small" style={{ marginTop: 14, textAlign: "center" }}>
-          {isRegister ? (
-            <>
-              Already have an account? <Link to="/login" state={{ from }}>Log in</Link>
-            </>
-          ) : (
-            <>
-              No account yet? <Link to="/register" state={{ from }}>Register</Link>
-            </>
-          )}
+          <Trans i18nKey={`auth.${mode}.switch`} components={{ link: <Link to={isRegister ? "/login" : "/register"} state={{ from }} /> }} />
         </p>
       </form>
       {user ? null : (
         <div className="guest-entry reveal" style={{ "--i": 2 } as React.CSSProperties}>
           <div className="guest-entry__rule">
-            <span>or</span>
+            <span>{t("auth.or")}</span>
           </div>
           <button type="button" className="btn btn--block" disabled={submitting} onClick={() => void playAsGuest()}>
-            Play as guest
+            {t("auth.playAsGuest")}
           </button>
-          <p className="faint small guest-entry__hint">
-            No password: guest games are tied to this browser session and are lost when it is cleared.
-          </p>
+          <p className="faint small guest-entry__hint">{t("auth.guestHint")}</p>
         </div>
       )}
     </div>

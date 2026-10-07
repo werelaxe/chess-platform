@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router";
 import { api, errorMessage } from "../api/client";
 import type { Color, DrawAction, GameDto, GameMove, PieceType, ServerEvent } from "../api/types";
+import { BRAND_NAME } from "../brand";
 import { Board, type BoardHighlights, type BoardMode } from "../components/Board";
 import { DistributionPanel } from "../components/DistributionPanel";
 import { GameControls } from "../components/GameControls";
@@ -12,10 +14,14 @@ import { PromotionDialog } from "../components/PromotionDialog";
 import { ErrorNotice, Loading } from "../components/ui";
 import { botColor, playerLabel } from "../core/computer";
 import { IllegalMoveError, LocalGame, type GameSnapshot } from "../core/game";
+import { i18n } from "../i18n";
 import { movesEqual } from "../core/notation";
+import { PositionCache, replayStepForKey, resolvePly, selectPly, stepPly, type ReplayStep, type ViewedPly } from "../core/replay";
 import { squareIndex, squareName } from "../core/squares";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useGameSocket } from "../hooks/useGameSocket";
 import { useAuthStore } from "../store/auth";
+import { startSession } from "../store/session";
 
 interface Selection {
   from: number;
@@ -39,7 +45,11 @@ interface Toast {
   text: string;
 }
 
+/** Game actions that run against the server; each has its own failure message. */
+type GameAction = "join" | "joinAsGuest" | "cancel" | "resign" | "draw";
+
 const EMPTY_SET: ReadonlySet<number> = new Set<number>();
+const EMPTY_MOVES: GameMove[] = [];
 const TOAST_MS = 4_500;
 /** How long to wait for the server's event after an observation before resyncing. */
 const OBSERVE_FALLBACK_MS = 3_000;
@@ -64,11 +74,19 @@ function lastMoveSquares(move: GameMove | null): ReadonlySet<number> {
   return squares;
 }
 
+/** Keys pressed in a text field keep their editing meaning instead of browsing the history. */
+function isTextField(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  const tag = target.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+}
+
 export function GamePage() {
+  const { t } = useTranslation();
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
-  const setSession = useAuthStore((state) => state.setSession);
 
   const localRef = useRef<LocalGame | null>(null);
   const loadSequence = useRef(0);
@@ -92,6 +110,8 @@ export function GamePage() {
   const [busy, setBusy] = useState(false);
   const [awaitingObservation, setAwaitingObservation] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
+  /** Position browsed in the move history; null follows the live game. */
+  const [viewed, setViewed] = useState<ViewedPly>(null);
 
   const showToast = useCallback((kind: Toast["kind"], text: string) => setToast({ kind, text }), []);
 
@@ -131,6 +151,7 @@ export function GamePage() {
         setAwaitingObservation(false);
         clearObserveTimer();
         clearSelection();
+        setMode("normal");
         // A move committed while the fetch was in flight is missing from the response, and its
         // event was ignored because no local game was ready: fetch again when the socket saw more.
         if (local.moveCount() < serverMoveCount.current && followUpTarget.current !== serverMoveCount.current) {
@@ -140,7 +161,8 @@ export function GamePage() {
       } catch (error) {
         if (sequence !== loadSequence.current) return;
         if (initial) setLoadError(error);
-        else showToast("error", `Could not sync the game: ${errorMessage(error)}`);
+        // The module-level `t`: the hook's changes identity with the language and would restart the load.
+        else showToast("error", i18n.t("game.syncFailed", { message: errorMessage(error) }));
       } finally {
         if (sequence === loadSequence.current && initial) setLoading(false);
       }
@@ -158,6 +180,7 @@ export function GamePage() {
     setSnapshot(null);
     setMode("normal");
     setPinned(null);
+    setViewed(null);
     void load(true);
     return () => {
       loadSequence.current += 1;
@@ -194,6 +217,7 @@ export function GamePage() {
         setAwaitingObservation(false);
         clearObserveTimer();
         clearSelection();
+        setMode("normal");
         setGame((current) => (current ? { ...current, moveCount: event.ply + 1, moves: [...current.moves, event.move] } : current));
       } else if (event.ply < count && movesEqual(local.history()[event.ply]!, event.move)) {
         // Echo of a move we already applied optimistically.
@@ -216,6 +240,11 @@ export function GamePage() {
 
   const quantum = game?.kind === "QUANTUM";
   const effectiveMode: BoardMode = quantum ? mode : "normal";
+  const history = snapshot?.history ?? EMPTY_MOVES;
+  const total = history.length;
+  const shownPly = resolvePly(viewed, total);
+  /** An earlier position is on the board; the live game goes on underneath and is not playable. */
+  const browsing = shownPly < total;
   const canAct =
     game !== null &&
     snapshot !== null &&
@@ -223,23 +252,51 @@ export function GamePage() {
     game.status === "ACTIVE" &&
     snapshot.status.type === "ongoing" &&
     snapshot.sideToMove === viewerColor;
-  const interactive = canAct && !busy && !awaitingObservation;
+  const interactive = canAct && !busy && !awaitingObservation && !browsing;
 
   useEffect(() => {
     if (!interactive) clearSelection();
   }, [interactive, clearSelection]);
 
-  useEffect(() => {
-    const previous = document.title;
-    if (game) {
-      const white = game.white ? playerLabel(game.white, game.botLevel) : "?";
-      const black = game.black ? playerLabel(game.black, game.botLevel) : "?";
-      document.title = `${white} vs ${black} - ${game.kind === "QUANTUM" ? "Quantum" : "Classic"} chess`;
+  // Earlier positions are replayed from the move list on demand; the cache is dropped with the
+  // snapshot, which is replaced exactly when the move list changes.
+  const positions = useMemo(() => (snapshot ? new PositionCache(snapshot.kind, snapshot.history) : null), [snapshot]);
+  const pastSnapshot = useMemo<GameSnapshot | null>(() => {
+    if (!browsing || !positions) return null;
+    try {
+      return positions.at(shownPly);
+    } catch {
+      // A prefix of a history that replayed cannot fail short of a core bug; fall back to the live position.
+      return null;
     }
-    return () => {
-      document.title = previous;
-    };
-  }, [game]);
+  }, [browsing, positions, shownPly]);
+  const shownSnapshot = pastSnapshot ?? snapshot;
+
+  const jumpTo = useCallback((ply: number) => setViewed(selectPly(ply, total)), [total]);
+  const step = useCallback((direction: ReplayStep) => setViewed((current) => stepPly(current, total, direction)), [total]);
+  const goLive = useCallback(() => setViewed(null), []);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      const direction = replayStepForKey(event.key);
+      if (!direction || isTextField(event.target)) return;
+      event.preventDefault();
+      step(direction);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [step]);
+
+  useDocumentTitle(
+    game
+      ? t("titles.game", {
+          white: game.white ? playerLabel(game.white, game.botLevel) : t("common.unknownPlayer"),
+          black: game.black ? playerLabel(game.black, game.botLevel) : t("common.unknownPlayer"),
+          variant: t(`variants.${game.kind}`),
+        })
+      : t(loadError ? "titles.gameUnavailable" : "titles.gameLoading", { brand: BRAND_NAME }),
+  );
 
   const observable = useMemo<ReadonlySet<number>>(() => {
     const local = localRef.current;
@@ -264,11 +321,11 @@ export function GamePage() {
       first: splitFirst?.first ?? null,
       stay,
       observable,
-      lastMove: lastMoveSquares(snapshot?.view.lastMove ?? null),
+      lastMove: lastMoveSquares(shownSnapshot?.view.lastMove ?? null),
       inspected: hovered ?? pinned,
       pinned,
     };
-  }, [selection, splitFirst, observable, snapshot, hovered, pinned]);
+  }, [selection, splitFirst, observable, shownSnapshot, hovered, pinned]);
 
   async function submit(move: GameMove, optimistic: boolean) {
     const local = localRef.current;
@@ -278,13 +335,14 @@ export function GamePage() {
       try {
         local.apply(move);
       } catch (error) {
-        showToast("error", error instanceof IllegalMoveError ? `Illegal move: ${error.message}` : errorMessage(error));
+        showToast("error", error instanceof IllegalMoveError ? t("game.illegalMove", { detail: error.message }) : errorMessage(error));
         clearSelection();
         return;
       }
       setSnapshot(local.snapshot());
     }
     clearSelection();
+    setMode("normal");
     setBusy(true);
     busyRef.current = true;
     try {
@@ -300,7 +358,7 @@ export function GamePage() {
         }, OBSERVE_FALLBACK_MS);
       }
     } catch (error) {
-      showToast("error", `The server rejected the move: ${errorMessage(error)}`);
+      showToast("error", t("game.rejectedMove", { message: errorMessage(error) }));
       await load(false);
     } finally {
       setBusy(false);
@@ -342,7 +400,7 @@ export function GamePage() {
       if (local.canObserve(index)) {
         void submit({ type: "observe", square: squareName(index) }, false);
       } else {
-        showToast("info", "Pick an outlined square: only uncertain squares can be observed.");
+        showToast("info", t("game.observeHint"));
         setPinned(index);
       }
       return;
@@ -404,7 +462,7 @@ export function GamePage() {
     clearSelection();
   }
 
-  async function runAction(label: string, action: () => Promise<GameDto>, after?: (dto: GameDto) => void) {
+  async function runAction(kind: GameAction, action: () => Promise<GameDto>, after?: (dto: GameDto) => void) {
     setBusy(true);
     busyRef.current = true;
     try {
@@ -412,7 +470,7 @@ export function GamePage() {
       setGame(dto);
       after?.(dto);
     } catch (error) {
-      showToast("error", `${label} failed: ${errorMessage(error)}`);
+      showToast("error", t(`game.failed.${kind}`, { message: errorMessage(error) }));
     } finally {
       setBusy(false);
       busyRef.current = false;
@@ -420,15 +478,15 @@ export function GamePage() {
   }
 
   function onJoin() {
-    void runAction("Joining", () => api.joinGame(id), () => resync());
+    void runAction("join", () => api.joinGame(id), () => resync());
   }
 
   function onJoinAsGuest() {
     void runAction(
-      "Joining as guest",
+      "joinAsGuest",
       async () => {
         const session = await api.guest();
-        setSession(session.token, session.user);
+        startSession(session.token, session.user);
         return api.joinGame(id);
       },
       () => resync(),
@@ -438,20 +496,20 @@ export function GamePage() {
   function onResign() {
     if (game?.status === "WAITING") {
       // Leaving a game nobody joined deletes it.
-      void runAction("Cancelling", () => api.resign(id), () => navigate("/"));
+      void runAction("cancel", () => api.resign(id), () => navigate("/"));
     } else {
-      void runAction("Resigning", () => api.resign(id));
+      void runAction("resign", () => api.resign(id));
     }
   }
 
   function onDraw(action: DrawAction) {
-    void runAction("Draw request", () => api.draw(id, action));
+    void runAction("draw", () => api.draw(id, action));
   }
 
   if (loading) {
     return (
       <div className="page">
-        <Loading label="Loading game" />
+        <Loading label={t("game.loading")} />
       </div>
     );
   }
@@ -460,18 +518,21 @@ export function GamePage() {
     return (
       <div className="page page--narrow">
         <h1 className="page__title" style={{ marginBottom: 12 }}>
-          Game unavailable
+          {t("game.unavailable")}
         </h1>
-        <ErrorNotice error={loadError ?? new Error("The game could not be loaded.")} onRetry={() => void load(true)} />
+        <ErrorNotice error={loadError ?? new Error(t("game.couldNotLoad"))} onRetry={() => void load(true)} />
         <Link to="/" className="btn" style={{ marginTop: 8 }}>
-          Back to the lobby
+          {t("common.backToLobby")}
         </Link>
       </div>
     );
   }
 
+  // The board, the highlights and the square panel show the browsed position; the header, the
+  // controls and the move list stay with the live game.
+  const shown = pastSnapshot ?? snapshot;
   const inspectedIndex = hovered ?? pinned;
-  const inspectedCell = inspectedIndex !== null ? (snapshot.view.cells[inspectedIndex] ?? null) : null;
+  const inspectedCell = inspectedIndex !== null ? (shown.view.cells[inspectedIndex] ?? null) : null;
   const shareUrl = `${window.location.origin}/games/${game.id}`;
   const showModeBar = quantum && viewerColor !== null && game.status === "ACTIVE" && snapshot.status.type === "ongoing";
   const computerColor = botColor(game);
@@ -479,33 +540,32 @@ export function GamePage() {
   const botToMove = computer && game.status === "ACTIVE" && snapshot.status.type === "ongoing" && snapshot.sideToMove === computerColor;
 
   let hint = "";
-  if (awaitingObservation) hint = "Measuring the square, waiting for the outcome.";
-  else if (busy) hint = "Sending your move.";
-  else if (!canAct) hint = viewerColor ? (botToMove ? "Computer is thinking." : "Waiting for your opponent.") : "";
-  else if (effectiveMode === "observe") hint = "Click an outlined square to measure it. The outcome is random and costs your turn.";
+  if (browsing) hint = t("game.hints.browsing");
+  else if (awaitingObservation) hint = t("game.hints.measuring");
+  else if (busy) hint = t("game.hints.sending");
+  else if (!canAct) hint = viewerColor ? (botToMove ? t("game.hints.computerThinking") : t("game.hints.waitingOpponent")) : "";
+  else if (effectiveMode === "observe") hint = t("game.hints.observe");
   else if (effectiveMode === "split") {
-    hint = !selection
-      ? "Select a piece to split."
-      : !splitFirst
-        ? "Choose the first destination."
-        : "Choose the second destination, or the origin square to stay.";
-  } else hint = selection ? "Choose a destination." : "Select a piece to move.";
+    hint = !selection ? t("game.hints.splitSelect") : !splitFirst ? t("game.hints.splitFirst") : t("game.hints.splitSecond");
+  } else hint = selection ? t("game.hints.destination") : t("game.hints.select");
 
   // The slot above the board is always rendered with a fixed height (see .banner-slot), so the
   // board stays put when the message appears, changes or goes away.
   let bannerText = "";
-  if (game.status === "WAITING" && !computer) {
+  if (browsing) {
+    bannerText = shownPly === 0 ? t("game.banners.start") : t("game.banners.viewing", { ply: shownPly, total });
+  } else if (game.status === "WAITING" && !computer) {
     bannerText = viewerColor
       ? game.visibility === "PRIVATE"
-        ? "Waiting for an opponent. Share the link to invite someone."
-        : "Waiting for an opponent to join from the lobby."
-      : "This game is waiting for a second player.";
+        ? t("game.banners.waitingShare")
+        : t("game.banners.waitingLobby")
+      : t("game.banners.waitingSpectator");
   } else if (awaitingObservation) {
-    bannerText = "Observing, waiting for the outcome from the server.";
+    bannerText = t("game.banners.observing");
   } else if (botToMove) {
-    bannerText = "Computer is thinking\u2026";
+    bannerText = t("game.banners.computerThinking");
   } else if (canAct && !busy) {
-    bannerText = `Your move${snapshot.view.checkProbability > 0 ? ", you are in check" : ""}.`;
+    bannerText = snapshot.view.checkProbability > 0 ? t("game.banners.yourMoveCheck") : t("game.banners.yourMove");
   }
 
   return (
@@ -513,10 +573,17 @@ export function GamePage() {
       <div className="game">
         <div className="game__stage reveal">
           <div className="banner-slot" role="status">
-            <div className={`banner${bannerText ? "" : " banner--hidden"}`}>{bannerText || "\u00A0"}</div>
+            <div className={`banner${bannerText ? "" : " banner--hidden"}`}>
+              <span className="banner__text">{bannerText || "\u00A0"}</span>
+              {browsing ? (
+                <button type="button" className="btn btn--small banner__action" onClick={goLive}>
+                  {t("game.backToLive")}
+                </button>
+              ) : null}
+            </div>
           </div>
           <Board
-            view={snapshot.view}
+            view={shown.view}
             flipped={viewerColor === "BLACK"}
             mode={effectiveMode}
             highlights={highlights}
@@ -546,7 +613,7 @@ export function GamePage() {
             onDraw={onDraw}
           />
           <DistributionPanel cell={inspectedCell} quantum={quantum} pinned={hovered === null && pinned !== null} />
-          <MoveList moves={snapshot.history} />
+          <MoveList moves={snapshot.history} shownPly={shownPly} onStep={step} onSelect={jumpTo} />
         </div>
       </div>
       {toast ? (
