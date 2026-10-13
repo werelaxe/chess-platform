@@ -13,6 +13,7 @@ import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.cio.CIO
 import ru.werelaxe.chess.admin.client.AdminClient
 import ru.werelaxe.chess.admin.commands.BotsCommand
+import ru.werelaxe.chess.admin.commands.GamesCommand
 import ru.werelaxe.chess.admin.commands.OverviewCommand
 import ru.werelaxe.chess.admin.commands.Session
 import ru.werelaxe.chess.admin.commands.SettingsCommand
@@ -35,7 +36,7 @@ class ChessAdmin(private val engine: () -> HttpClientEngine = { CIO.create() }) 
     private val json by option("--json", help = "Print the API response as JSON instead of a table").flag()
 
     init {
-        subcommands(OverviewCommand(), BotsCommand(), SettingsCommand())
+        subcommands(OverviewCommand(), BotsCommand(), GamesCommand(), SettingsCommand())
     }
 
     override fun help(context: Context) = "Administers a chess platform server through its admin API."

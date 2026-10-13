@@ -384,6 +384,43 @@ class GameService(
     }
 
     /**
+     * Ends a game by an administrator's decision (docs/ARCHITECTURE.md section 2.11): an ACTIVE
+     * or WAITING game is finished by abandonment, without a winner and without touching the
+     * ratings, and its subscribers see it end like any other game. A FINISHED game is 409
+     * `game_finished`.
+     */
+    suspend fun abort(id: String): GameDto = cache.locked(id) { entry ->
+        val record = games.findById(id) ?: throw ApiException.notFound("Game")
+        if (record.phase == GamePhase.FINISHED) throw gameFinished()
+        val now = clock.instant()
+        val aborted = record.copy(
+            phase = GamePhase.FINISHED,
+            result = GameResult(null, EndReason.ABANDONMENT),
+            drawOfferedBy = null,
+            updatedAt = now,
+            finishedAt = now,
+        )
+        games.finish(aborted, rating = null)
+        entry.game = null
+        val dto = toDto(aborted, games.moves(id), emptyList())
+        events.publish(id, ServerEvent.GameUpdated(dto))
+        dto
+    }
+
+    /**
+     * Deletes a game of any phase with its moves and rating changes, for an administrator
+     * (section 2.11); the ratings the game led to stay. Nothing is published: the game is
+     * simply not found from here on.
+     */
+    suspend fun delete(id: String) {
+        cache.locked(id) { entry ->
+            games.findById(id) ?: throw ApiException.notFound("Game")
+            games.delete(id)
+            entry.game = null
+        }
+    }
+
+    /**
      * Deletes a WAITING game and reports it as abandoned ([declined] when the invitee turned
      * the invitation down); call under the game's lock.
      */

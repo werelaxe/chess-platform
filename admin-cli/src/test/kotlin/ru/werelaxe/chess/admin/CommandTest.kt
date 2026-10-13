@@ -30,10 +30,13 @@ class CommandTest {
         assertEquals(0, result.statusCode, result.output)
         assertTrue("Usage: chess-admin [<options>] <command> [<args>]..." in result.stdout, result.stdout)
         assertTrue(CHESS_ADMIN_TOKEN_MENTION in result.stdout, result.stdout)
-        for (command in listOf("overview", "bots", "settings")) assertTrue(command in result.stdout, command)
+        for (command in listOf("overview", "bots", "games", "settings")) assertTrue(command in result.stdout, command)
         val spawn = run("bots spawn --help")
         assertEquals(0, spawn.statusCode, spawn.output)
         assertTrue("--level" in spawn.stdout && "NOVICE|EASY|MEDIUM|HARD|EXPERT" in spawn.stdout, spawn.stdout)
+        val list = run("games list --help")
+        assertEquals(0, list.statusCode, list.output)
+        assertTrue("--status" in list.stdout && "WAITING|ACTIVE|FINISHED" in list.stdout && "--limit" in list.stdout, list.stdout)
         assertTrue(api.requests.isEmpty())
     }
 
@@ -158,6 +161,70 @@ class CommandTest {
     }
 
     @Test
+    fun gamesListIsATable() {
+        val result = run("$token games list")
+        assertEquals(0, result.statusCode, result.output)
+        assertEquals(HttpMethod.Get, api.requests.single().method)
+        assertEquals("http://localhost:8080/api/admin/games", api.requests.single().url)
+        assertEquals(
+            """
+            ID            KIND     STATUS    WHITE        BLACK        MOVES  RATED  RESULT         UPDATED
+            cX5ms1dZ9NoP  CLASSIC  WAITING   alice        -            0      yes    -              2026-10-07 11:00
+            aZ3kq9bX7LmN  QUANTUM  ACTIVE    novice-nick  alice        12     yes    -              2026-10-07 10:30
+            bY4lr0cY8MnO  CLASSIC  FINISHED  alice        novice-nick  41     no     0-1 CHECKMATE  2026-10-06 09:45
+
+            """.trimIndent(),
+            result.stdout,
+        )
+    }
+
+    @Test
+    fun gamesListPassesTheStatusAndTheLimit() {
+        val result = run("$token games list --status finished --limit 10")
+        assertEquals(0, result.statusCode, result.output)
+        assertEquals("http://localhost:8080/api/admin/games?status=FINISHED&limit=10", api.requests.single().url)
+        assertEquals(listOf("bY4lr0cY8MnO"), result.stdout.trimEnd().lines().drop(1).map { it.substringBefore("  ") })
+        api.requests.clear()
+        val limited = run("$token --json games list --limit 1")
+        assertEquals("http://localhost:8080/api/admin/games?limit=1", api.requests.single().url)
+        assertEquals("""{"games":[${Fixtures.WAITING_GAME}]}""" + "\n", limited.stdout)
+    }
+
+    @Test
+    fun gamesListChecksItsOptions() {
+        run("$token games list --status PAUSED").assertFailed("invalid choice: PAUSED")
+        run("$token games list --limit 0").assertFailed("must be positive")
+        run("$token games list --limit few").assertFailed("few is not a valid integer")
+        assertTrue(api.requests.isEmpty())
+    }
+
+    @Test
+    fun dropDeletesTheGameAndSaysSo() {
+        val result = run("$token games drop aZ3kq9bX7LmN")
+        assertEquals(0, result.statusCode, result.output)
+        assertEquals(HttpMethod.Delete, api.requests.single().method)
+        assertEquals("http://localhost:8080/api/admin/games/aZ3kq9bX7LmN", api.requests.single().url)
+        assertEquals("dropped aZ3kq9bX7LmN\n", result.stdout)
+        run("$token games drop nothing").assertFailed("Error: 404 not_found: Unknown game 'nothing'")
+        val json = run("$token --json games drop aZ3kq9bX7LmN")
+        assertEquals(0, json.statusCode, json.output)
+        assertEquals("", json.stdout)
+    }
+
+    @Test
+    fun abortPrintsTheResultingStatus() {
+        val result = run("$token games abort aZ3kq9bX7LmN")
+        assertEquals(0, result.statusCode, result.output)
+        assertEquals(HttpMethod.Post, api.requests.single().method)
+        assertEquals("http://localhost:8080/api/admin/games/aZ3kq9bX7LmN/abort", api.requests.single().url)
+        assertEquals("aborted aZ3kq9bX7LmN: FINISHED 1/2-1/2 ABANDONMENT\n", result.stdout)
+        run("$token games abort bY4lr0cY8MnO").assertFailed("Error: 409 game_over: The game is already over")
+        run("$token games abort nothing").assertFailed("Error: 404 not_found: Unknown game 'nothing'")
+        val json = run("$token --json games abort cX5ms1dZ9NoP")
+        assertEquals(Fixtures.ABORTED_GAME.replace("aZ3kq9bX7LmN", "cX5ms1dZ9NoP") + "\n", json.stdout)
+    }
+
+    @Test
     fun settingsListIsATable() {
         val result = run("$token settings list")
         assertEquals(0, result.statusCode, result.output)
@@ -191,6 +258,20 @@ class CommandTest {
         api.requests.clear()
         run("$token settings open-games -- -1").assertFailed("must not be negative")
         run("$token settings open-games many").assertFailed("many is not a valid integer")
+        assertTrue(api.requests.isEmpty())
+    }
+
+    @Test
+    fun liveGamesIsAShortcutForTheTarget() {
+        val result = run("$token settings live-games 2")
+        assertEquals(0, result.statusCode, result.output)
+        assertEquals(HttpMethod.Put, api.requests.single().method)
+        assertEquals("http://localhost:8080/api/admin/settings/bot.live_games_target", api.requests.single().url)
+        assertEquals("""{"value":"2"}""", api.requests.single().body)
+        assertTrue("bot.live_games_target  2      1        db      a setting" in result.stdout, result.stdout)
+        api.requests.clear()
+        run("$token settings live-games -- -1").assertFailed("must not be negative")
+        run("$token settings live-games some").assertFailed("some is not a valid integer")
         assertTrue(api.requests.isEmpty())
     }
 
@@ -254,6 +335,9 @@ class CommandTest {
         val result = run("$token bots")
         assertTrue("Usage: chess-admin bots [<options>] <command> [<args>]..." in result.output, result.output)
         assertTrue("spawn  Create a bot" in result.output, result.output)
+        val games = run("$token games")
+        assertTrue("Usage: chess-admin games [<options>] <command> [<args>]..." in games.output, games.output)
+        assertTrue("abort  End a game without a winner" in games.output, games.output)
         assertTrue(api.requests.isEmpty())
     }
 

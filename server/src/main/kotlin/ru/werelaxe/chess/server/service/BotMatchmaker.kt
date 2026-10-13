@@ -7,7 +7,6 @@ import ru.werelaxe.chess.core.GameKind
 import ru.werelaxe.chess.server.dto.ColorChoice
 import ru.werelaxe.chess.server.dto.CreateGameRequest
 import ru.werelaxe.chess.server.dto.Opponent
-import ru.werelaxe.chess.server.model.GameRecord
 import ru.werelaxe.chess.server.model.User
 import ru.werelaxe.chess.server.model.Visibility
 import ru.werelaxe.chess.server.repository.GameRepository
@@ -19,14 +18,16 @@ import kotlin.random.Random
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * Keeps the lobby alive with the bots: on every tick, wakes the bots in the games where one is
- * on turn, deletes the bot invitations and the public open games that expired, and then does
- * one thing (docs/ARCHITECTURE.md section 2.10). A random bot creates an open game while fewer
- * than the target exist; otherwise, with probability 1/2, a random bot joins a public game that
- * has waited long enough but not too long (another bot's included); otherwise, with
- * probability 1/4, a random bot invites a recently seen human. Bots at the active-games cap sit
- * the tick out. Every choice goes through [random] and [clock], so tests drive [tick] directly
- * with scripted values.
+ * Keeps the lobby alive with the bots (docs/ARCHITECTURE.md section 2.10). On every tick it
+ * wakes the bots in the games where one is on turn, deletes the bot invitations and the public
+ * open games that expired, and then, while fewer bot-versus-bot games than the live target are
+ * in progress, starts up to two of them (two distinct bots: one creates a public rated game,
+ * the other joins it). The tick ends with one lobby action: a random bot creates an open game
+ * while fewer than the open-games target exist; otherwise a bot joins the oldest public game
+ * that has waited long enough but not too long (another bot's included), without any dice;
+ * otherwise, with probability 1/4, a random bot invites a recently seen human. Bots at the
+ * active-games cap sit the tick out. Every choice goes through [random] and [clock], so tests
+ * drive [tick] directly with scripted values.
  *
  * The tunables come from [settings] (section 2.11): the targets are read at the start of
  * every tick and the sleep range before every pause, so a change applies without a restart.
@@ -51,13 +52,14 @@ class BotMatchmaker(
 
     /** What a tick did; mostly for the tests. */
     sealed interface Action {
+        /** A bot-versus-bot game started towards the live target. */
+        data class Started(val gameId: String) : Action
+
         data class Created(val gameId: String) : Action
 
         data class Joined(val gameId: String) : Action
 
         data class Invited(val gameId: String, val userId: Long) : Action
-
-        data object Nothing : Action
     }
 
     /** Ticks forever after random pauses; cancelled with the application. */
@@ -67,8 +69,7 @@ class BotMatchmaker(
             val span = (settings.tickMax - tickMin).coerceAtLeast(Duration.ZERO).toMillis()
             delay((tickMin.toMillis() + random.nextLong(span + 1)).milliseconds)
             try {
-                val action = tick()
-                if (action != Action.Nothing) log.info("Matchmaking: {}", action)
+                for (action in tick()) log.info("Matchmaking: {}", action)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -77,9 +78,11 @@ class BotMatchmaker(
         }
     }
 
-    suspend fun tick(): Action {
-        if (!settings.matchmaking) return Action.Nothing
+    /** Does the tick's work and returns it in order: the live games started, then the lobby action if any. */
+    suspend fun tick(): List<Action> {
+        if (!settings.matchmaking) return emptyList()
         val openGamesTarget = settings.openGamesTarget
+        val liveGamesTarget = settings.liveGamesTarget
         val joinAfter = settings.joinAfter
         val invitationTtl = settings.invitationTtl
         val maxActiveGames = settings.maxActiveGames
@@ -87,12 +90,19 @@ class BotMatchmaker(
         games.wakeBots()
         expireInvitations(now, invitationTtl)
         expireOpenGames(now)
+        val actions = ArrayList<Action>()
+        actions += startLiveGames(liveGamesTarget, maxActiveGames)
+        // The games just started count towards the cap, so the available bots are read afresh.
         val available = availableBots(maxActiveGames)
-        if (available.isEmpty()) return Action.Nothing
-        if (repository.countOpenGamesBy(bots.ids) < openGamesTarget) return createOpenGame(available.pick())
-        if (random.nextDouble() < JOIN_PROBABILITY) joinOldGame(available, now, joinAfter)?.let { return it }
-        if (random.nextDouble() < INVITE_PROBABILITY) inviteHuman(available, now)?.let { return it }
-        return Action.Nothing
+        if (available.isEmpty()) return actions
+        if (repository.countOpenGamesBy(bots.ids) < openGamesTarget) {
+            actions += createOpenGame(available.pick())
+        } else {
+            val action = joinOldestGame(available, now, joinAfter)
+                ?: if (random.nextDouble() < INVITE_PROBABILITY) inviteHuman(available, now) else null
+            if (action != null) actions += action
+        }
+        return actions
     }
 
     private suspend fun expireInvitations(now: Instant, invitationTtl: Duration) {
@@ -128,28 +138,59 @@ class BotMatchmaker(
         return bots.roster.filter { (active[it.id] ?: 0) < maxActiveGames }
     }
 
+    /**
+     * Starts bot-versus-bot games while fewer than [target] are in progress, at most
+     * [LIVE_GAMES_PER_TICK] per tick so that a raised target fills up over a few ticks rather
+     * than all at once. Each game takes a slot of both bots, so the available bots are read
+     * again before every game; two distinct ones are needed.
+     */
+    private suspend fun startLiveGames(target: Int, maxActiveGames: Int): List<Action> {
+        if (target <= 0) return emptyList()
+        val started = ArrayList<Action>()
+        var live = repository.countActiveGamesAmong(bots.ids)
+        repeat(LIVE_GAMES_PER_TICK) {
+            if (live >= target) return started
+            val available = availableBots(maxActiveGames)
+            if (available.size < 2) return started
+            val creator = available.pick()
+            val joiner = available.filter { it.id != creator.id }.pick()
+            val created = games.create(bots.principal(creator), openGameRequest())
+            try {
+                games.join(bots.principal(joiner), created.id)
+            } catch (e: ApiException) {
+                // A human grabbed the seat between the two calls: a game all the same, just not a live one.
+                log.debug("Bot {} could not join the game {} of {}: {}", joiner.username, created.id, creator.username, e.code)
+                return@repeat
+            }
+            started += Action.Started(created.id)
+            live++
+        }
+        return started
+    }
+
     private suspend fun createOpenGame(creator: User): Action {
-        val created = games.create(bots.principal(creator), CreateGameRequest(randomKind(), Visibility.PUBLIC, ColorChoice.RANDOM, rated = true))
+        val created = games.create(bots.principal(creator), openGameRequest())
         return Action.Created(created.id)
     }
 
     /**
-     * Joins a game that has waited at least [joinAfter] but is younger than the TTL, preferring
-     * the newest: that is the one whose creator is most likely still there.
+     * Joins the oldest game that has waited at least [joinAfter] but is younger than the TTL:
+     * the one whose creator has been kept waiting the longest. A game the only available bot
+     * created itself, or one joined or cancelled since the listing (a benign race, logged at
+     * DEBUG), is passed over for the next oldest.
      */
-    private suspend fun joinOldGame(available: List<User>, now: Instant, joinAfter: Duration): Action? {
+    private suspend fun joinOldestGame(available: List<User>, now: Instant, joinAfter: Duration): Action? {
         val candidates = repository.listOpenGamesCreatedBetween(now - openGameTtl, now - joinAfter, JOIN_CANDIDATES)
-        if (candidates.isEmpty()) return null
-        val game: GameRecord = candidates.pick()
-        val joiner = available.filter { it.id != game.creatorId }.takeIf { it.isNotEmpty() }?.pick() ?: return null
-        return try {
-            games.join(bots.principal(joiner), game.id)
-            Action.Joined(game.id)
-        } catch (e: ApiException) {
-            // Somebody joined it or its creator cancelled it since the listing: a benign race.
-            log.debug("Bot {} could not join game {}: {}", joiner.username, game.id, e.code)
-            null
+        for (game in candidates) {
+            val joiner = available.filter { it.id != game.creatorId }.takeIf { it.isNotEmpty() }?.pick() ?: continue
+            try {
+                games.join(bots.principal(joiner), game.id)
+                return Action.Joined(game.id)
+            } catch (e: ApiException) {
+                log.debug("Bot {} could not join game {}: {}", joiner.username, game.id, e.code)
+            }
         }
+        return null
     }
 
     private suspend fun inviteHuman(available: List<User>, now: Instant): Action? {
@@ -181,13 +222,18 @@ class BotMatchmaker(
         }
     }
 
+    /** A public rated game open to anybody, of a random kind, in which the creator plays a random colour. */
+    private fun openGameRequest() = CreateGameRequest(randomKind(), Visibility.PUBLIC, ColorChoice.RANDOM, rated = true)
+
     private fun randomKind(): GameKind = GameKind.entries.pick()
 
     private fun <T> List<T>.pick(): T = this[random.nextInt(size)]
 
     companion object {
-        const val JOIN_PROBABILITY = 0.5
         const val INVITE_PROBABILITY = 0.25
+
+        /** Bot-versus-bot games started per tick at most, so that a raised live target fills up gradually. */
+        const val LIVE_GAMES_PER_TICK = 2
 
         /** How recently a human must have been seen to be invited. */
         val ACTIVITY_WINDOW: Duration = Duration.ofDays(7)

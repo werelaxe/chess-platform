@@ -64,8 +64,19 @@ class ExposedGameRepository(private val db: Database) : GameRepository {
         tx { Games.update({ Games.id eq game.id }) { it.fill(game) } }
     }
 
+    /** The moves and the rating changes go with the row (`ON DELETE CASCADE`). */
     override suspend fun delete(id: String) {
         tx { Games.deleteWhere { Games.id eq id } }
+    }
+
+    override suspend fun listAll(phase: GamePhase?, limit: Int, offset: Int): List<GameRecord> = tx {
+        var query = Games.selectAll()
+        if (phase != null) query = query.where { Games.status eq phase }
+        query
+            .orderBy(Games.createdAt to SortOrder.DESC, Games.id to SortOrder.DESC)
+            .limit(limit)
+            .offset(offset.toLong())
+            .map { it.toRecord() }
     }
 
     override suspend fun listPublic(filter: GameFilter?, kind: GameKind?, limit: Int, offset: Int): List<GameRecord> = tx {
@@ -159,9 +170,7 @@ class ExposedGameRepository(private val db: Database) : GameRepository {
     override suspend fun listOpenGamesCreatedBefore(before: Instant, limit: Int): List<GameRecord> = tx {
         Games.selectAll()
             .where { openToAnybody() and (Games.createdAt lessEq before.atOffset(ZoneOffset.UTC)) }
-            .orderBy(Games.createdAt to SortOrder.ASC, Games.id to SortOrder.ASC)
-            .limit(limit)
-            .map { it.toRecord() }
+            .oldestFirst(limit)
     }
 
     override suspend fun listOpenGamesCreatedBetween(after: Instant, before: Instant, limit: Int): List<GameRecord> = tx {
@@ -171,9 +180,7 @@ class ExposedGameRepository(private val db: Database) : GameRepository {
                     (Games.createdAt greater after.atOffset(ZoneOffset.UTC)) and
                     (Games.createdAt lessEq before.atOffset(ZoneOffset.UTC))
             }
-            .orderBy(Games.createdAt to SortOrder.DESC, Games.id to SortOrder.DESC)
-            .limit(limit)
-            .map { it.toRecord() }
+            .oldestFirst(limit)
     }
 
     override suspend fun listActiveGamesOf(playerIds: Collection<Long>): List<GameRecord> {
@@ -183,6 +190,17 @@ class ExposedGameRepository(private val db: Database) : GameRepository {
             Games.selectAll()
                 .where { (Games.status eq GamePhase.ACTIVE) and ((Games.whiteId inList ids) or (Games.blackId inList ids)) }
                 .map { it.toRecord() }
+        }
+    }
+
+    override suspend fun countActiveGamesAmong(playerIds: Collection<Long>): Int {
+        if (playerIds.isEmpty()) return 0
+        val ids = playerIds.toSet()
+        return tx {
+            Games.selectAll()
+                .where { (Games.status eq GamePhase.ACTIVE) and (Games.whiteId inList ids) and (Games.blackId inList ids) }
+                .count()
+                .toInt()
         }
     }
 
@@ -218,6 +236,9 @@ class ExposedGameRepository(private val db: Database) : GameRepository {
 
     private fun org.jetbrains.exposed.v1.jdbc.Query.newestFirst(): List<GameRecord> =
         orderBy(Games.createdAt to SortOrder.DESC, Games.id to SortOrder.DESC).map { it.toRecord() }
+
+    private fun org.jetbrains.exposed.v1.jdbc.Query.oldestFirst(limit: Int): List<GameRecord> =
+        orderBy(Games.createdAt to SortOrder.ASC, Games.id to SortOrder.ASC).limit(limit).map { it.toRecord() }
 
     /**
      * Reads both players' rating rows (locked, so that two games of one player finishing at

@@ -7,6 +7,8 @@ import ru.werelaxe.chess.server.dto.AdminBotDetails
 import ru.werelaxe.chess.server.dto.AdminOverview
 import ru.werelaxe.chess.server.dto.CreateBotRequest
 import ru.werelaxe.chess.server.dto.GameCounts
+import ru.werelaxe.chess.server.dto.GameDto
+import ru.werelaxe.chess.server.dto.GameSummary
 import ru.werelaxe.chess.server.dto.PlayerRatings
 import ru.werelaxe.chess.server.dto.UpdateBotRequest
 import ru.werelaxe.chess.server.dto.UserRef
@@ -19,8 +21,8 @@ import ru.werelaxe.chess.server.repository.UserRepository
 import java.time.Clock
 
 /**
- * What the admin API (docs/ARCHITECTURE.md section 2.11) shows and changes: the overview and
- * the bots. Every change is logged; the settings are handled by [Settings] itself.
+ * What the admin API (docs/ARCHITECTURE.md section 2.11) shows and changes: the overview, the
+ * bots and the games. Every change is logged; the settings are handled by [Settings] itself.
  */
 class AdminService(
     private val users: UserRepository,
@@ -84,6 +86,23 @@ class AdminService(
         bots.refresh()
         log.info("Admin: changed bot {}: level {}, name {}", updated.username, updated.botLevel, updated.displayName)
         return describe(listOf(updated)).single()
+    }
+
+    /** Every game whatever its visibility, newest first; only those in [phase] when given. */
+    suspend fun listGames(phase: GamePhase?, limit: Int, offset: Int): List<GameSummary> =
+        gameService.toSummaries(games.listAll(phase, limit, offset))
+
+    /** Finishes an ACTIVE or WAITING game by abandonment, with no winner and no rating change. */
+    suspend fun abortGame(id: String): GameDto {
+        val aborted = gameService.abort(id)
+        log.info("Admin: aborted game {} ({} vs {}, {} moves)", id, aborted.white?.username, aborted.black?.username, aborted.moveCount)
+        return aborted
+    }
+
+    /** Deletes a game of any phase with its moves and rating changes. */
+    suspend fun deleteGame(id: String) {
+        gameService.delete(id)
+        log.info("Admin: deleted game {}", id)
     }
 
     private suspend fun findBot(username: String): User =

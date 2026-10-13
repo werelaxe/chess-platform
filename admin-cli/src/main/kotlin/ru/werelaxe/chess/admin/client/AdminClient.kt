@@ -6,6 +6,7 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.header
 import io.ktor.client.request.request
 import io.ktor.client.request.setBody
+import io.ktor.client.request.url
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
@@ -52,6 +53,20 @@ class AdminClient(
     suspend fun updateBot(username: String, request: UpdateBotRequest): Reply<AdminBot> =
         exchange(HttpMethod.Patch, "/api/admin/bots/${username.encodeURLPathPart()}", AdminJson.encodeToString(request))
 
+    /** The games, newest first; [status] and [limit] are passed on as query parameters when given. */
+    suspend fun games(status: GameStatus? = null, limit: Int? = null): Reply<GameList> = exchange(
+        HttpMethod.Get,
+        "/api/admin/games",
+        query = listOfNotNull(status?.let { "status" to it.name }, limit?.let { "limit" to it.toString() }).toMap(),
+    )
+
+    /** Deletes the game; the answer's body (none is expected) is ignored. */
+    suspend fun dropGame(id: String): Reply<Unit> =
+        Reply(send(HttpMethod.Delete, "/api/admin/games/${id.encodeURLPathPart()}")) {}
+
+    suspend fun abortGame(id: String): Reply<GameSummary> =
+        exchange(HttpMethod.Post, "/api/admin/games/${id.encodeURLPathPart()}/abort")
+
     suspend fun settings(): Reply<SettingList> = exchange(HttpMethod.Get, "/api/admin/settings")
 
     suspend fun setSetting(key: String, value: String): Reply<Setting> =
@@ -60,9 +75,18 @@ class AdminClient(
     suspend fun resetSetting(key: String): Reply<Setting> =
         exchange(HttpMethod.Delete, "/api/admin/settings/${key.encodeURLPathPart()}")
 
-    private suspend inline fun <reified T> exchange(method: HttpMethod, path: String, body: String? = null): Reply<T> {
+    private suspend inline fun <reified T> exchange(
+        method: HttpMethod,
+        path: String,
+        body: String? = null,
+        query: Map<String, String> = emptyMap(),
+    ): Reply<T> = Reply(send(method, path, body, query)) { AdminJson.decodeFromString<T>(it) }
+
+    /** The body of a successful answer, as text. */
+    private suspend fun send(method: HttpMethod, path: String, body: String? = null, query: Map<String, String> = emptyMap()): String {
         val response = client.request(base + path) {
             this.method = method
+            url { query.forEach { (name, value) -> parameters.append(name, value) } }
             header(TOKEN_HEADER, token)
             if (body != null) {
                 contentType(ContentType.Application.Json)
@@ -73,7 +97,7 @@ class AdminClient(
         if (!response.status.isSuccess()) {
             throw describe(response.status.value, response.status.description, text)
         }
-        return Reply(text) { AdminJson.decodeFromString<T>(it) }
+        return text
     }
 
     override fun close() {

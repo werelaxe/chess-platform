@@ -84,6 +84,7 @@ class AppConfigTest {
         assertEquals(3, config.botTickMinMinutes)
         assertEquals(10, config.botTickMaxMinutes)
         assertEquals(2, config.botOpenGamesTarget)
+        assertEquals(2, config.botLiveGamesTarget)
         assertEquals(8, config.botJoinAfterMinutes)
         assertEquals(60, config.botInvitationTtlMinutes)
         assertEquals(6, config.botMaxActiveGames)
@@ -99,6 +100,7 @@ class AppConfigTest {
                 "BOT_TICK_MIN_MINUTES" to "5",
                 "BOT_TICK_MAX_MINUTES" to "2",
                 "BOT_OPEN_GAMES_TARGET" to "0",
+                "BOT_LIVE_GAMES_TARGET" to "4",
                 "BOT_JOIN_AFTER_MINUTES" to "1",
                 "BOT_INVITATION_TTL_MINUTES" to "15",
                 "BOT_MAX_ACTIVE_GAMES" to "3",
@@ -110,6 +112,8 @@ class AppConfigTest {
         assertEquals(5, config.botTickMinMinutes)
         assertEquals(5, config.botTickMaxMinutes, "the upper bound never falls below the lower one")
         assertEquals(0, config.botOpenGamesTarget)
+        assertEquals(4, config.botLiveGamesTarget)
+        assertEquals(0, AppConfig.fromEnvironment(mapOf("JWT_SECRET" to "0123456789abcdef", "BOT_LIVE_GAMES_TARGET" to "0")).botLiveGamesTarget, "zero switches the live games off")
         assertEquals(1, config.botJoinAfterMinutes)
         assertEquals(15, config.botInvitationTtlMinutes)
         assertEquals(3, config.botMaxActiveGames)

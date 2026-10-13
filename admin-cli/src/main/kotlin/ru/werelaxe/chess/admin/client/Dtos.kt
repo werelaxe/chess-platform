@@ -49,6 +49,13 @@ data class PlayerRatings(
     @SerialName("QUANTUM") val quantum: RatingSummary? = null,
 )
 
+/** The phase of a game; the names are the server's `GamePhase`. */
+enum class GameStatus {
+    WAITING,
+    ACTIVE,
+    FINISHED,
+}
+
 @Serializable
 data class GameResult(val winner: String? = null, val reason: String)
 
@@ -92,6 +99,9 @@ data class AdminBotDetails(
 
 @Serializable
 data class BotList(val bots: List<AdminBot>)
+
+@Serializable
+data class GameList(val games: List<GameSummary>)
 
 @Serializable
 data class SpawnBotRequest(val username: String, val displayName: String, val level: BotLevel)

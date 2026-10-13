@@ -17,8 +17,11 @@ interface GameRepository {
     /** Overwrites every column of the row identified by [game].id. */
     suspend fun update(game: GameRecord)
 
-    /** Deletes the game and its moves. */
+    /** Deletes the game with its moves and rating changes; the ratings they led to stay as they are. */
     suspend fun delete(id: String)
+
+    /** Every game whatever its visibility, newest first (`created_at DESC, id DESC`); only those in [phase] when given. */
+    suspend fun listAll(phase: GamePhase?, limit: Int, offset: Int): List<GameRecord>
 
     /** Public games, newest first (`created_at DESC, id DESC`); a WAITING invitation is not public until accepted. */
     suspend fun listPublic(filter: GameFilter?, kind: GameKind?, limit: Int, offset: Int): List<GameRecord>
@@ -65,11 +68,14 @@ interface GameRepository {
     /** Public games open to anybody that were created at or before [before], oldest first. */
     suspend fun listOpenGamesCreatedBefore(before: Instant, limit: Int): List<GameRecord>
 
-    /** Public games open to anybody created after [after] and at or before [before], newest first. */
+    /** Public games open to anybody created after [after] and at or before [before], oldest first. */
     suspend fun listOpenGamesCreatedBetween(after: Instant, before: Instant, limit: Int): List<GameRecord>
 
     /** ACTIVE games in which any of [playerIds] holds a seat. */
     suspend fun listActiveGamesOf(playerIds: Collection<Long>): List<GameRecord>
+
+    /** How many ACTIVE games have both seats held by [playerIds]. */
+    suspend fun countActiveGamesAmong(playerIds: Collection<Long>): Int
 
     /** How many games exist in each phase. */
     suspend fun countByPhase(): Map<GamePhase, Int>

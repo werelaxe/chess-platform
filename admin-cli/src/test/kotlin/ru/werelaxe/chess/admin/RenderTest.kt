@@ -96,6 +96,16 @@ class RenderTest {
     }
 
     @Test
+    fun statusLineHasTheIdTheStatusAndTheResult() {
+        val active = AdminJson.decodeFromString<GameSummary>(Fixtures.ACTIVE_GAME)
+        val aborted = AdminJson.decodeFromString<GameSummary>(Fixtures.ABORTED_GAME)
+        val finished = AdminJson.decodeFromString<GameSummary>(Fixtures.FINISHED_GAME)
+        assertEquals("aZ3kq9bX7LmN: ACTIVE -", Render.status(active))
+        assertEquals("aZ3kq9bX7LmN: FINISHED 1/2-1/2 ABANDONMENT", Render.status(aborted))
+        assertEquals("bY4lr0cY8MnO: FINISHED 0-1 CHECKMATE", Render.status(finished))
+    }
+
+    @Test
     fun settingsTableShowsValueDefaultAndSource() {
         val settings = AdminJson.decodeFromString<SettingList>(Fixtures.SETTINGS).settings
         assertEquals(

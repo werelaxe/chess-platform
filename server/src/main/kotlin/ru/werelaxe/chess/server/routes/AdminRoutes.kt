@@ -15,9 +15,11 @@ import io.ktor.server.routing.route
 import kotlinx.serialization.json.JsonNull
 import ru.werelaxe.chess.server.dto.AdminBotsResponse
 import ru.werelaxe.chess.server.dto.CreateBotRequest
+import ru.werelaxe.chess.server.dto.GamesResponse
 import ru.werelaxe.chess.server.dto.SettingUpdateRequest
 import ru.werelaxe.chess.server.dto.SettingsResponse
 import ru.werelaxe.chess.server.dto.UpdateBotRequest
+import ru.werelaxe.chess.server.model.GamePhase
 import ru.werelaxe.chess.server.plugins.AdminGuard
 import ru.werelaxe.chess.server.service.AdminService
 import ru.werelaxe.chess.server.service.ApiException
@@ -28,6 +30,12 @@ private val ApplicationCall.botUsername: String
 
 private val ApplicationCall.settingKey: String
     get() = parameters["key"] ?: throw ApiException.validation("A setting key is required")
+
+/** The `status` query parameter of the game listing, when present. */
+private fun ApplicationCall.statusParameter(): GamePhase? = request.queryParameters["status"]?.let { value ->
+    GamePhase.entries.firstOrNull { it.name.equals(value, ignoreCase = true) }
+        ?: throw ApiException.validation("Unknown status '$value'; expected WAITING, ACTIVE or FINISHED")
+}
 
 /**
  * The admin API (docs/ARCHITECTURE.md section 2.11), guarded by [AdminGuard]. Without a
@@ -54,6 +62,19 @@ fun Route.adminRoutes(admin: AdminService, settings: Settings, adminToken: Strin
             patch("/{username}") {
                 val request = call.receive<UpdateBotRequest>()
                 call.respond(admin.updateBot(call.botUsername, request))
+            }
+        }
+        route("/games") {
+            get {
+                val (limit, offset) = call.paging()
+                call.respond(GamesResponse(admin.listGames(call.statusParameter(), limit, offset)))
+            }
+            delete("/{id}") {
+                admin.deleteGame(call.gameId)
+                call.respond(HttpStatusCode.NoContent)
+            }
+            post("/{id}/abort") {
+                call.respond(admin.abortGame(call.gameId))
             }
         }
         route("/settings") {
