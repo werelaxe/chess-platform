@@ -119,7 +119,8 @@ class BotMatchmakerTest {
         assertEquals("alice", joined.white?.username)
         assertEquals(firstBot, joined.black?.username)
         assertTrue(joined.rated)
-        assertEquals(firstBot, game(newer.id).black?.username, "a bot plays several games at once")
+        val second = assertNotNull(game(newer.id).black?.username)
+        assertNotEquals(firstBot, second, "the second game goes to an idle bot, not to the one already playing")
         assertTrue(openGames().isEmpty())
     }
 
@@ -223,6 +224,32 @@ class BotMatchmakerTest {
         assertEquals(5, liveGames())
         assertEquals(emptyList(), services.matchmaker.tick())
         assertEquals(5, liveGames())
+    }
+
+    @Test
+    fun liveGamesGoToTheLeastBusyBots() = serverTest(
+        config = TEST_CONFIG.copy(botLiveGamesTarget = 3, botOpenGamesTarget = 0),
+        random = ScriptedRandom(),
+        moveProvider = openingProvider(emptyList()),
+    ) {
+        val alice = token("alice")
+        val roster = services.bots.roster
+        assertEquals(8, roster.size)
+        // The first two bots already play a human each; they must not be picked while the other six are idle.
+        val busy = roster.take(2).map { it.username }.toSet()
+        for (name in busy) invite(alice, name, color = ColorChoice.WHITE)
+
+        val seats = HashMap<String, Int>()
+        repeat(2) {
+            for (action in services.matchmaker.tick().filterIsInstance<Action.Started>()) {
+                val live = game(action.gameId)
+                for (seat in listOfNotNull(live.white?.username, live.black?.username)) seats.merge(seat, 1, Int::plus)
+            }
+        }
+        assertEquals(3, liveGames())
+        assertEquals(6, seats.size, "three games spread over the six idle bots: $seats")
+        assertTrue(seats.keys.none { it in busy }, "the busy bots sat this out: $seats")
+        assertTrue(seats.values.all { it == 1 }, "nobody plays two live games while others play none: $seats")
     }
 
     @Test

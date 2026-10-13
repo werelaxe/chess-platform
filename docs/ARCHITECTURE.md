@@ -547,7 +547,10 @@ for `OPEN_GAME_TTL_HOURS` (default 24), whoever created them, as abandoned lobbi
 cancelled like a WAITING game (deleted, published with `ABANDONMENT`) and are never joined by
 a bot; private open games are links their creators share and are kept.
 
-A bot never has more than `BOT_MAX_ACTIVE_GAMES` (default 6) games in progress; the tick skips
+Whenever the matchmaker needs a bot (to create or join an open game, to start a live game or to
+invite a human) it takes the least busy one: the fewest games in progress, then the fewest games
+ever played, a random one among equals, so games spread over the whole roster and newcomers get
+their first rated games. A bot never has more than `BOT_MAX_ACTIVE_GAMES` (default 6) games in progress; the tick skips
 bots at the limit (a live game needs two below it; the lobby action does nothing when every
 bot is at it). All choices use the injectable `Random` (`nextDouble` for the invitation
 probability, `nextInt` for the picks) and `Clock`, so tests drive the loop by calling its

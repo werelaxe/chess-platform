@@ -96,7 +96,7 @@ class BotMatchmaker(
         val available = availableBots(maxActiveGames)
         if (available.isEmpty()) return actions
         if (repository.countOpenGamesBy(bots.ids) < openGamesTarget) {
-            actions += createOpenGame(available.pick())
+            actions += createOpenGame(leastBusy(available)!!)
         } else {
             val action = joinOldestGame(available, now, joinAfter)
                 ?: if (random.nextDouble() < INVITE_PROBABILITY) inviteHuman(available, now) else null
@@ -127,15 +127,31 @@ class BotMatchmaker(
         }
     }
 
-    /** The roster bots with fewer than [maxActiveGames] games in progress. */
-    private suspend fun availableBots(maxActiveGames: Int): List<User> {
+    /** A roster bot with its load: games in progress and games it ever took part in. */
+    private class BotLoad(val user: User, val active: Int, val total: Int)
+
+    /** The roster bots with fewer than [maxActiveGames] games in progress, with their loads. */
+    private suspend fun availableBots(maxActiveGames: Int): List<BotLoad> {
         val active = HashMap<Long, Int>()
         for (game in repository.listActiveGamesOf(bots.ids)) {
             for (seat in listOfNotNull(game.whiteId, game.blackId)) {
                 if (bots.isBot(seat)) active.merge(seat, 1, Int::plus)
             }
         }
-        return bots.roster.filter { (active[it.id] ?: 0) < maxActiveGames }
+        val totals = repository.countGamesOf(bots.ids)
+        return bots.roster
+            .map { BotLoad(it, active[it.id] ?: 0, totals[it.id] ?: 0) }
+            .filter { it.active < maxActiveGames }
+    }
+
+    /**
+     * The least busy of [candidates]: the fewest games in progress, then the fewest games ever
+     * (so that newcomers get their first rated games), a random one among equals. Spreads the
+     * matchmaking over the whole roster instead of piling games onto whoever the dice pick.
+     */
+    private fun leastBusy(candidates: List<BotLoad>): User? {
+        val best = candidates.minWithOrNull(compareBy({ it.active }, { it.total })) ?: return null
+        return candidates.filter { it.active == best.active && it.total == best.total }.pick().user
     }
 
     /**
@@ -152,8 +168,8 @@ class BotMatchmaker(
             if (live >= target) return started
             val available = availableBots(maxActiveGames)
             if (available.size < 2) return started
-            val creator = available.pick()
-            val joiner = available.filter { it.id != creator.id }.pick()
+            val creator = leastBusy(available)!!
+            val joiner = leastBusy(available.filter { it.user.id != creator.id })!!
             val created = games.create(bots.principal(creator), openGameRequest())
             try {
                 games.join(bots.principal(joiner), created.id)
@@ -179,10 +195,10 @@ class BotMatchmaker(
      * created itself, or one joined or cancelled since the listing (a benign race, logged at
      * DEBUG), is passed over for the next oldest.
      */
-    private suspend fun joinOldestGame(available: List<User>, now: Instant, joinAfter: Duration): Action? {
+    private suspend fun joinOldestGame(available: List<BotLoad>, now: Instant, joinAfter: Duration): Action? {
         val candidates = repository.listOpenGamesCreatedBetween(now - openGameTtl, now - joinAfter, JOIN_CANDIDATES)
         for (game in candidates) {
-            val joiner = available.filter { it.id != game.creatorId }.takeIf { it.isNotEmpty() }?.pick() ?: continue
+            val joiner = leastBusy(available.filter { it.user.id != game.creatorId }) ?: continue
             try {
                 games.join(bots.principal(joiner), game.id)
                 return Action.Joined(game.id)
@@ -193,7 +209,7 @@ class BotMatchmaker(
         return null
     }
 
-    private suspend fun inviteHuman(available: List<User>, now: Instant): Action? {
+    private suspend fun inviteHuman(available: List<BotLoad>, now: Instant): Action? {
         val cooldownStart = now - INVITATION_COOLDOWN
         val recentlyInvited = repository.listInvitationsBy(bots.ids, createdSince = cooldownStart)
             .mapNotNullTo(HashSet()) { it.inviteeId }
@@ -202,7 +218,7 @@ class BotMatchmaker(
             .filter { it.id !in recentlyInvited && it.id !in invitedAt }
         if (humans.isEmpty()) return null
         val human = humans.pick()
-        val bot = available.pick()
+        val bot = leastBusy(available)!!
         val request = CreateGameRequest(
             kind = randomKind(),
             visibility = Visibility.PUBLIC,
