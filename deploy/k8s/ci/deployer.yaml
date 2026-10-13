@@ -1,0 +1,81 @@
+# What the Deploy workflow may do: apply deploy/k8s and wait for the rollout, in the "chess"
+# namespace only (it cannot read the Secrets). An administrator applies this once through
+# kubeconfig.sh, which also prints the workflow's kubeconfig.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: deployer
+  namespace: chess
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: deployer-token
+  namespace: chess
+  annotations:
+    kubernetes.io/service-account.name: deployer
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: deployer
+  namespace: chess
+rules:
+  - apiGroups: [""]
+    resources: [services]
+    verbs: [get, list, watch, create, update, patch]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets]
+    verbs: [get, list, watch, create, update, patch]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses]
+    verbs: [get, list, watch, create, update, patch]
+  - apiGroups: [traefik.io]
+    resources: [middlewares]
+    verbs: [get, list, watch, create, update, patch]
+  # kubectl rollout status follows the new pods.
+  - apiGroups: [apps]
+    resources: [replicasets, controllerrevisions]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: deployer
+  namespace: chess
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: deployer
+subjects:
+  - kind: ServiceAccount
+    name: deployer
+    namespace: chess
+---
+# The kustomization also declares the namespace itself, which is cluster-scoped.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: chess-deployer-namespace
+rules:
+  - apiGroups: [""]
+    resources: [namespaces]
+    resourceNames: [chess]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: chess-deployer-namespace
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: chess-deployer-namespace
+subjects:
+  - kind: ServiceAccount
+    name: deployer
+    namespace: chess

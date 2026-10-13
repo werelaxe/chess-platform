@@ -1,0 +1,38 @@
+# The computer player, the only CPU-heavy part. The CPU limit is what the JVM sees, so it also
+# sets the number of concurrent searches; the API falls back to its own engine while this one is
+# unavailable.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: engine
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: engine}
+  template:
+    metadata:
+      labels: {app: engine}
+    spec:
+      containers:
+        - name: engine
+          image: ghcr.io/werelaxe/chess-platform-engine
+          env:
+            - {name: PORT, value: "8081"}
+            - {name: JAVA_OPTS, value: -XX:MaxRAMPercentage=75}
+          ports:
+            - {name: http, containerPort: 8081}
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+          resources:
+            requests: {cpu: "1", memory: 512Mi}
+            limits: {cpu: "8", memory: 2Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: engine
+spec:
+  selector: {app: engine}
+  ports:
+    - {name: http, port: 8081}

@@ -1,6 +1,7 @@
 name: Deploy
 
-# Builds the api, engine and web images, publishes them to GHCR and updates the server over SSH.
+# Builds the api, engine and web images, publishes them to GHCR and rolls them out to the
+# Kubernetes cluster (deploy/k8s).
 # Run it from the Actions tab on master; runs started from any other branch are skipped so
 # that only reviewed and merged code reaches the site.
 on:
@@ -62,38 +63,23 @@ jobs:
           cache-to: type=gha,scope=${{ matrix.service }},mode=max
 
   deploy:
-    name: Update the server
+    name: Roll out to the cluster
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: read
-    env:
-      SSH_TARGET: ${{ vars.DEPLOY_USER }}@${{ vars.DEPLOY_HOST }}
-      DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
     steps:
       - uses: actions/checkout@v7
 
-      - name: Prepare SSH
+      # KUBE_CONFIG is the kubeconfig printed by deploy/k8s/ci/kubeconfig.sh: it may only change
+      # the "chess" namespace. kubectl comes with the runner image.
+      - name: Apply the manifests with the new images
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
         run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "${{ vars.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
-          printf 'Host deploy\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/deploy_key\n  IdentitiesOnly yes\n' \
-            "${{ vars.DEPLOY_HOST }}" "${{ vars.DEPLOY_USER }}" > ~/.ssh/config
-
-      - name: Copy the compose files
-        run: |
-          ssh deploy "mkdir -p '$DEPLOY_PATH/deploy'"
-          scp docker-compose.yml docker-compose.prod.yml "deploy:$DEPLOY_PATH/"
-          scp deploy/Caddyfile "deploy:$DEPLOY_PATH/deploy/"
-
-      - name: Pull the images and restart the stack
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | ssh deploy "docker login $REGISTRY -u ${{ github.actor }} --password-stdin"
-          ssh deploy "cd '$DEPLOY_PATH' && IMAGE_TAG=${{ github.sha }} docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans --wait --wait-timeout 180"
-          ssh deploy "docker logout $REGISTRY >/dev/null; docker image prune -f >/dev/null"
+          export KUBECONFIG="$RUNNER_TEMP/kubeconfig"
+          (umask 077 && printf '%s\n' "$KUBE_CONFIG" > "$KUBECONFIG")
+          deploy/k8s/deploy.sh "${{ github.sha }}"
 
       - name: Check the site
         run: |
