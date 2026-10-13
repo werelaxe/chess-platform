@@ -93,3 +93,12 @@ object RatingChanges : Table("rating_changes") {
 
     override val primaryKey = PrimaryKey(id)
 }
+
+/** Runtime settings by key (docs/ARCHITECTURE.md section 2.11); a key without a row has its default. */
+object Settings : Table("settings") {
+    val key = varchar("key", 64)
+    val value = text("value")
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(key)
+}

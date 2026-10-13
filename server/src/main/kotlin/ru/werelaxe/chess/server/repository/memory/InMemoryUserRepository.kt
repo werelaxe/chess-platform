@@ -2,6 +2,7 @@ package ru.werelaxe.chess.server.repository.memory
 
 import kotlinx.coroutines.sync.withLock
 import ru.werelaxe.chess.engine.EngineLevel
+import ru.werelaxe.chess.server.model.AccountCounts
 import ru.werelaxe.chess.server.model.ProfileField
 import ru.werelaxe.chess.server.model.User
 import ru.werelaxe.chess.server.repository.UserRepository
@@ -15,16 +16,27 @@ class InMemoryUserRepository(private val store: InMemoryStore = InMemoryStore())
     override suspend fun createGuest(username: String, createdAt: Instant): User? =
         store.mutex.withLock { insert(username, passwordHash = null, isGuest = true, isBot = false, createdAt) }
 
-    override suspend fun upsertBot(username: String, displayName: String, level: EngineLevel, createdAt: Instant): User? =
-        store.mutex.withLock {
-            val existing = store.userIdByLowerName[username.lowercase()]?.let { store.users[it] }
-            when {
-                existing == null ->
-                    insert(username, passwordHash = null, isGuest = false, isBot = true, createdAt, displayName, level)
-                !existing.isBot -> null
-                else -> existing.copy(displayName = displayName, botLevel = level).also { store.users[it.id] = it }
-            }
-        }
+    override suspend fun createBot(username: String, displayName: String, level: EngineLevel, createdAt: Instant): User? =
+        store.mutex.withLock { insert(username, passwordHash = null, isGuest = false, isBot = true, createdAt, displayName, level) }
+
+    override suspend fun listBots(): List<User> = store.mutex.withLock {
+        store.users.values.filter { it.isBot }.sortedBy { it.id }
+    }
+
+    override suspend fun updateBot(id: Long, displayName: String?, level: EngineLevel?): User? = store.mutex.withLock {
+        val existing = store.users[id]?.takeIf { it.isBot } ?: return@withLock null
+        existing.copy(displayName = displayName ?: existing.displayName, botLevel = level ?: existing.botLevel)
+            .also { store.users[id] = it }
+    }
+
+    override suspend fun countAccounts(): AccountCounts = store.mutex.withLock {
+        val accounts = store.users.values
+        AccountCounts(
+            users = accounts.count { !it.isGuest && !it.isBot },
+            guests = accounts.count { it.isGuest },
+            bots = accounts.count { it.isBot },
+        )
+    }
 
     /** Call under the store's lock. */
     private fun insert(

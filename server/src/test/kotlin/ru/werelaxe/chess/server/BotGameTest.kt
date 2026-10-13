@@ -183,7 +183,7 @@ class BotGameTest {
     }
 
     @Test
-    fun botMovesArriveAsMoveEventsAfterAPause() = serverTest(botPause = 400.milliseconds) {
+    fun botMovesArriveAsMoveEventsAfterAPause() = serverTest(config = TEST_CONFIG.copy(botReplyPauseMillis = 400)) {
         val alice = token("alice")
         val created = botGame(alice, color = ColorChoice.WHITE)
 
@@ -378,7 +378,7 @@ class BotGameTest {
         val id = "Restarted003"
         runBlocking {
             val alice = assertNotNull(repositories.users.create("alice", "unused-hash", TEST_START))
-            val bot = assertNotNull(repositories.users.upsertBot(botNamed(EngineLevel.EASY), "Pawn Pal", EngineLevel.EASY, TEST_START))
+            val bot = assertNotNull(repositories.users.createBot(botNamed(EngineLevel.EASY), "Pawn Pal", EngineLevel.EASY, TEST_START))
             repositories.interrupted(id, alice.id, bot.id)
         }
         serverTest(repositories = repositories) {

@@ -161,7 +161,8 @@ replayed games and the WebSocket subscriber registry; PostgreSQL is the source o
 | `BOT_PARALLELISM` | `2` | concurrent in-process searches (fallback only) |
 | `BOT_REMOTE_CONCURRENCY` | `64` | concurrent requests to the engine service |
 | `GAME_IDLE_MINUTES` | `30` | idle time after which a cached game is dropped from memory |
-| `BOT_MATCHMAKING` | `true` | whether the bots keep the lobby alive (section 2.10); `false` switches the loop off |
+| `ADMIN_TOKEN` | unset | enables the admin API (section 2.11) when set, at least 16 characters |
+| `BOT_MATCHMAKING` | `true` | default of `bot.matchmaking` (section 2.11): whether the bots keep the lobby alive (section 2.10); `false` pauses the loop until the setting switches it on |
 | `BOT_TICK_MIN_MINUTES` / `BOT_TICK_MAX_MINUTES` | `3` / `10` | pause between matchmaking ticks (the upper bound is raised to the lower one if set below it) |
 | `BOT_OPEN_GAMES_TARGET` | `2` | public open games the bots keep in the lobby (0 switches this off) |
 | `BOT_JOIN_AFTER_MINUTES` | `8` | how long an open game waits before a bot may join it |
@@ -373,9 +374,10 @@ service is unavailable or `ENGINE_URL` is unset (then at most `BOT_PARALLELISM` 
 at a time, default 2). A game is never searched twice at the same time, and a wake-up that
 arrives during a search is honoured afterwards. The chosen move goes through the normal move pipeline (`GameService.move`
 with the bot's principal), so observations get their outcome from the server and clients
-receive the usual `move` events. A reply to a human move is delayed so that at least 700 ms pass
-after the move (the search time counts towards it); between two bots there is no pause, they
-play as fast as the engine answers. A rejected move (the human resigned
+receive the usual `move` events. A reply to a human move is delayed so that at least
+`bot.reply_pause_millis` (section 2.11; 700 ms by default) pass after the move (the search time
+counts towards it); between two bots the pause is `bot.vs_bot_pause_millis`, nil by default, so
+they play as fast as the engine answers. A rejected move (the human resigned
 meanwhile, or the engine erred) is logged and followed by a fresh look at the game, a few times
 at most; any other failure is logged and left for the next wake-up.
 
@@ -481,8 +483,9 @@ whose id is its only protection, stays between its players.
 ### 2.10 Bots
 
 Bots are ordinary accounts that play by themselves: the roster is defined in code
-(`BotRoster`) and created or updated at startup, each with a username, a display name and an
-`EngineLevel`. Five levels exist: `NOVICE`, `EASY`, `MEDIUM`, `HARD`, `EXPERT`. The roster
+(`BotRoster`) and its missing accounts are created at startup (an existing row is left as it
+is, section 2.11), each with a username, a display name and an `EngineLevel`. Bots created
+through the admin API join the roster after the code-defined ones. Five levels exist: `NOVICE`, `EASY`, `MEDIUM`, `HARD`, `EXPERT`. The roster
 (two bots per level except one at `NOVICE` and one at `EXPERT`, eight in total) replaces the
 single `computer` account, which is kept as a legacy `MEDIUM` bot named "Computer" for old
 games: it still plays (and can still be invited by name) but is neither listed by `/api/bots`
@@ -492,8 +495,9 @@ until the account is renamed; the person's account is not touched.
 
 Playing: `BotPlayer` wakes whenever the seat on turn belongs to a bot, in any game (a bot may
 sit on either side, and two bots may play each other). Moves come from the engine service
-(section 2.7) with the seat's level; bot-versus-bot games have no artificial pause, each move
-takes as long as the search (the engine service uses idle cores to speed a single search up).
+(section 2.7) with the seat's level; bot-versus-bot games have no artificial pause by default
+(`bot.vs_bot_pause_millis`, section 2.11), each move takes as long as the search (the engine
+service uses idle cores to speed a single search up).
 Nothing limits how many games a bot plays at once beyond the engine service's capacity.
 
 Invitations: creating a game with `opponent: USER` sets `invitee_id`; only that account may
@@ -507,9 +511,10 @@ same but only while the invitation is still pending (re-checked under the game's
 a listing can never resign a game that started meanwhile. A pending invitation is not an open
 game: the public listing leaves it out until it is accepted, whatever its visibility.
 
-Matchmaking (`BotMatchmaker`, enabled with `BOT_MATCHMAKING=true`, default true outside tests):
-a loop that sleeps a random `BOT_TICK_MIN_MINUTES`–`BOT_TICK_MAX_MINUTES` (defaults 3–10) and
-on each tick does one of the following, keeping the lobby alive without flooding it:
+Matchmaking (`BotMatchmaker`; the loop always runs and its ticks act while `bot.matchmaking`
+is true, section 2.11): a loop that sleeps a random `BOT_TICK_MIN_MINUTES`–`BOT_TICK_MAX_MINUTES`
+(defaults 3–10) and on each tick does one of the following, keeping the lobby alive without
+flooding it:
 
 * if fewer than `BOT_OPEN_GAMES_TARGET` (default 2) public WAITING games created by bots exist,
   a random bot creates one (random kind and colour, rated, public);
@@ -540,7 +545,70 @@ a bot; private open games are links their creators share and are kept.
 A bot never has more than `BOT_MAX_ACTIVE_GAMES` (default 6) games in progress; the tick skips
 bots at the limit (and does nothing when every bot is at it). All choices use the injectable
 `Random` (`nextDouble` for the probabilities, `nextInt` for the picks) and `Clock`, so tests
-drive the loop by calling its `tick()` directly; the test configuration disables the loop.
+drive the loop by calling its `tick()` directly (its own ticks are minutes apart, so none
+happens during a test).
+
+### 2.11 Administration: runtime settings, admin API and CLI
+
+Operational knobs of the bots live in the `settings` table (`key VARCHAR(64) PK, value TEXT,
+updated_at TIMESTAMPTZ`) and can be changed at runtime; the environment variables of 2.1 only
+provide the defaults. Known keys, all validated on write:
+
+| key | type | default | meaning |
+|-----|------|---------|---------|
+| `bot.matchmaking` | boolean | `BOT_MATCHMAKING` | the matchmaker loop acts on its ticks (false pauses it) |
+| `bot.open_games_target` | int >= 0 | `BOT_OPEN_GAMES_TARGET` | public open games kept waiting by bots |
+| `bot.reply_pause_millis` | int >= 0 | 700 | shortest pause before a bot answers a human |
+| `bot.vs_bot_pause_millis` | int >= 0 | 0 | shortest pause between the moves of two bots |
+| `bot.max_active_games` | int >= 1 | `BOT_MAX_ACTIVE_GAMES` | games one bot plays at once |
+| `bot.join_after_minutes` | int >= 0 | `BOT_JOIN_AFTER_MINUTES` | how long an open game waits before a bot may join |
+| `bot.invitation_ttl_minutes` | int >= 1 | `BOT_INVITATION_TTL_MINUTES` | expiry of a bot's invitation |
+| `bot.tick_min_minutes` / `bot.tick_max_minutes` | int >= 1 | `BOT_TICK_MIN/MAX_MINUTES` | matchmaker sleep range (max is raised to min when lower) |
+
+A `Settings` service caches the table, refreshes it every minute and immediately after a write,
+and hands typed values to `BotPlayer` (pauses, read before every move) and `BotMatchmaker`
+(read at the start of every tick). Unknown keys are rejected.
+
+The admin API is enabled only when `ADMIN_TOKEN` (at least 16 characters) is set; every request
+must carry `X-Admin-Token` with that value (compared in constant time), otherwise 401
+`unauthorized`; with no token configured the routes answer 404. Admin actions are logged.
+
+```
+GET   /api/admin/overview                       -> {users, guests, bots, games: {waiting, active, finished}, activeBotGames, settings: {...}}
+GET   /api/admin/bots                           -> {bots: [AdminBot]}      AdminBot = PlayerSummary + {level, legacy, activeGames, totalGames}
+GET   /api/admin/bots/{username}                -> AdminBotDetails: AdminBot + {activeGameList: [GameSummary], recentGames: [GameSummary] (20)}
+POST  /api/admin/bots  {username, displayName, level}  -> 201 AdminBot   (username rules of 2.2, 409 username_taken; the bot joins the roster at once)
+PATCH /api/admin/bots/{username} {level?, displayName?} -> 200 AdminBot
+GET   /api/admin/settings                       -> {settings: [{key, value, default, source: "db"|"default", description}]}
+PUT   /api/admin/settings/{key}  {value: string} -> 200 the setting; 400 validation for unknown keys or bad values
+DELETE /api/admin/settings/{key}                -> 200 the setting reset to its default
+```
+
+Bots created through the API are stored exactly like the roster's (`is_bot`, `bot_level`,
+`display_name`, no password) and the in-memory bot registry is refreshed, so the matchmaker and
+the bot player pick them up without a restart. The static roster still seeds the eight default
+bots at startup but never deletes or overrides bots changed through the API (level and display
+name of a roster bot are only set when the row is created).
+
+The command line tool `admin-cli` (Gradle module; `./gradlew :admin-cli:installDist` produces
+`admin-cli/build/install/admin-cli/bin/chess-admin`) wraps this API:
+
+```
+chess-admin [--api URL] [--token TOKEN] [--json] <command>
+  overview
+  bots list
+  bots show <username>
+  bots spawn --username <name> --name "<display name>" --level NOVICE|EASY|MEDIUM|HARD|EXPERT
+  bots set <username> [--level <level>] [--name "<display name>"]
+  settings list
+  settings set <key> <value>
+  settings reset <key>
+  settings open-games <n>                 # shortcut for bot.open_games_target
+  settings pauses [--reply <ms>] [--bots <ms>]   # shortcuts for the two pauses
+```
+
+`--api` defaults to `CHESS_API_URL` or `http://localhost:8080`; `--token` defaults to
+`CHESS_ADMIN_TOKEN`. Output is a readable table; `--json` prints the API response.
 
 ## 3. Web client (`web`)
 

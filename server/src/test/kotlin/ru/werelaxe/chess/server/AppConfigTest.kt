@@ -116,4 +116,20 @@ class AppConfigTest {
         // Anything but true/false means the default.
         assertTrue(AppConfig.fromEnvironment(mapOf("JWT_SECRET" to "0123456789abcdef", "BOT_MATCHMAKING" to "off")).botMatchmaking)
     }
+
+    @Test
+    fun adminApiIsOffUnlessATokenLongEnoughIsSet() {
+        val base = mapOf("JWT_SECRET" to "0123456789abcdef")
+        assertNull(AppConfig.fromEnvironment(base).adminToken)
+        assertNull(AppConfig.fromEnvironment(base + ("ADMIN_TOKEN" to "   ")).adminToken, "blank means unset")
+        assertFailsWith<AppConfig.ConfigurationException> { AppConfig.fromEnvironment(base + ("ADMIN_TOKEN" to "short")) }
+        assertEquals("admin-0123456789abcdef", AppConfig.fromEnvironment(base + ("ADMIN_TOKEN" to "admin-0123456789abcdef")).adminToken)
+    }
+
+    @Test
+    fun botPausesHaveFixedDefaults() {
+        val config = AppConfig.fromEnvironment(mapOf("JWT_SECRET" to "0123456789abcdef"))
+        assertEquals(700, config.botReplyPauseMillis)
+        assertEquals(0, config.botVsBotPauseMillis)
+    }
 }

@@ -22,25 +22,27 @@ import ru.werelaxe.chess.server.plugins.configureWebSockets
 import ru.werelaxe.chess.server.repository.Repositories
 import ru.werelaxe.chess.server.repository.exposed.ExposedGameRepository
 import ru.werelaxe.chess.server.repository.exposed.ExposedRatingRepository
+import ru.werelaxe.chess.server.repository.exposed.ExposedSettingsRepository
 import ru.werelaxe.chess.server.repository.exposed.ExposedUserRepository
+import ru.werelaxe.chess.server.routes.adminRoutes
 import ru.werelaxe.chess.server.routes.authRoutes
 import ru.werelaxe.chess.server.routes.fallbackRoutes
 import ru.werelaxe.chess.server.routes.gameRoutes
 import ru.werelaxe.chess.server.routes.healthRoutes
 import ru.werelaxe.chess.server.routes.playerRoutes
 import ru.werelaxe.chess.server.routes.webSocketRoutes
+import ru.werelaxe.chess.server.service.AdminService
 import ru.werelaxe.chess.server.service.AuthService
 import ru.werelaxe.chess.server.service.BotMatchmaker
-import ru.werelaxe.chess.server.service.BotPlayer
 import ru.werelaxe.chess.server.service.BotRoster
 import ru.werelaxe.chess.server.service.Bots
 import ru.werelaxe.chess.server.service.GameCache
 import ru.werelaxe.chess.server.service.GameService
 import ru.werelaxe.chess.server.service.JwtService
-import ru.werelaxe.chess.server.service.MatchmakingSettings
 import ru.werelaxe.chess.server.service.MoveProvider
 import ru.werelaxe.chess.server.service.PlayerService
 import ru.werelaxe.chess.server.service.Presence
+import ru.werelaxe.chess.server.service.Settings
 import ru.werelaxe.chess.server.ws.GameHub
 import java.time.Clock
 import java.time.Duration
@@ -61,6 +63,7 @@ fun main() {
         users = ExposedUserRepository(database),
         games = ExposedGameRepository(database),
         ratings = ExposedRatingRepository(database),
+        settings = ExposedSettingsRepository(database),
     )
     val moveProvider = MoveProvider.fromConfig(config)
     log.info("Starting the chess server on port {}", config.port)
@@ -75,6 +78,7 @@ class AppServices(
     val players: PlayerService,
     val matchmaker: BotMatchmaker,
     val bots: Bots,
+    val settings: Settings,
 )
 
 /**
@@ -89,11 +93,11 @@ suspend fun Application.module(
     random: Random = Random.Default,
     clock: Clock = Clock.systemUTC(),
     moveProvider: MoveProvider = MoveProvider.fromConfig(config) { ChessEngine(it, random) },
-    botPause: kotlin.time.Duration = BotPlayer.DEFAULT_PAUSE,
 ): AppServices {
     // After the migrations (main connects before starting the server) and before the first
     // request; the in-memory repositories of the tests start empty, so this runs every time.
     val bots = BotRoster.ensure(repositories.users, clock)
+    val settings = Settings(repositories.settings, config, clock).also { it.refresh() }
 
     val jwt = JwtService(config.jwtSecret, Duration.ofDays(config.jwtTtlDays), clock)
     val authService = AuthService(repositories.users, repositories.ratings, jwt, random, clock, config.bcryptCost)
@@ -109,8 +113,8 @@ suspend fun Application.module(
         random,
         clock,
         moveProvider,
+        settings,
         cache = cache,
-        botPause = botPause,
     )
     val playerService = PlayerService(repositories.users, repositories.games, repositories.ratings, bots, gameService)
     val matchmaker = BotMatchmaker(
@@ -118,8 +122,18 @@ suspend fun Application.module(
         repositories.games,
         repositories.users,
         bots,
-        MatchmakingSettings.fromConfig(config),
+        settings,
+        Duration.ofHours(config.openGameTtlHours),
         random,
+        clock,
+    )
+    val adminService = AdminService(
+        repositories.users,
+        repositories.games,
+        repositories.ratings,
+        bots,
+        settings,
+        gameService,
         clock,
     )
     monitor.subscribe(ApplicationStopping) {
@@ -135,9 +149,11 @@ suspend fun Application.module(
             cache.sweep()
         }
     }
-    if (config.botMatchmaking) {
-        launch(CoroutineName("bot-matchmaker")) { matchmaker.loop() }
-    }
+    // A setting changed through another instance reaches this one within a minute.
+    launch(CoroutineName("settings-refresh")) { settings.loop() }
+    // The loop always runs: `bot.matchmaking` decides at every tick whether it acts, so that
+    // matchmaking is paused and resumed through the settings without a restart.
+    launch(CoroutineName("bot-matchmaker")) { matchmaker.loop() }
 
     configureSerialization()
     configureStatusPages()
@@ -152,8 +168,9 @@ suspend fun Application.module(
         authRoutes(authService)
         gameRoutes(gameService)
         playerRoutes(playerService)
+        adminRoutes(adminService, settings, config.adminToken)
         webSocketRoutes(gameService, hub)
         fallbackRoutes()
     }
-    return AppServices(gameService, playerService, matchmaker, bots)
+    return AppServices(gameService, playerService, matchmaker, bots, settings)
 }

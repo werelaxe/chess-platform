@@ -6,6 +6,7 @@ import org.jetbrains.exposed.v1.core.LikePattern
 import org.jetbrains.exposed.v1.core.Op
 import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.and
+import org.jetbrains.exposed.v1.core.count
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.greaterEq
 import org.jetbrains.exposed.v1.core.inList
@@ -15,11 +16,13 @@ import org.jetbrains.exposed.v1.core.or
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.JdbcTransaction
 import org.jetbrains.exposed.v1.jdbc.insert
+import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.jetbrains.exposed.v1.jdbc.update
 import ru.werelaxe.chess.engine.EngineLevel
 import ru.werelaxe.chess.server.db.Users
+import ru.werelaxe.chess.server.model.AccountCounts
 import ru.werelaxe.chess.server.model.ProfileField
 import ru.werelaxe.chess.server.model.User
 import ru.werelaxe.chess.server.repository.UserRepository
@@ -34,22 +37,37 @@ class ExposedUserRepository(private val db: Database) : UserRepository {
     override suspend fun createGuest(username: String, createdAt: Instant): User? =
         tx { insert(username, passwordHash = null, isGuest = true, isBot = false, createdAt) }
 
-    override suspend fun upsertBot(username: String, displayName: String, level: EngineLevel, createdAt: Instant): User? {
-        if (tx { byUsername(username) } == null) {
-            tx { insert(username, passwordHash = null, isGuest = false, isBot = true, createdAt, displayName, level) }
-                ?.let { return it }
-            // Another instance created the row first; it is brought up to date below like any existing one.
+    override suspend fun createBot(username: String, displayName: String, level: EngineLevel, createdAt: Instant): User? =
+        tx { insert(username, passwordHash = null, isGuest = false, isBot = true, createdAt, displayName, level) }
+
+    override suspend fun listBots(): List<User> = tx {
+        Users.selectAll().where { Users.isBot eq true }.orderBy(Users.id to SortOrder.ASC).map { it.toUser() }
+    }
+
+    override suspend fun updateBot(id: Long, displayName: String?, level: EngineLevel?): User? = tx {
+        val existing = byId(id)?.takeIf { it.isBot } ?: return@tx null
+        if (displayName == null && level == null) return@tx existing
+        Users.update({ Users.id eq id }) { statement ->
+            displayName?.let { statement[Users.displayName] = it }
+            level?.let { statement[Users.botLevel] = it }
         }
-        // Separate transactions on purpose: PostgreSQL aborts a transaction after a failed insert.
-        return tx {
-            val existing = byUsername(username)?.takeIf { it.isBot } ?: return@tx null
-            if (existing.displayName == displayName && existing.botLevel == level) return@tx existing
-            Users.update({ Users.id eq existing.id }) {
-                it[Users.displayName] = displayName
-                it[Users.botLevel] = level
+        existing.copy(displayName = displayName ?: existing.displayName, botLevel = level ?: existing.botLevel)
+    }
+
+    override suspend fun countAccounts(): AccountCounts = tx {
+        val count = Users.id.count()
+        var users = 0
+        var guests = 0
+        var bots = 0
+        Users.select(Users.isGuest, Users.isBot, count).groupBy(Users.isGuest, Users.isBot).forEach { row ->
+            val n = row[count].toInt()
+            when {
+                row[Users.isBot] -> bots += n
+                row[Users.isGuest] -> guests += n
+                else -> users += n
             }
-            existing.copy(displayName = displayName, botLevel = level)
         }
+        AccountCounts(users, guests, bots)
     }
 
     private fun insert(

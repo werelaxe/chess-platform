@@ -11,6 +11,7 @@ engine/   the computer player (search and evaluation for both variants)
 engine-service/  stateless HTTP service around the engine; the API asks it for computer moves
 server/   Ktor 3 API: auth, lobby, games, WebSocket events, computer opponent; Exposed + Flyway on PostgreSQL
 web/      React 19 + TypeScript (Vite) client using the JS build of core
+admin-cli/  command line tool for the admin API: bots and runtime settings
 deploy/   nginx configuration of the web image, Caddy for docker compose, Kubernetes manifests (k8s/)
 ```
 
@@ -85,6 +86,44 @@ kubectl -n chess get pods
 The same goes for `logs -f deployment/api`, `exec -it db-0 -- psql -U chess chess`, `top pods`
 and so on.
 
+## Administration
+
+The operational settings of the bots (whether the matchmaker runs, how many open games the bots
+keep in the lobby, the pauses before a bot moves, and so on) live in the `settings` table of the
+database and apply without a restart; the environment variables of docs/ARCHITECTURE.md 2.1 only
+provide their defaults. They are read and changed through the admin API (section 2.11), which
+the API server enables when `ADMIN_TOKEN` (at least 16 characters) is set in its environment;
+every request must carry the token in `X-Admin-Token`. The `admin-cli` module wraps the API as
+the `chess-admin` command:
+
+```bash
+./gradlew :admin-cli:installDist
+export CHESS_API_URL=https://quantum-chess.fun     # default: http://localhost:8080
+export CHESS_ADMIN_TOKEN=<the server's ADMIN_TOKEN>
+admin-cli/build/install/admin-cli/bin/chess-admin overview
+```
+
+```
+chess-admin [--api URL] [--token TOKEN] [--json] <command>
+  overview                                  users, games, bots and the current settings
+  bots list                                 the roster with levels, ratings and game counts
+  bots show <username>                      a bot with its ratings, active games and recent games
+  bots spawn --username <name> --name "<display name>" --level NOVICE|EASY|MEDIUM|HARD|EXPERT
+  bots set <username> [--level <level>] [--name "<display name>"]
+  settings list                             every setting with its default and where the value comes from
+  settings set <key> <value>
+  settings reset <key>                      back to the default
+  settings open-games <n>                   shortcut for bot.open_games_target
+  settings pauses [--reply <ms>] [--bots <ms>]   shortcuts for bot.reply_pause_millis and bot.vs_bot_pause_millis
+```
+
+`--help` on any command lists its options. `--api` defaults to `CHESS_API_URL` or
+`http://localhost:8080`; `--token` defaults to `CHESS_ADMIN_TOKEN` and is required. The output
+is a plain-text table; `--json` prints the API response as the server sent it. An error from
+the API is shown as `<status> <code>: <message>` and the command exits with a non-zero code.
+The production API is reachable through the site, so `--api https://quantum-chess.fun` works
+from anywhere with the token.
+
 ## Development
 
 Requirements: JDK 17+ to run Gradle (a JDK 21 toolchain is provisioned automatically),
@@ -108,7 +147,7 @@ cd web && npm install && npm run dev
 Tests:
 
 ```bash
-./gradlew :core:jvmTest :core:jsNodeTest :engine:jvmTest :server:test
+./gradlew :core:jvmTest :core:jsNodeTest :engine:jvmTest :engine-service:test :server:test :admin-cli:test
 cd web && npm run typecheck && npm run test
 ```
 

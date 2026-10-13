@@ -12,6 +12,7 @@ COPY gradle ./gradle
 COPY core/build.gradle.kts ./core/
 COPY engine/build.gradle.kts ./engine/
 COPY engine-service/build.gradle.kts ./engine-service/
+COPY admin-cli/build.gradle.kts ./admin-cli/
 COPY server/build.gradle.kts ./server/
 RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     chmod +x gradlew && ./gradlew :server:dependencies --no-daemon -q > /dev/null

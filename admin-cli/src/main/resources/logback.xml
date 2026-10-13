@@ -1,0 +1,12 @@
+<configuration>
+    <!-- The tool prints its own messages; the libraries' logs only matter when something is wrong. -->
+    <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
+        <target>System.err</target>
+        <encoder>
+            <pattern>%level %logger{0}: %msg%n</pattern>
+        </encoder>
+    </appender>
+    <root level="WARN">
+        <appender-ref ref="STDERR"/>
+    </root>
+</configuration>

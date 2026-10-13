@@ -18,4 +18,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "chess-platform"
 
-include(":core", ":engine", ":engine-service", ":server")
+include(":core", ":engine", ":engine-service", ":server", ":admin-cli")

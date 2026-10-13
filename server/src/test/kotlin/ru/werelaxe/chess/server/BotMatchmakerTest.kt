@@ -22,7 +22,6 @@ import ru.werelaxe.chess.server.service.MoveProvider
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
-import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -30,26 +29,6 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-
-/**
- * A [Random] for driving the matchmaker: the probability rolls come from [rolls] (and are
- * 1.0, "never", once those run out), every pick is the first element and every coin is tails.
- */
-private class ScriptedRandom(vararg rolls: Double) : Random() {
-    val rolls = ArrayDeque(rolls.toList())
-
-    override fun nextBits(bitCount: Int): Int = 0
-
-    override fun nextDouble(): Double = rolls.removeFirstOrNull() ?: 1.0
-
-    override fun nextInt(from: Int, until: Int): Int = from
-
-    override fun nextBoolean(): Boolean = false
-}
-
-private const val NO_JOIN = 0.9
-private const val JOIN = 0.1
-private const val INVITE = 0.1
 
 /**
  * A game repository whose listings can be scripted with stale records, as the real one returns

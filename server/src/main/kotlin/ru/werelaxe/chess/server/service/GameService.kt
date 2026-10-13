@@ -34,15 +34,13 @@ import ru.werelaxe.chess.server.ws.ServerEvent
 import java.time.Clock
 import java.time.Instant
 import kotlin.random.Random
-import kotlin.time.Duration
 import kotlin.time.TimeSource
 
 /**
  * All game rules outside the chess rules themselves: lobby, invitations, turns, draw offers,
  * resignation, ratings and the bots' seats. [moveProvider] chooses the bots' moves; tests
- * inject a fast, seeded one. [botPause] is the shortest pause before a bot's reply to a human
- * move; two bots play as fast as the engine answers. [cache] holds the replayed
- * games; the caller owns it so that it can sweep it periodically.
+ * inject a fast, seeded one. [settings] hold the pauses the bot player keeps before its moves.
+ * [cache] holds the replayed games; the caller owns it so that it can sweep it periodically.
  */
 class GameService(
     private val games: GameRepository,
@@ -53,12 +51,12 @@ class GameService(
     private val random: Random,
     private val clock: Clock,
     moveProvider: MoveProvider,
+    settings: Settings,
     private val ratingService: RatingService = RatingService(),
     private val ids: GameIdGenerator = GameIdGenerator(),
     private val cache: GameCache = GameCache(),
-    botPause: Duration = BotPlayer.DEFAULT_PAUSE,
 ) {
-    private val bot = BotPlayer(this, bots, moveProvider, botPause)
+    private val bot = BotPlayer(this, bots, moveProvider, settings)
 
     /** Stops the bot player; call when the application shuts down. */
     fun close() = bot.close()

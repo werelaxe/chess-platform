@@ -66,6 +66,8 @@ services:
       DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       JWT_TTL_DAYS: "30"
+      # Enables the admin API and the chess-admin CLI when set (at least 16 characters).
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
       # nginx serves the client and the API from one origin, so CORS is disabled.
       CORS_ORIGINS: ""
       # Computer moves come from the engine service; the API falls back to its own engine
