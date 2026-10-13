@@ -11,10 +11,6 @@ import ru.werelaxe.chess.core.GameMove
 import ru.werelaxe.chess.core.GameStatus
 import ru.werelaxe.chess.core.QuantumState
 import ru.werelaxe.chess.core.QuantumVariant
-import ru.werelaxe.chess.core.Fen
-import ru.werelaxe.chess.core.Move
-import ru.werelaxe.chess.core.Square
-import ru.werelaxe.chess.core.Board
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -111,11 +107,3 @@ class ChessEngineTest {
         assertTrue(search.evaluate(kingless, Color.BLACK) > search.evaluate(both, Color.BLACK) + Evaluation.KING_PRESENCE / 2)
     }
 }
-
-private fun board(fen: String): Board = Fen.parse(fen).board
-
-private fun sq(name: String): Square = Square.parse(name)
-
-private fun normal(uci: String): GameMove.Normal = Move.parseUci(uci).let { GameMove.Normal(it.from, it.to, it.promotion) }
-
-private fun split(from: String, first: String, second: String): GameMove.Split = GameMove.Split(sq(from), sq(first), sq(second))

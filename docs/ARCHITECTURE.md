@@ -391,7 +391,7 @@ POST /think   {"gameId":"aZ3kq9...","kind":"QUANTUM","level":"MEDIUM","moves":[G
               -> 204 when the game is already over
               -> 400 {"error":"validation","message":"..."} for an invalid or illegal history
               -> 503 {"error":"overloaded","message":"..."} when the queue is full (the API retries)
-GET  /health  -> 200 {"status":"ok","parallelism":8,"inFlight":3,"queued":0}
+GET  /health  -> 200 {"status":"ok","parallelism":8,"inFlight":3,"queued":0,"helpers":8,"helpersBusy":2}
 ```
 
 The service replays the move list with `Game.replay` (sub-millisecond for classic chess, about
@@ -404,8 +404,23 @@ load the thinking budget shrinks: with `w` requests waiting and `p` threads the 
 multiplied by `min(1, p / w)` but never below `ENGINE_MIN_BUDGET_RATIO` (default 0.25), which
 keeps the reply latency bounded instead of letting the queue grow.
 
+A search is not confined to its thread. The service also keeps `ENGINE_HELPER_THREADS` helper
+threads (default: half of the search threads, at least one) behind a semaphore of the same size, and a search
+borrows whichever are free, without waiting, for the independent parts of its work: a classic
+search splits the root at every iterative-deepening depth ("young brothers wait": the previous
+best move is searched alone to establish the alpha bound, then the other root moves are searched
+concurrently against the bound as it stands when each starts and raise it when they beat it,
+each with its own node counter for the time check), and a quantum search refines its candidates
+with the opponent's reply the same way. A search on a quiet service thus spreads over the idle
+cores, so a bot-versus-bot game waits a fraction of the time per move, while under load the
+helpers are all taken and searches degrade to sequential: never more than parallelism plus
+helpers threads search at once. The playing strength is unchanged (same depths, budgets and
+candidate limits, and the scores match the sequential search; only the choice among equally
+scored moves may differ), and `ENGINE_HELPER_THREADS=0` turns the splitting off. `/health`
+reports `helpers` and `helpersBusy`.
+
 Configuration: `PORT` (default 8081), `ENGINE_PARALLELISM`, `ENGINE_QUEUE_LIMIT`,
-`ENGINE_MIN_BUDGET_RATIO`. The API uses `ENGINE_URL` (compose: `http://engine:8081`), retries
+`ENGINE_HELPER_THREADS`, `ENGINE_MIN_BUDGET_RATIO`. The API uses `ENGINE_URL` (compose: `http://engine:8081`), retries
 503 with backoff for up to `ENGINE_RETRY_SECONDS` (default 30) and falls back to its in-process
 engine after that or on connection errors, so a restart of the service never stalls a game.
 The API keeps at most `BOT_REMOTE_CONCURRENCY` (default 64) requests in flight.

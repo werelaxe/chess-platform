@@ -25,8 +25,8 @@ fun main() {
         exitProcess(1)
     }
     log.info(
-        "Starting the engine service on port {} with {} search threads, a queue of {} and a budget floor of {}",
-        config.port, config.parallelism, config.queueLimit, config.minBudgetRatio,
+        "Starting the engine service on port {} with {} search threads, {} helper threads, a queue of {} and a budget floor of {}",
+        config.port, config.parallelism, config.helperThreads, config.queueLimit, config.minBudgetRatio,
     )
     embeddedServer(Netty, port = config.port, host = "0.0.0.0") {
         module(Searcher(config))

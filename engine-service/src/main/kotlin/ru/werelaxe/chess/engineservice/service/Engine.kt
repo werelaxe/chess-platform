@@ -4,6 +4,7 @@ import ru.werelaxe.chess.core.GameMove
 import ru.werelaxe.chess.core.GameState
 import ru.werelaxe.chess.engine.ChessEngine
 import ru.werelaxe.chess.engine.EngineLevel
+import ru.werelaxe.chess.engine.SearchParallelism
 import kotlin.time.Duration
 
 /** What the [Searcher] needs from an engine; tests plug in stubs, production uses [ChessEngines]. */
@@ -12,9 +13,12 @@ fun interface Engine {
     fun chooseMove(state: GameState, level: EngineLevel, budget: Duration): GameMove?
 }
 
-/** The real engine, one instance per level; [ChessEngine] is stateless, so they are shared by all threads. */
-object ChessEngines : Engine {
-    private val engines = EngineLevel.entries.associateWith { ChessEngine(it) }
+/**
+ * The real engine, one instance per level, searching on [parallelism]; [ChessEngine] is
+ * stateless, so the instances are shared by all threads.
+ */
+class ChessEngines(parallelism: SearchParallelism) : Engine {
+    private val engines = EngineLevel.entries.associateWith { ChessEngine(it, parallelism = parallelism) }
 
     override fun chooseMove(state: GameState, level: EngineLevel, budget: Duration): GameMove? =
         engines.getValue(level).chooseMove(state, budget)

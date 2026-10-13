@@ -18,9 +18,19 @@ data class ThinkRequest(
 @Serializable
 data class ThinkResponse(val move: GameMove, val elapsedMillis: Long)
 
-/** [inFlight] searches are running, [queued] requests are waiting for one of the [parallelism] threads. */
+/**
+ * [inFlight] searches are running, [queued] requests are waiting for one of the [parallelism]
+ * threads, and [helpersBusy] of the [helpers] threads are lent to the running searches.
+ */
 @Serializable
-data class HealthResponse(val status: String, val parallelism: Int, val inFlight: Int, val queued: Int)
+data class HealthResponse(
+    val status: String,
+    val parallelism: Int,
+    val inFlight: Int,
+    val queued: Int,
+    val helpers: Int,
+    val helpersBusy: Int,
+)
 
 @Serializable
 data class ErrorResponse(val error: String, val message: String)

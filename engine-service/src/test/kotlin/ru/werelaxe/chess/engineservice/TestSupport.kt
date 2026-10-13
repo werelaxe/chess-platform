@@ -27,6 +27,7 @@ import ru.werelaxe.chess.engineservice.dto.HealthResponse
 import ru.werelaxe.chess.engineservice.dto.ThinkRequest
 import ru.werelaxe.chess.engineservice.dto.ThinkResponse
 import ru.werelaxe.chess.engineservice.service.Engine
+import ru.werelaxe.chess.engineservice.service.HelperPool
 import ru.werelaxe.chess.engineservice.service.Searcher
 import kotlin.random.Random
 import kotlin.test.assertEquals
@@ -38,13 +39,14 @@ import kotlin.time.TimeSource
 /** The real engine with a fresh seeded random for every move, so that its choices are reproducible. */
 val SEEDED_ENGINE = Engine { state, level, budget -> ChessEngine(level, Random(1)).chooseMove(state, budget) }
 
-/** Runs [block] against a service wired with [engine] and [config]. */
+/** Runs [block] against a service wired with [engine], [helpers] and [config]. */
 fun serviceTest(
     config: AppConfig = AppConfig(parallelism = 2, queueLimit = 4),
     engine: Engine = SEEDED_ENGINE,
+    helpers: HelperPool = HelperPool(config.helperThreads),
     block: suspend TestContext.() -> Unit,
 ) = testApplication {
-    val searcher = Searcher(config, engine)
+    val searcher = Searcher(config, helpers, engine)
     application { module(searcher) }
     val client = createClient {
         install(ContentNegotiation) { json(ChessJson.json) }
