@@ -1,24 +1,83 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router";
 import { errorMessage } from "../api/client";
-import type { BotLevel, GameKind, GameLifecycle, UserRef, Visibility } from "../api/types";
-import { playerLabel } from "../core/computer";
+import type { GameKind, GameLifecycle, UserRef, Visibility } from "../api/types";
+import { botLevelLabel, displayName, hasProfile } from "../core/players";
+
+export function profilePath(username: string): string {
+  return `/players/${encodeURIComponent(username)}`;
+}
+
+/** The small tag after a name: the level of a bot, or "guest"; nothing for registered people. */
+export function UserTag({ user }: { user: UserRef }) {
+  const { t } = useTranslation();
+  if (user.bot) return <span className="bot-tag">{user.botLevel ? botLevelLabel(user.botLevel) : t("user.botTag")}</span>;
+  if (user.guest) return <span className="guest-tag">{t("user.guestTag")}</span>;
+  return null;
+}
 
 /**
- * A user's name; guests and the computer carry a small tag so they are recognisable but not loud.
- * The computer is shown with the level of the game when it is known ("Computer · Medium").
+ * A user's display name linked to their profile (guests have none, so theirs is plain text),
+ * followed by the level of a bot or the guest tag so they are recognisable but not loud.
  */
-export function Username({ user, botLevel }: { user: UserRef; botLevel?: BotLevel | null }) {
-  const { t } = useTranslation();
+export function Username({ user, link = true }: { user: UserRef; link?: boolean }) {
+  const name = displayName(user);
   return (
     <>
-      {playerLabel(user, botLevel)}
-      {user.bot ? (
-        <span className="bot-tag">{t("user.botTag")}</span>
-      ) : user.guest ? (
-        <span className="guest-tag">{t("user.guestTag")}</span>
-      ) : null}
+      {link && hasProfile(user) ? (
+        <Link to={profilePath(user.username)} className="user-link" title={user.username}>
+          {name}
+        </Link>
+      ) : (
+        <span title={user.username}>{name}</span>
+      )}
+      <UserTag user={user} />
     </>
+  );
+}
+
+/** A rating figure in the tabular style used in lists and cards. */
+export function Rating({ value, title }: { value: number | null | undefined; title?: string }) {
+  const { t } = useTranslation();
+  if (value === null || value === undefined) return <span className="rating rating--none">{t("ratings.none")}</span>;
+  return (
+    <span className="rating" title={title}>
+      {value}
+    </span>
+  );
+}
+
+export function RatedPill({ rated }: { rated: boolean }) {
+  const { t } = useTranslation();
+  return <span className={`pill pill--${rated ? "rated" : "casual"}`}>{rated ? t("rated.rated") : t("rated.casual")}</span>;
+}
+
+/** A labelled on/off switch. */
+export function Toggle({
+  checked,
+  onChange,
+  label,
+  hint,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+  hint?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <label className={`toggle${disabled ? " is-disabled" : ""}`}>
+      <input type="checkbox" className="toggle__input" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
+      <span className="toggle__track" aria-hidden="true">
+        <span className="toggle__thumb" />
+      </span>
+      <span className="toggle__text">
+        <span className="toggle__label">{label}</span>
+        {hint ? <span className="toggle__hint">{hint}</span> : null}
+      </span>
+    </label>
   );
 }
 

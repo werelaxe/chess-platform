@@ -122,6 +122,15 @@ the same library, so the client can show legal moves and apply its own moves ins
 server remains authoritative. The only random element, the outcome of a quantum observation, is
 decided by the server and stored inside the move, which keeps every game fully reproducible.
 
+## Ratings and bots
+
+Registered players and bots have an Elo rating per variant (classic and quantum are rated
+separately; guests play unrated). The leaderboard and player search live under `/players`,
+and every player profile offers an invitation to a game. A roster of bots of different levels
+accepts invitations immediately, keeps a couple of open games waiting in the lobby, joins open
+games that have waited for a while and occasionally challenges recently active players; two
+bots can play each other, and such games are public. See docs/ARCHITECTURE.md sections 2.8–2.10.
+
 ## Credits
 
 Chess piece images: "cburnett" set by Colin M.L. Burnett, CC BY-SA 3.0, via Wikimedia Commons.

@@ -5,12 +5,12 @@ import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
 import io.ktor.client.request.patch
 import io.ktor.client.request.setBody
-import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import ru.werelaxe.chess.server.dto.AuthResponse
+import ru.werelaxe.chess.server.dto.PlayerRatings
 import ru.werelaxe.chess.server.dto.UserProfile
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -25,7 +25,7 @@ class ProfileTest {
 
         val updated = setLocale(alice.token, "ru")
         assertEquals(HttpStatusCode.OK, updated.status, updated.bodyAsString())
-        assertEquals(UserProfile(alice.user.id, "alice", locale = "ru"), updated.body<UserProfile>())
+        assertEquals(alice.user.copy(locale = "ru"), updated.body<UserProfile>())
         assertEquals("ru", me(alice.token).locale)
         // The choice lives with the account, so a fresh login returns it as well.
         assertEquals("ru", login("alice").body<AuthResponse>().user.locale)
@@ -43,7 +43,7 @@ class ProfileTest {
 
         val updated = setLocale(guest.token, "en")
         assertEquals(HttpStatusCode.OK, updated.status, updated.bodyAsString())
-        val expected = UserProfile(guest.user.id, guest.user.username, guest = true, locale = "en")
+        val expected = UserProfile(guest.user.id, guest.user.username, name = null, guest = true, botLevel = null, locale = "en", ratings = PlayerRatings.NONE)
         assertEquals(expected, updated.body<UserProfile>())
         assertEquals(expected, me(guest.token))
     }
@@ -70,7 +70,7 @@ class ProfileTest {
         for (value in listOf("\"de\"", "\"EN\"", "\"ru \"", "\"\"", "42", "true", "[\"ru\"]")) {
             patchMe(alice, "{\"locale\":$value}").assertError(HttpStatusCode.BadRequest, "validation")
         }
-        // The field itself is required: an empty patch is not a way to clear the locale.
+        // An empty patch changes nothing and says so.
         patchMe(alice, "{}").assertError(HttpStatusCode.BadRequest, "validation")
         patchMe(alice, "not json").assertError(HttpStatusCode.BadRequest, "validation")
         assertNull(me(alice).locale)
@@ -85,10 +85,4 @@ class ProfileTest {
         patchMe("not-a-token", "{\"locale\":\"ru\"}").assertError(HttpStatusCode.Unauthorized, "unauthorized")
     }
 
-    private suspend fun TestContext.patchMe(token: String, body: String): HttpResponse =
-        client.patch("/api/auth/me") {
-            bearerAuth(token)
-            contentType(ContentType.Application.Json)
-            setBody(body)
-        }
 }

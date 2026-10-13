@@ -11,6 +11,7 @@ import io.ktor.http.content.ByteArrayContent
 import io.ktor.http.contentType
 import ru.werelaxe.chess.server.dto.AuthResponse
 import ru.werelaxe.chess.server.dto.HealthResponse
+import ru.werelaxe.chess.server.dto.PlayerRatings
 import ru.werelaxe.chess.server.dto.UserProfile
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -39,7 +40,10 @@ class AuthTest {
 
         val me = client.get("/api/auth/me") { bearerAuth(loginAuth.token) }
         assertEquals(HttpStatusCode.OK, me.status)
-        assertEquals(UserProfile(auth.user.id, "Alice", locale = null), me.body<UserProfile>())
+        assertEquals(
+            UserProfile(auth.user.id, "Alice", name = null, botLevel = null, locale = null, ratings = PlayerRatings.NONE),
+            me.body<UserProfile>(),
+        )
     }
 
     @Test
@@ -52,6 +56,20 @@ class AuthTest {
 
         assertEquals(HttpStatusCode.Created, register("alice").status)
         register("ALICE").assertError(HttpStatusCode.Conflict, "username_taken")
+    }
+
+    @Test
+    fun apiPathSegmentsAreReservedUsernames() = serverTest {
+        // GET /api/players/leaderboard (and /api/auth/me, /api/bots) would shadow such a profile.
+        for (name in listOf("leaderboard", "Leaderboard", "LEADERBOARD", "me", "bots", "Bots")) {
+            val response = register(name)
+            response.assertError(HttpStatusCode.BadRequest, "validation")
+            assertEquals("The name '$name' is reserved", response.error().message)
+        }
+        // Only the exact segments are reserved.
+        assertEquals(HttpStatusCode.Created, register("leaderboards").status)
+        assertEquals(HttpStatusCode.Created, register("bots_fan").status)
+        assertEquals(HttpStatusCode.Created, register("mee").status)
     }
 
     @Test

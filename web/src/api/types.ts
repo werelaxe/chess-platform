@@ -21,11 +21,14 @@ export type GameLifecycle = "WAITING" | "ACTIVE" | "FINISHED";
 
 export type ColorChoice = Color | "RANDOM";
 
-/** Who the creator plays against: another person or the built-in engine. */
-export type Opponent = "HUMAN" | "COMPUTER";
+/**
+ * Who may take the other seat of a new game: anyone (`OPEN`) or only the named account
+ * (`USER`, an invitation; a bot invitee accepts at once).
+ */
+export type Opponent = "OPEN" | "USER";
 
-/** Strength of the built-in engine in a computer game. */
-export type BotLevel = "EASY" | "MEDIUM" | "HARD";
+/** Strength of a bot, in order of play. */
+export type BotLevel = "NOVICE" | "EASY" | "MEDIUM" | "HARD" | "EXPERT";
 
 export interface NormalMove {
   type: "normal";
@@ -104,18 +107,70 @@ export interface BoardView {
 export interface UserRef {
   id: number;
   username: string;
+  /** The display name chosen in the settings; null (or absent) when the username is all there is. */
+  name?: string | null;
   /** True for guest accounts (`guest-NNNNNN`, no password); omitted or false for registered users. */
   guest?: boolean;
-  /** True for the system "computer" user that plays computer games; omitted or false otherwise. */
+  /** True for the bots of the roster (ARCHITECTURE.md 2.10); omitted or false otherwise. */
   bot?: boolean;
+  /** The level of a bot; null or absent for people. */
+  botLevel?: BotLevel | null;
+  /** Inside a game: the player's rating in the game's variant; null for guests. */
+  rating?: number | null;
 }
+
+/** A player's standing in one variant (ARCHITECTURE.md 2.9). */
+export interface RatingSummary {
+  rating: number;
+  /** Rated games played in the variant. */
+  games: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  peak: number;
+}
+
+/** One entry per variant; null while the player has no rating there yet. */
+export type PlayerRatings = Record<GameKind, RatingSummary | null>;
 
 /**
  * The caller's own account as described by the auth endpoints: a `UserRef` plus the settings
  * only the owner sees. `locale` is the UI language saved on the account, null until chosen.
+ * `ratings` is absent in sessions stored before the field existed, until the next revalidation.
  */
 export interface UserProfile extends UserRef {
   locale: Locale | null;
+  ratings?: PlayerRatings;
+}
+
+export interface PlayerSummary {
+  user: UserRef;
+  ratings: PlayerRatings;
+}
+
+export interface LeaderboardEntry extends PlayerSummary {
+  rank: number;
+  /** The rating in the variant the leaderboard was asked for. */
+  rating: number;
+}
+
+export interface PlayerProfile extends PlayerSummary {
+  memberSince: string;
+  /** Null for bots. */
+  lastSeen: string | null;
+  /** Up to ten games, newest first. */
+  recentGames: GameSummary[];
+}
+
+/** A player's rating before and after a rated game. */
+export interface RatingChange {
+  before: number;
+  after: number;
+}
+
+export interface RatingChanges {
+  white: RatingChange;
+  black: RatingChange;
 }
 
 export interface GameResult {
@@ -134,14 +189,26 @@ export interface GameSummary {
   moveCount: number;
   result: GameResult | null;
   drawOfferedBy: Color | null;
-  /** Engine strength of a computer game; null or absent for a game between people. */
-  botLevel?: BotLevel | null;
+  /** Whether the result changes the ratings (ARCHITECTURE.md 2.8). */
+  rated: boolean;
+  /**
+   * The account invited to take the other seat of a game created with `opponent: USER`; null or
+   * absent for an open game. Only the invitee may join such a WAITING game.
+   */
+  invitee?: UserRef | null;
+  /**
+   * True on the `game` event that ends an invitation because the invitee turned it down; false
+   * or absent when the creator cancelled it (or it expired), which ends it the same way.
+   */
+  declined?: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface GameDto extends GameSummary {
   moves: GameMove[];
+  /** Set once a rated game has finished with a rating change; null otherwise (ARCHITECTURE.md 2.8). */
+  ratingChanges: RatingChanges | null;
 }
 
 export interface AuthResponse {
@@ -149,9 +216,10 @@ export interface AuthResponse {
   user: UserProfile;
 }
 
-/** Body of PATCH /api/auth/me; null clears the saved language. */
+/** Body of PATCH /api/auth/me: only the fields present change; null clears a field. */
 export interface UpdateProfileRequest {
-  locale: Locale | null;
+  locale?: Locale | null;
+  displayName?: string | null;
 }
 
 export interface MoveResponse {
@@ -172,10 +240,30 @@ export interface CreateGameRequest {
   kind: GameKind;
   visibility: Visibility;
   color: ColorChoice;
-  /** Defaults to HUMAN on the server. */
-  opponent?: Opponent;
-  /** Required when `opponent` is COMPUTER. */
-  level?: BotLevel;
+  /** Ignored for guests, whose games are never rated. */
+  rated: boolean;
+  opponent: Opponent;
+  /** The invitee, required when `opponent` is USER. */
+  opponentUsername?: string;
+}
+
+export interface InvitationsResponse {
+  /** WAITING games others invited the caller to. */
+  incoming: GameSummary[];
+  /** WAITING games the caller created by invitation. */
+  outgoing: GameSummary[];
+}
+
+export interface PlayerListResponse {
+  players: PlayerSummary[];
+}
+
+export interface LeaderboardResponse {
+  entries: LeaderboardEntry[];
+}
+
+export interface BotListResponse {
+  bots: PlayerSummary[];
 }
 
 export interface ApiErrorBody {

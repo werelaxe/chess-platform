@@ -8,16 +8,20 @@ import io.ktor.server.auth.jwt.jwt
 import io.ktor.server.response.respond
 import ru.werelaxe.chess.server.dto.ErrorResponse
 import ru.werelaxe.chess.server.service.JwtService
+import ru.werelaxe.chess.server.service.UserPrincipal
 
 const val JWT_AUTH = "jwt"
 
-/** Bearer JWT authentication from the `Authorization` header only; tokens are never read from the URL. */
-fun Application.configureSecurity(jwt: JwtService) {
+/**
+ * Bearer JWT authentication from the `Authorization` header only; tokens are never read from
+ * the URL. [onAuthenticated] runs for every request that carries a valid token.
+ */
+fun Application.configureSecurity(jwt: JwtService, onAuthenticated: suspend (UserPrincipal) -> Unit = {}) {
     install(Authentication) {
         jwt(JWT_AUTH) {
             realm = "chess"
             verifier(jwt.verifier)
-            validate { credential -> jwt.principal(credential.payload) }
+            validate { credential -> jwt.principal(credential.payload)?.also { onAuthenticated(it) } }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, ErrorResponse("unauthorized", "Invalid or missing token"))
             }

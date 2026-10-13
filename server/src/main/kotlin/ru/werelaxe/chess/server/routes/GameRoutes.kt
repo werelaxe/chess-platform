@@ -19,9 +19,6 @@ import ru.werelaxe.chess.server.plugins.JWT_AUTH
 import ru.werelaxe.chess.server.service.ApiException
 import ru.werelaxe.chess.server.service.GameService
 
-private const val DEFAULT_LIMIT = 50
-private const val MAX_LIMIT = 200
-
 /** The shape of the ids [ru.werelaxe.chess.server.service.GameIdGenerator] produces. */
 private val GAME_ID_PATTERN = Regex("[A-Za-z0-9]{12}")
 
@@ -29,14 +26,10 @@ private val GAME_ID_PATTERN = Regex("[A-Za-z0-9]{12}")
 val ApplicationCall.gameId: String
     get() = parameters["id"]?.takeIf { GAME_ID_PATTERN.matches(it) } ?: throw ApiException.notFound("Game")
 
-private data class Paging(val limit: Int, val offset: Int)
-
-/** `limit` (default [DEFAULT_LIMIT], clamped to 1..[MAX_LIMIT]) and `offset` (at least 0) of a listing. */
-private fun ApplicationCall.paging(): Paging {
-    val query = request.queryParameters
-    val limit = (query["limit"]?.toIntOrNull() ?: DEFAULT_LIMIT).coerceIn(1, MAX_LIMIT)
-    val offset = (query["offset"]?.toIntOrNull() ?: 0).coerceAtLeast(0)
-    return Paging(limit, offset)
+/** The `kind` query parameter, when present. */
+internal fun ApplicationCall.kindParameter(): GameKind? = request.queryParameters["kind"]?.let { value ->
+    GameKind.entries.firstOrNull { it.name.equals(value, ignoreCase = true) }
+        ?: throw ApiException.validation("Unknown kind '$value'; expected CLASSIC or QUANTUM")
 }
 
 fun Route.gameRoutes(games: GameService) {
@@ -47,10 +40,7 @@ fun Route.gameRoutes(games: GameService) {
                 GameFilter.entries.firstOrNull { it.name.equals(value, ignoreCase = true) }
                     ?: throw ApiException.validation("Unknown filter '$value'; expected open, active or finished")
             }
-            val kind = query["kind"]?.let { value ->
-                GameKind.entries.firstOrNull { it.name.equals(value, ignoreCase = true) }
-                    ?: throw ApiException.validation("Unknown kind '$value'; expected CLASSIC or QUANTUM")
-            }
+            val kind = call.kindParameter()
             val (limit, offset) = call.paging()
             call.respond(GamesResponse(games.listPublic(filter, kind, limit, offset)))
         }
@@ -69,6 +59,10 @@ fun Route.gameRoutes(games: GameService) {
             post("/{id}/join") {
                 call.respond(games.join(call.user, call.gameId))
             }
+            post("/{id}/decline") {
+                games.decline(call.user, call.gameId)
+                call.respond(HttpStatusCode.NoContent)
+            }
             post("/{id}/moves") {
                 val request = call.receive<MoveRequest>()
                 call.respond(games.move(call.user, call.gameId, request.move))
@@ -80,6 +74,11 @@ fun Route.gameRoutes(games: GameService) {
                 val request = call.receive<DrawRequest>()
                 call.respond(games.draw(call.user, call.gameId, request.action))
             }
+        }
+    }
+    authenticate(JWT_AUTH) {
+        get("/api/invitations") {
+            call.respond(games.listInvitations(call.user))
         }
     }
 }

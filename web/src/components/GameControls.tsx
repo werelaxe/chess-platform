@@ -2,26 +2,34 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import type { Color, DrawAction, GameSummary, UserRef } from "../api/types";
-import { botColor } from "../core/computer";
+import { opponentOf } from "../core/players";
+
+/** How the viewer relates to a WAITING invitation. */
+export type InvitationRole = "creator" | "invitee" | "outsider";
 
 export function GameControls({
   game,
   viewer,
   viewerColor,
+  invitationRole,
   busy,
   shareUrl,
   onJoin,
   onJoinAsGuest,
+  onDecline,
   onResign,
   onDraw,
 }: {
   game: GameSummary;
   viewer: UserRef | null;
   viewerColor: Color | null;
+  /** Null for an open game. */
+  invitationRole: InvitationRole | null;
   busy: boolean;
   shareUrl: string;
   onJoin: () => void;
   onJoinAsGuest: () => void;
+  onDecline: () => void;
   onResign: () => void;
   onDraw: (action: DrawAction) => void;
 }) {
@@ -29,8 +37,8 @@ export function GameControls({
   const [copied, setCopied] = useState(false);
   const isCreator = viewer !== null && viewer.id === game.creator.id;
   const isPlayer = viewerColor !== null;
-  // Computer games start active, so they are never joined, and draw offers are not available in them.
-  const computer = botColor(game) !== null;
+  // A bot never answers a draw offer, so none is offered against one.
+  const againstBot = viewerColor !== null && opponentOf(game, viewerColor)?.bot === true;
 
   async function copyLink() {
     try {
@@ -48,12 +56,35 @@ export function GameControls({
   }
 
   let buttons: React.ReactNode = null;
-  if (game.status === "WAITING" && !computer) {
+  if (game.status === "WAITING") {
     if (isCreator) {
       buttons = (
         <button type="button" className="btn btn--danger" disabled={busy} onClick={confirmResign}>
-          {t("controls.cancelGame")}
+          {invitationRole ? t("controls.cancelInvitation") : t("controls.cancelGame")}
         </button>
+      );
+    } else if (invitationRole === "invitee") {
+      buttons = (
+        <>
+          <button type="button" className="btn btn--primary" disabled={busy} onClick={onJoin}>
+            {t("controls.acceptInvitation")}
+          </button>
+          <button type="button" className="btn" disabled={busy} onClick={onDecline}>
+            {t("controls.declineInvitation")}
+          </button>
+        </>
+      );
+    } else if (invitationRole === "outsider") {
+      // The invited player may well have followed the shared link while signed out.
+      buttons = (
+        <>
+          {viewer ? null : (
+            <Link to="/login" state={{ from: `/games/${game.id}` }} className="btn btn--primary">
+              {t("controls.signInToAccept")}
+            </Link>
+          )}
+          <span className="faint small">{t("controls.invitationOnly")}</span>
+        </>
       );
     } else if (viewer) {
       buttons = (
@@ -77,7 +108,7 @@ export function GameControls({
     const offer = game.drawOfferedBy;
     buttons = (
       <>
-        {computer ? null : offer === null ? (
+        {againstBot ? null : offer === null ? (
           <button type="button" className="btn" disabled={busy} onClick={() => onDraw("OFFER")}>
             {t("controls.offerDraw")}
           </button>
@@ -132,7 +163,7 @@ export function GameControls({
             </button>
           </div>
           <p className="faint small" style={{ marginTop: 8 }}>
-            {computer ? t("controls.computerUnlisted") : t("controls.privateGame")}
+            {t("controls.privateGame")}
           </p>
         </>
       ) : null}

@@ -3,6 +3,7 @@ import { getAuthToken, useAuthStore } from "../store/auth";
 import type {
   ApiErrorBody,
   AuthResponse,
+  BotListResponse,
   CreateGameRequest,
   DrawAction,
   GameDto,
@@ -11,7 +12,13 @@ import type {
   GameListResponse,
   GameMove,
   GameSummary,
+  InvitationsResponse,
+  LeaderboardEntry,
+  LeaderboardResponse,
   MoveResponse,
+  PlayerListResponse,
+  PlayerProfile,
+  PlayerSummary,
   UpdateProfileRequest,
   UserProfile,
 } from "./types";
@@ -46,6 +53,7 @@ const ERROR_CODES = [
   "rate_limited",
   "own_game",
   "game_full",
+  "not_invited",
   "not_a_player",
   "not_your_turn",
   "illegal_move",
@@ -76,6 +84,16 @@ export function errorMessage(error: unknown): string {
   }
   if (error instanceof Error && error.message) return error.message;
   return i18n.t("errors.unexpected");
+}
+
+/**
+ * Like `errorMessage`, but an API error with one of the given statuses shows the server's own
+ * wording: a validation or not-found answer names the exact problem (an unknown invitee, an
+ * invitation to oneself) where the generic translation cannot.
+ */
+export function detailedErrorMessage(error: unknown, statuses: readonly number[]): string {
+  if (isApiError(error) && statuses.includes(error.status) && error.message) return error.message;
+  return errorMessage(error);
 }
 
 type Method = "GET" | "POST" | "PATCH";
@@ -143,7 +161,7 @@ export const api = {
   me(): Promise<UserProfile> {
     return request("GET", "/api/auth/me");
   },
-  /** Saves the UI language on the account; returns the updated profile. */
+  /** Changes the UI language or the display name of the account; returns the updated profile. */
   updateProfile(body: UpdateProfileRequest): Promise<UserProfile> {
     return request("PATCH", "/api/auth/me", body);
   },
@@ -176,5 +194,34 @@ export const api = {
   },
   draw(id: string, action: DrawAction): Promise<GameDto> {
     return request("POST", `/api/games/${encodeURIComponent(id)}/draw`, { action });
+  },
+  /** Turns down an invitation; the game is deleted and its creator notified. */
+  decline(id: string): Promise<void> {
+    return request("POST", `/api/games/${encodeURIComponent(id)}/decline`);
+  },
+  async invitations(): Promise<InvitationsResponse> {
+    const response = await request<Partial<InvitationsResponse>>("GET", "/api/invitations");
+    return { incoming: response.incoming ?? [], outgoing: response.outgoing ?? [] };
+  },
+  /** Players whose username or display name contains `query` (case-insensitive); never guests. */
+  async searchPlayers(query: string, limit?: number): Promise<PlayerSummary[]> {
+    const params = new URLSearchParams({ query });
+    if (limit !== undefined) params.set("limit", String(limit));
+    const response = await request<PlayerListResponse>("GET", `/api/players?${params.toString()}`);
+    return response.players ?? [];
+  },
+  async leaderboard(kind: GameKind, limit?: number): Promise<LeaderboardEntry[]> {
+    const params = new URLSearchParams({ kind });
+    if (limit !== undefined) params.set("limit", String(limit));
+    const response = await request<LeaderboardResponse>("GET", `/api/players/leaderboard?${params.toString()}`);
+    return response.entries ?? [];
+  },
+  player(username: string): Promise<PlayerProfile> {
+    return request("GET", `/api/players/${encodeURIComponent(username)}`);
+  },
+  /** The bot roster with levels and ratings. */
+  async bots(): Promise<PlayerSummary[]> {
+    const response = await request<BotListResponse>("GET", "/api/bots");
+    return response.bots ?? [];
   },
 };
