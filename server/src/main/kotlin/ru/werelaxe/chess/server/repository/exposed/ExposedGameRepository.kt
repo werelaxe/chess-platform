@@ -6,6 +6,7 @@ import org.jetbrains.exposed.v1.core.Op
 import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.and
+import org.jetbrains.exposed.v1.core.count
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.greater
 import org.jetbrains.exposed.v1.core.greaterEq
@@ -22,6 +23,7 @@ import org.jetbrains.exposed.v1.jdbc.JdbcTransaction
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.insertIgnore
+import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.jetbrains.exposed.v1.jdbc.update
@@ -181,6 +183,26 @@ class ExposedGameRepository(private val db: Database) : GameRepository {
             Games.selectAll()
                 .where { (Games.status eq GamePhase.ACTIVE) and ((Games.whiteId inList ids) or (Games.blackId inList ids)) }
                 .map { it.toRecord() }
+        }
+    }
+
+    override suspend fun countByPhase(): Map<GamePhase, Int> = tx {
+        val count = Games.id.count()
+        Games.select(Games.status, count).groupBy(Games.status).associate { it[Games.status] to it[count].toInt() }
+    }
+
+    override suspend fun countGamesOf(playerIds: Collection<Long>): Map<Long, Int> {
+        if (playerIds.isEmpty()) return emptyMap()
+        val ids = playerIds.toSet()
+        return tx {
+            val counts = HashMap<Long, Int>()
+            val count = Games.id.count()
+            for (seat in listOf(Games.whiteId, Games.blackId)) {
+                Games.select(seat, count).where { seat inList ids }.groupBy(seat).forEach { row ->
+                    row[seat]?.let { counts.merge(it, row[count].toInt(), Int::plus) }
+                }
+            }
+            counts
         }
     }
 

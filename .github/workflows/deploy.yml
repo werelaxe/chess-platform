@@ -68,11 +68,33 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      # The secrets context cannot be used in step conditions, so the token goes through env.
+      ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
     steps:
       - uses: actions/checkout@v7
 
       # KUBE_CONFIG is the kubeconfig printed by deploy/k8s/ci/kubeconfig.sh: it may only change
       # the "chess" namespace. kubectl comes with the runner image.
+      # Keeps the "admin-token" key of the "chess" secret equal to the ADMIN_TOKEN GitHub secret.
+      # Needs the deployer role from deploy/k8s/ci/deployer.yaml (get/patch on that secret); a
+      # cluster without it only loses the admin API, not the deployment.
+      - name: Store the admin token in the cluster
+        if: ${{ env.ADMIN_TOKEN != '' }}
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+        run: |
+          export KUBECONFIG="$RUNNER_TEMP/kubeconfig"
+          (umask 077 && printf '%s\n' "$KUBE_CONFIG" > "$KUBECONFIG")
+          patch="$RUNNER_TEMP/admin-token.json"
+          (umask 077 && printf '{"stringData":{"admin-token":"%s"}}' "$ADMIN_TOKEN" > "$patch")
+          if kubectl -n chess patch secret chess --patch-file "$patch" >/dev/null; then
+            echo "admin token stored"
+          else
+            echo "::warning::Could not store the admin token (apply deploy/k8s/ci/deployer.yaml); the admin API stays disabled"
+          fi
+          rm -f "$patch"
+
       - name: Apply the manifests with the new images
         env:
           KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}

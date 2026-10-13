@@ -55,15 +55,16 @@ import java.time.ZoneOffset
 import kotlin.random.Random
 import kotlin.test.assertEquals
 import kotlin.test.fail
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 
 const val TEST_PASSWORD = "correct-horse"
 
-/** Matchmaking is off: the tests that need it drive the matchmaker's tick by hand. */
-val TEST_CONFIG = AppConfig(jwtSecret = "test-secret", bcryptCost = 4, botMatchmaking = false)
+/**
+ * Bots reply almost at once. The matchmaker loop sleeps minutes between its ticks, so it never
+ * acts during a test: the tests that need it drive its tick by hand.
+ */
+val TEST_CONFIG = AppConfig(jwtSecret = "test-secret", bcryptCost = 4, botReplyPauseMillis = 10)
 
 val TEST_START: Instant = Instant.parse("2026-10-07T10:00:00Z")
 
@@ -80,6 +81,27 @@ class MutableClock(@Volatile private var now: Instant) : Clock() {
     }
 }
 
+/**
+ * A [Random] for driving the matchmaker: the probability rolls come from [rolls] (and are
+ * 1.0, "never", once those run out), every pick is the first element and every coin is tails.
+ */
+class ScriptedRandom(vararg rolls: Double) : Random() {
+    val rolls = ArrayDeque(rolls.toList())
+
+    override fun nextBits(bitCount: Int): Int = 0
+
+    override fun nextDouble(): Double = rolls.removeFirstOrNull() ?: 1.0
+
+    override fun nextInt(from: Int, until: Int): Int = from
+
+    override fun nextBoolean(): Boolean = false
+}
+
+/** Rolls for a [ScriptedRandom]: on either side of the matchmaker's probabilities. */
+const val NO_JOIN = 0.9
+const val JOIN = 0.1
+const val INVITE = 0.1
+
 /** The username of a roster bot of [level]. */
 fun botNamed(level: EngineLevel): String = BotRoster.specs.first { it.level == level && !it.legacy }.username
 
@@ -88,13 +110,11 @@ fun botNamed(level: EngineLevel): String = BotRoster.specs.first { it.level == l
  * unless the test passes [repositories] it filled beforehand (rows that must exist when the
  * application starts, or decorated repositories). The bots' moves come from [moveProvider]: by
  * default the in-process engine at the easy level whatever level a game asks for, with a fresh
- * seeded random for every move so that its choices are reproducible. A bot replies after
- * [botPause]; two bots play without any pause.
+ * seeded random for every move so that its choices are reproducible.
  */
 fun serverTest(
     seed: Int = 42,
     config: AppConfig = TEST_CONFIG,
-    botPause: Duration = 10.milliseconds,
     moveProvider: MoveProvider = InProcessMoveProvider({ ChessEngine(EngineLevel.EASY, Random(seed)) }),
     random: Random = Random(seed),
     repositories: Repositories = InMemoryStore().repositories(),
@@ -109,7 +129,6 @@ fun serverTest(
             random = random,
             clock = clock,
             moveProvider = moveProvider,
-            botPause = botPause,
         )
     }
     val client = createClient {

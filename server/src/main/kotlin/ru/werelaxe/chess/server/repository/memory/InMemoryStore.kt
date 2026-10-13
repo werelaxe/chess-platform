@@ -7,6 +7,7 @@ import ru.werelaxe.chess.server.model.GameRecord
 import ru.werelaxe.chess.server.model.Rating
 import ru.werelaxe.chess.server.model.RatingChange
 import ru.werelaxe.chess.server.model.RatingUpdate
+import ru.werelaxe.chess.server.model.Setting
 import ru.werelaxe.chess.server.model.SeatRatings
 import ru.werelaxe.chess.server.model.User
 import ru.werelaxe.chess.server.repository.Repositories
@@ -24,12 +25,14 @@ class InMemoryStore {
     val moves = HashMap<String, MutableList<GameMove>>()
     val ratings = HashMap<Pair<Long, GameKind>, Rating>()
     val ratingChanges = ArrayList<RatingChange>()
+    val settings = LinkedHashMap<String, Setting>()
 
     /** The in-memory repositories over this store. */
     fun repositories() = Repositories(
         users = InMemoryUserRepository(this),
         games = InMemoryGameRepository(this),
         ratings = InMemoryRatingRepository(this),
+        settings = InMemorySettingsRepository(this),
     )
 
     /**

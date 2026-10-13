@@ -1,6 +1,7 @@
 package ru.werelaxe.chess.server.repository
 
 import ru.werelaxe.chess.engine.EngineLevel
+import ru.werelaxe.chess.server.model.AccountCounts
 import ru.werelaxe.chess.server.model.ProfileField
 import ru.werelaxe.chess.server.model.User
 import java.time.Instant
@@ -12,11 +13,20 @@ interface UserRepository {
     /** Inserts a guest, who has no password; returns null when the username is already taken. */
     suspend fun createGuest(username: String, createdAt: Instant): User?
 
+    /** Inserts a bot, which has no password; returns null when the username is already taken. */
+    suspend fun createBot(username: String, displayName: String, level: EngineLevel, createdAt: Instant): User?
+
+    /** Every bot account, by id. */
+    suspend fun listBots(): List<User>
+
     /**
-     * Inserts a bot, which has no password, or brings an existing bot row up to date with
-     * [displayName] and [level]; returns null when a regular account holds the username.
+     * Changes a bot's display name and/or level (null leaves one alone); returns the updated
+     * bot, or null when [id] is not a bot's.
      */
-    suspend fun upsertBot(username: String, displayName: String, level: EngineLevel, createdAt: Instant): User?
+    suspend fun updateBot(id: Long, displayName: String?, level: EngineLevel?): User?
+
+    /** How many registered people, guests and bots exist. */
+    suspend fun countAccounts(): AccountCounts
 
     suspend fun findById(id: Long): User?
 

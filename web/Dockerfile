@@ -14,6 +14,7 @@ COPY core/build.gradle.kts ./core/
 # settings.gradle.kts includes the engine, engine-service and server projects; their build files are enough for configuration.
 COPY engine/build.gradle.kts ./engine/
 COPY engine-service/build.gradle.kts ./engine-service/
+COPY admin-cli/build.gradle.kts ./admin-cli/
 COPY server/build.gradle.kts ./server/
 RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     chmod +x gradlew && ./gradlew :core:dependencies --no-daemon -q > /dev/null

@@ -17,15 +17,12 @@ import ru.werelaxe.chess.engine.EngineLevel
 import ru.werelaxe.chess.server.model.GamePhase
 import ru.werelaxe.chess.server.model.GameRecord
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
 
 /**
  * What a bot needs to choose a move: who it is, how strong it plays and the position as the
  * snapshot of the move list ([moves]) taken under the game's lock. [opponentIsBot] selects
- * the pacing: a reply to a human is never instant, while two bots play as fast as the engine answers.
+ * which of the two pauses of the [Settings] applies before the move.
  */
 class BotTurn(
     val gameId: String,
@@ -40,7 +37,8 @@ class BotTurn(
  * The bot player. Whenever the seat on turn in a game belongs to a bot, asks [moves] for a
  * move and submits it through the normal move pipeline, so that the clients receive the
  * usual `move` events. The position is snapshotted under the game's lock and the move chosen
- * outside it; the provider decides where and how many searches run at a time.
+ * outside it; the provider decides where and how many searches run at a time. The pauses are
+ * read from [settings] before every move, so a change applies without a restart.
  *
  * A game is never searched twice at the same time: a wake-up that arrives while its game is
  * being played is honoured once the current move is done instead of being lost.
@@ -49,7 +47,7 @@ class BotPlayer(
     private val games: GameService,
     private val bots: Bots,
     private val moves: MoveProvider,
-    private val minPause: Duration = DEFAULT_PAUSE,
+    private val settings: Settings,
 ) {
     private val log = LoggerFactory.getLogger(BotPlayer::class.java)
 
@@ -146,12 +144,11 @@ class BotPlayer(
         repeat(MAX_ATTEMPTS) {
             val turn = games.botTurn(id) ?: return
             val move = moves.chooseMove(turn.gameId, turn.kind, turn.level, turn.moves) ?: return
-            // The pause makes a reply to a human feel like one; two bots play as fast as the engine answers.
-            if (!turn.opponentIsBot) {
-                pacing?.let { mark ->
-                    val remaining = minPause - mark.elapsedNow()
-                    if (remaining.isPositive()) delay(remaining)
-                }
+            // The pause makes a reply to a human feel like one; two bots have their own, nil by default.
+            val pause = if (turn.opponentIsBot) settings.vsBotPause else settings.replyPause
+            pacing?.let { mark ->
+                val remaining = pause - mark.elapsedNow()
+                if (remaining.isPositive()) delay(remaining)
             }
             pacing = null
             try {
@@ -167,9 +164,7 @@ class BotPlayer(
         log.error("Giving up on game {}: {} bot moves in a row were rejected", id, MAX_ATTEMPTS)
     }
 
-    companion object {
-        /** Shortest pause between a human's move and the bot's reply, so that the reply is perceived as one. */
-        val DEFAULT_PAUSE: Duration = 700.milliseconds
-        private const val MAX_ATTEMPTS = 3
+    private companion object {
+        const val MAX_ATTEMPTS = 3
     }
 }

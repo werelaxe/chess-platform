@@ -3,6 +3,7 @@ package ru.werelaxe.chess.server.repository
 import ru.werelaxe.chess.core.GameKind
 import ru.werelaxe.chess.core.GameMove
 import ru.werelaxe.chess.server.model.GameFilter
+import ru.werelaxe.chess.server.model.GamePhase
 import ru.werelaxe.chess.server.model.GameRecord
 import ru.werelaxe.chess.server.model.RatingChange
 import ru.werelaxe.chess.server.model.RatingUpdate
@@ -69,4 +70,10 @@ interface GameRepository {
 
     /** ACTIVE games in which any of [playerIds] holds a seat. */
     suspend fun listActiveGamesOf(playerIds: Collection<Long>): List<GameRecord>
+
+    /** How many games exist in each phase. */
+    suspend fun countByPhase(): Map<GamePhase, Int>
+
+    /** How many games each of [playerIds] holds a seat in, whatever the phase; players without any are left out. */
+    suspend fun countGamesOf(playerIds: Collection<Long>): Map<Long, Int>
 }

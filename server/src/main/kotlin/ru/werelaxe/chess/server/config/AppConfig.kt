@@ -1,6 +1,6 @@
 package ru.werelaxe.chess.server.config
 
-/** Server configuration; see docs/ARCHITECTURE.md sections 2.1 and 2.10 for the environment variables. */
+/** Server configuration; see docs/ARCHITECTURE.md sections 2.1, 2.10 and 2.11 for the environment variables. */
 data class AppConfig(
     val port: Int = 8080,
     val databaseUrl: String = "jdbc:postgresql://localhost:5432/chess",
@@ -22,8 +22,12 @@ data class AppConfig(
     val botRemoteConcurrency: Int = 64,
     /** Idle time after which a cached game is dropped from memory. */
     val gameIdleMinutes: Long = 30,
-    /** Pause between the moves of a game between two bots. */
-    /** Whether the bots keep the lobby alive by themselves (section 2.10). */
+    /** The token of the admin API (section 2.11); null leaves the API switched off. */
+    val adminToken: String? = null,
+    /**
+     * The defaults of the runtime settings of the bots (section 2.11): whether the matchmaker
+     * acts on its ticks, its sleep range and targets, and the pauses the bot player keeps.
+     */
     val botMatchmaking: Boolean = true,
     val botTickMinMinutes: Long = 3,
     val botTickMaxMinutes: Long = 10,
@@ -31,6 +35,10 @@ data class AppConfig(
     val botJoinAfterMinutes: Long = 8,
     val botInvitationTtlMinutes: Long = 60,
     val botMaxActiveGames: Int = 6,
+    /** Shortest pause before a bot answers a human's move, so that the reply is perceived as one. */
+    val botReplyPauseMillis: Long = 700,
+    /** Shortest pause between the moves of two bots. */
+    val botVsBotPauseMillis: Long = 0,
     /** Age after which a public open game nobody joined is deleted by the matchmaking loop (section 2.10). */
     val openGameTtlHours: Long = 24,
 ) {
@@ -39,12 +47,20 @@ data class AppConfig(
 
     companion object {
         const val MIN_JWT_SECRET_LENGTH = 16
+        const val MIN_ADMIN_TOKEN_LENGTH = 16
 
         fun fromEnvironment(env: Map<String, String> = System.getenv()): AppConfig {
             val jwtSecret = env["JWT_SECRET"].orEmpty()
             if (jwtSecret.isBlank() || jwtSecret.length < MIN_JWT_SECRET_LENGTH) {
                 throw ConfigurationException(
                     "JWT_SECRET must be set to a random string of at least $MIN_JWT_SECRET_LENGTH characters",
+                )
+            }
+            // Blank means unset; a short token would be guessable, so it is refused rather than used.
+            val adminToken = env["ADMIN_TOKEN"]?.takeIf { it.isNotBlank() }
+            if (adminToken != null && adminToken.length < MIN_ADMIN_TOKEN_LENGTH) {
+                throw ConfigurationException(
+                    "ADMIN_TOKEN must be a random string of at least $MIN_ADMIN_TOKEN_LENGTH characters, or unset",
                 )
             }
             val defaults = AppConfig(jwtSecret = jwtSecret)
@@ -62,6 +78,7 @@ data class AppConfig(
                 botParallelism = env.positiveInt("BOT_PARALLELISM") ?: defaults.botParallelism,
                 botRemoteConcurrency = env.positiveInt("BOT_REMOTE_CONCURRENCY") ?: defaults.botRemoteConcurrency,
                 gameIdleMinutes = env.positiveLong("GAME_IDLE_MINUTES") ?: defaults.gameIdleMinutes,
+                adminToken = adminToken,
                 botMatchmaking = env["BOT_MATCHMAKING"]?.trim()?.lowercase()?.toBooleanStrictOrNull() ?: defaults.botMatchmaking,
                 botTickMinMinutes = tickMin,
                 // The upper bound never falls below the lower one, so the pause stays well defined.

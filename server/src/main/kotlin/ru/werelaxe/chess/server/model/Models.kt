@@ -143,3 +143,9 @@ typealias RatingUpdate = (before: SeatRatings) -> SeatRatings
 
 /** A leaderboard row: a player and the rating row of the requested variant. */
 data class RatedPlayer(val user: User, val rating: Rating)
+
+/** A row of `settings`: a runtime setting that overrides its default (docs/ARCHITECTURE.md section 2.11). */
+data class Setting(val key: String, val value: String, val updatedAt: Instant)
+
+/** How many accounts of each kind exist: registered people, guests and bots. */
+data class AccountCounts(val users: Int, val guests: Int, val bots: Int)

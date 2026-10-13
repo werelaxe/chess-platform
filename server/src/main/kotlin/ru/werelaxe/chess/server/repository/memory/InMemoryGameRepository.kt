@@ -124,6 +124,21 @@ class InMemoryGameRepository(private val store: InMemoryStore = InMemoryStore())
         games.values.filter { it.phase == GamePhase.ACTIVE && (it.whiteId in players || it.blackId in players) }
     }
 
+    override suspend fun countByPhase(): Map<GamePhase, Int> = store.mutex.withLock {
+        games.values.groupingBy { it.phase }.eachCount()
+    }
+
+    override suspend fun countGamesOf(playerIds: Collection<Long>): Map<Long, Int> = store.mutex.withLock {
+        val players = playerIds.toSet()
+        val counts = HashMap<Long, Int>()
+        for (game in games.values) {
+            for (seat in listOfNotNull(game.whiteId, game.blackId)) {
+                if (seat in players) counts.merge(seat, 1, Int::plus)
+            }
+        }
+        counts
+    }
+
     private val GameRecord.isOpenToAnybody: Boolean
         get() = visibility == Visibility.PUBLIC && phase == GamePhase.WAITING && !isInvitation
 
