@@ -1,0 +1,12 @@
+# The production deployment on Kubernetes (namespace "chess"). Roll it out with deploy.sh, which
+# pins the images to a release; create-secret.sh creates the Secret once beforehand.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: chess
+resources:
+  - namespace.yaml
+  - db.yaml
+  - engine.yaml
+  - api.yaml
+  - web.yaml
+  - ingress.yaml

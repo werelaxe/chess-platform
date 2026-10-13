@@ -391,6 +391,9 @@ Game page behaviour:
 
 ## 4. Deployment
 
+Production runs on Kubernetes (`deploy/k8s`); `docker-compose.yml` runs the same stack on one
+host, for development and as a self-contained alternative.
+
 `docker-compose.yml` runs five services: `engine` (`engine-service/Dockerfile`, no published
 port, CPU-bound, scalable with `--scale engine=N`), `db` (postgres:17, named volume; published on
 `127.0.0.1:5432` only, so that a server started from Gradle can use it), `api`
@@ -402,23 +405,39 @@ published ports, 80 and 443). Both Dockerfiles copy the build scripts before the
 the Gradle and npm caches in BuildKit cache mounts, so a source change does not download the
 dependencies again. `POSTGRES_PASSWORD` and `JWT_SECRET` come from `.env` (`.env.example` lists
 them); compose refuses to start when either is missing. Mobile clients will talk to the same
-`/api` through Caddy and nginx.
+`/api` through the TLS proxy (Caddy or the cluster's ingress) and nginx.
+
+In the cluster (namespace `chess`) the same images run as the Deployments `engine`, `api` and
+`web` with Services of the same names, so that nginx and the API find each other exactly as
+under compose, and PostgreSQL as the StatefulSet `db` with a persistent volume. `api` is a single
+replica that is replaced rather than rolled (running games and their sockets live in the
+process) and waits for the database in an init container; `engine` carries the CPU limit. The
+database password and the JWT key come from the Secret `chess` (`deploy/k8s/create-secret.sh`).
 
 nginx serves `index.html` with `Cache-Control: no-cache` and the hashed `/assets/` as
 immutable, hides its version and adds `X-Content-Type-Options`, `X-Frame-Options` and
-`Referrer-Policy` to every response (`deploy/security-headers.conf`). Because only Caddy reaches
-nginx, nginx trusts the `X-Forwarded-For` header from the private network ranges and reports the
-real client address in its access log and in `X-Real-IP` to the API (which rate limits by it).
-Container logs go to Docker's json-file driver with rotation (`docker compose logs <service>`).
+`Referrer-Policy` to every response (`deploy/security-headers.conf`). Because only the TLS proxy
+(Caddy, or Traefik from the pod network) reaches nginx, nginx trusts the `X-Forwarded-For` header
+from the private network ranges and reports the real client address in its access log and in
+`X-Real-IP` to the API (which rate limits by it). Container logs go to Docker's json-file driver
+with rotation under compose (`docker compose logs <service>`) and to `kubectl logs` in the
+cluster.
 
 Deployments are done by the GitHub Actions workflow `deploy.yml`, started by hand from the
-Actions tab and only on `master`: it builds the three images, pushes
-them to GHCR tagged with the commit SHA and `latest`, copies the compose files to the server and
-runs `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` there over SSH with
-`IMAGE_TAG` set to the SHA, then checks `/api/health`. Rolling back is the same workflow run on
-an older commit. `ci.yml` runs the test suites on every push and pull request.
+Actions tab and only on `master`: it builds the three images, pushes them to GHCR tagged with
+the commit SHA and `latest`, runs `deploy/k8s/deploy.sh` with the SHA, which applies the
+manifests with the images pinned to it and waits for the rollout, then checks `/api/health`.
+The workflow reaches the cluster with the kubeconfig of the service account `deployer`
+(`deploy/k8s/ci/deployer.yaml`), which may only change the objects of the `chess` namespace and
+cannot read its Secrets. The manifests themselves carry no image tag: `deploy.sh` without one
+keeps the version that runs, so applying them never rolls the app back. Rolling back is the same
+workflow run on an older commit. `ci.yml` runs the test suites on every push and pull request.
 
-TLS is terminated by Caddy. With `SITE_ADDRESS` set to the public hostname it obtains a
+In the cluster TLS is terminated by its Traefik: the Ingress for `quantum-chess.fun` gets its
+Let's Encrypt certificate from cert-manager (ClusterIssuer `letsencrypt-prod`, ACME over HTTP),
+Traefik redirects HTTP to HTTPS and a Middleware adds `Strict-Transport-Security`.
+
+Under compose TLS is terminated by Caddy. With `SITE_ADDRESS` set to the public hostname it obtains a
 Let's Encrypt certificate (ACME over HTTP, so the domain's A record must point at the host and
 port 80 must be reachable), renews it automatically, redirects HTTP to HTTPS for that hostname
 and adds `Strict-Transport-Security`; `WWW_ADDRESS` names an optional `www.` host that only

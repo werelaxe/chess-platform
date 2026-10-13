@@ -11,7 +11,7 @@ engine/   the computer player (search and evaluation for both variants)
 engine-service/  stateless HTTP service around the engine; the API asks it for computer moves
 server/   Ktor 3 API: auth, lobby, games, WebSocket events, computer opponent; Exposed + Flyway on PostgreSQL
 web/      React 19 + TypeScript (Vite) client using the JS build of core
-deploy/   nginx configuration used by the web image
+deploy/   nginx configuration of the web image, Caddy for docker compose, Kubernetes manifests (k8s/)
 ```
 
 The web UI is available in English (the default) and Russian; the switcher in the navigation
@@ -40,37 +40,50 @@ published on `127.0.0.1:5432` for local development.
 
 ## Deploying and operating the server
 
+Production runs on Kubernetes, described by `deploy/k8s`: PostgreSQL as a StatefulSet with a
+persistent volume, the `engine`, `api` and `web` Deployments and an Ingress for
+`quantum-chess.fun`. The cluster's Traefik routes it to `web`, redirects HTTP to HTTPS and adds
+`Strict-Transport-Security`; cert-manager obtains and renews the certificate (ClusterIssuer
+`letsencrypt-prod`). Before the first deployment, `deploy/k8s/create-secret.sh` creates the
+Secret with a random database password and JWT key.
+
 GitHub Actions do the deployments (`.github/workflows/deploy.yml`): the `api`, `engine` and
 `web` images are built in CI, pushed to GHCR (`ghcr.io/werelaxe/chess-platform-api|engine|web`,
-tagged with the commit SHA and `latest`) and the server is updated over SSH with
-`docker-compose.prod.yml`, which runs those images instead of building. Trigger it from the
-Actions tab ("Deploy" on `master`; runs on other branches are skipped). The workflow
-needs the secret `DEPLOY_SSH_KEY` and the variables `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`
-and `SITE_URL`. On the server itself only `.env`, the compose files and `deploy/Caddyfile` live
-in `DEPLOY_PATH`. `ci.yml` runs all tests on every push and pull request.
+tagged with the commit SHA and `latest`) and rolled out with `deploy/k8s/deploy.sh <SHA>`, after
+which the workflow checks `/api/health`. Trigger it from the Actions tab ("Deploy" on `master`;
+runs on other branches are skipped). The workflow needs the variable `SITE_URL` and the secret
+`KUBE_CONFIG`, the kubeconfig of a service account that may only change the `chess` namespace;
+`deploy/k8s/ci/kubeconfig.sh`, run with an administrator's kubeconfig, creates the account and
+prints it:
+
+```bash
+deploy/k8s/ci/kubeconfig.sh | gh secret set KUBE_CONFIG --repo werelaxe/chess-platform
+```
+
+The manifests carry no image tag, so that applying them never rolls the app back: `deploy.sh`
+pins the images to the tag it is given and, without one, to the version that runs now, which is
+how a change to the manifests alone is applied. Rolling back is `deploy.sh <older SHA>` or the
+workflow run on an older commit. `ci.yml` runs all tests on every push and pull request.
 
 The computer's moves are searched by the `engine` service (`engine-service/`), the only
 CPU-heavy part of the stack: the API asks it over HTTP (`ENGINE_URL`) and falls back to its
 own in-process engine while the service is unavailable, so the engine can be restarted or
-redeployed without stalling a game. `ENGINE_CPUS` in `.env` caps the cores one engine container
-may use (default 6), and `ENGINE_PARALLELISM` the number of concurrent searches (default: the
-cores it sees); requests beyond that wait in a bounded queue with a shrinking thinking budget
-and are refused once it is full, which the API retries. To add capacity, run more replicas:
-`docker compose up -d --scale engine=2` (also on top of the production override), and the API
-spreads its requests over them through the service name.
+redeployed without stalling a game. The CPU limit of its container (`deploy/k8s/engine.yaml`;
+`ENGINE_CPUS` in `.env` under docker compose) caps the cores one engine may use, and
+`ENGINE_PARALLELISM` the number of concurrent searches (default: the cores it sees); requests
+beyond that wait in a bounded queue with a shrinking thinking budget and are refused once it is
+full, which the API retries. To add capacity, raise `replicas` in `engine.yaml` (under docker
+compose: `docker compose up -d --scale engine=2`), and the API's requests spread over them
+through the service name.
 
-To look at the running stack from your machine, point the Docker CLI at the server over SSH:
-
-```bash
-docker context create chess-vm --docker "host=ssh://werelaxe@130.193.48.247"
-```
+To look at the running stack, use `kubectl` with the cluster's kubeconfig:
 
 ```bash
-docker --context chess-vm compose ps
+kubectl -n chess get pods
 ```
 
-The same works for `logs -f api`, `exec db psql -U chess chess`, `stats` and so on (run compose
-commands from the repository root so that the project name matches).
+The same goes for `logs -f deployment/api`, `exec -it db-0 -- psql -U chess chess`, `top pods`
+and so on.
 
 ## Development
 
