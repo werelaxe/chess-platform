@@ -33,6 +33,11 @@ spec:
               valueFrom:
                 secretKeyRef: {name: chess, key: jwt-secret}
             - {name: JWT_TTL_DAYS, value: "30"}
+            # Enables the admin API and the chess-admin CLI; the key is optional, so a cluster
+            # without it simply runs without the admin API.
+            - name: ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef: {name: chess, key: admin-token, optional: true}
             # The web nginx serves the client and the API from one origin.
             - {name: CORS_ORIGINS, value: ""}
             - {name: ENGINE_URL, value: "http://engine:8081"}

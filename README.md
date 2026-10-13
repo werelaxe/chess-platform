@@ -103,6 +103,11 @@ export CHESS_ADMIN_TOKEN=<the server's ADMIN_TOKEN>
 admin-cli/build/install/admin-cli/bin/chess-admin overview
 ```
 
+In the Kubernetes deployment the token is the `admin-token` key of the `chess` secret
+(`deploy/k8s/create-secret.sh` creates it for new clusters; for an existing one patch the secret
+and restart the API as the script's comment shows). Without the key the API runs normally with
+the admin endpoints disabled.
+
 ```
 chess-admin [--api URL] [--token TOKEN] [--json] <command>
   overview                                  users, games, bots and the current settings
