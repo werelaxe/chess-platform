@@ -41,7 +41,7 @@ import kotlin.time.TimeSource
  * All game rules outside the chess rules themselves: lobby, invitations, turns, draw offers,
  * resignation, ratings and the bots' seats. [moveProvider] chooses the bots' moves; tests
  * inject a fast, seeded one. [botPause] is the shortest pause before a bot's reply to a human
- * move and [botVsBotPause] the pace of a game between two bots. [cache] holds the replayed
+ * move; two bots play as fast as the engine answers. [cache] holds the replayed
  * games; the caller owns it so that it can sweep it periodically.
  */
 class GameService(
@@ -57,9 +57,8 @@ class GameService(
     private val ids: GameIdGenerator = GameIdGenerator(),
     private val cache: GameCache = GameCache(),
     botPause: Duration = BotPlayer.DEFAULT_PAUSE,
-    botVsBotPause: Duration = BotPlayer.DEFAULT_BOT_VS_BOT_PAUSE,
 ) {
-    private val bot = BotPlayer(this, bots, moveProvider, botPause, botVsBotPause)
+    private val bot = BotPlayer(this, bots, moveProvider, botPause)
 
     /** Stops the bot player; call when the application shuts down. */
     fun close() = bot.close()

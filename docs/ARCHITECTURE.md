@@ -161,7 +161,6 @@ replayed games and the WebSocket subscriber registry; PostgreSQL is the source o
 | `BOT_PARALLELISM` | `2` | concurrent in-process searches (fallback only) |
 | `BOT_REMOTE_CONCURRENCY` | `64` | concurrent requests to the engine service |
 | `GAME_IDLE_MINUTES` | `30` | idle time after which a cached game is dropped from memory |
-| `BOT_VS_BOT_PAUSE_SECONDS` | `4` | pace of a game between two bots (section 2.10) |
 | `BOT_MATCHMAKING` | `true` | whether the bots keep the lobby alive (section 2.10); `false` switches the loop off |
 | `BOT_TICK_MIN_MINUTES` / `BOT_TICK_MAX_MINUTES` | `3` / `10` | pause between matchmaking ticks (the upper bound is raised to the lower one if set below it) |
 | `BOT_OPEN_GAMES_TARGET` | `2` | public open games the bots keep in the lobby (0 switches this off) |
@@ -375,8 +374,8 @@ at a time, default 2). A game is never searched twice at the same time, and a wa
 arrives during a search is honoured afterwards. The chosen move goes through the normal move pipeline (`GameService.move`
 with the bot's principal), so observations get their outcome from the server and clients
 receive the usual `move` events. A reply to a human move is delayed so that at least 700 ms pass
-after the move (the search time counts towards it); between two bots the pause is
-`BOT_VS_BOT_PAUSE_SECONDS` instead. A rejected move (the human resigned
+after the move (the search time counts towards it); between two bots there is no pause, they
+play as fast as the engine answers. A rejected move (the human resigned
 meanwhile, or the engine erred) is logged and followed by a fresh look at the game, a few times
 at most; any other failure is logged and left for the next wake-up.
 
@@ -478,9 +477,9 @@ until the account is renamed; the person's account is not touched.
 
 Playing: `BotPlayer` wakes whenever the seat on turn belongs to a bot, in any game (a bot may
 sit on either side, and two bots may play each other). Moves come from the engine service
-(section 2.7) with the seat's level; bot-versus-bot games are paced to one move every
-`BOT_VS_BOT_PAUSE_SECONDS` (default 4) so they can be watched. Nothing limits how many games
-a bot plays at once beyond the engine service's capacity.
+(section 2.7) with the seat's level; bot-versus-bot games have no artificial pause, each move
+takes as long as the search (the engine service uses idle cores to speed a single search up).
+Nothing limits how many games a bot plays at once beyond the engine service's capacity.
 
 Invitations: creating a game with `opponent: USER` sets `invitee_id`; only that account may
 join, and it may decline (`POST /api/games/{id}/decline`, which deletes the game and notifies

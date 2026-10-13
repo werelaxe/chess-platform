@@ -25,7 +25,7 @@ import kotlin.time.TimeMark
 /**
  * What a bot needs to choose a move: who it is, how strong it plays and the position as the
  * snapshot of the move list ([moves]) taken under the game's lock. [opponentIsBot] selects
- * the pacing: bot-versus-bot games are slowed down so that they can be watched.
+ * the pacing: a reply to a human is never instant, while two bots play as fast as the engine answers.
  */
 class BotTurn(
     val gameId: String,
@@ -50,7 +50,6 @@ class BotPlayer(
     private val bots: Bots,
     private val moves: MoveProvider,
     private val minPause: Duration = DEFAULT_PAUSE,
-    private val botVsBotPause: Duration = DEFAULT_BOT_VS_BOT_PAUSE,
 ) {
     private val log = LoggerFactory.getLogger(BotPlayer::class.java)
 
@@ -147,10 +146,12 @@ class BotPlayer(
         repeat(MAX_ATTEMPTS) {
             val turn = games.botTurn(id) ?: return
             val move = moves.chooseMove(turn.gameId, turn.kind, turn.level, turn.moves) ?: return
-            pacing?.let { mark ->
-                val pause = if (turn.opponentIsBot) botVsBotPause else minPause
-                val remaining = pause - mark.elapsedNow()
-                if (remaining.isPositive()) delay(remaining)
+            // The pause makes a reply to a human feel like one; two bots play as fast as the engine answers.
+            if (!turn.opponentIsBot) {
+                pacing?.let { mark ->
+                    val remaining = minPause - mark.elapsedNow()
+                    if (remaining.isPositive()) delay(remaining)
+                }
             }
             pacing = null
             try {
@@ -169,9 +170,6 @@ class BotPlayer(
     companion object {
         /** Shortest pause between a human's move and the bot's reply, so that the reply is perceived as one. */
         val DEFAULT_PAUSE: Duration = 700.milliseconds
-
-        /** Pause between the moves of two bots, so that their game can be watched. */
-        val DEFAULT_BOT_VS_BOT_PAUSE: Duration = 4.seconds
         private const val MAX_ATTEMPTS = 3
     }
 }
