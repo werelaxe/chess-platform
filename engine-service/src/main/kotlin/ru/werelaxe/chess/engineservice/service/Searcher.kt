@@ -28,11 +28,13 @@ sealed interface ThinkResult {
  * [parallelism] threads. Requests beyond that wait for a thread, at most [queueLimit] of
  * them: the next one is refused as overloaded, which the API retries elsewhere or later.
  * Under load the thinking budget shrinks with the number of waiting requests so that the
- * reply latency stays bounded instead of the queue growing.
+ * reply latency stays bounded instead of the queue growing. A search spreads over the
+ * [helpers] that are idle when it runs, so that a quiet service answers faster.
  */
 class Searcher(
     config: AppConfig,
-    private val engine: Engine = ChessEngines,
+    val helpers: HelperPool = HelperPool(config.helperThreads),
+    private val engine: Engine = ChessEngines(helpers.parallelism),
     val cache: ReplayCache = ReplayCache(config.cacheSize),
 ) {
     private val log = LoggerFactory.getLogger(Searcher::class.java)
@@ -74,9 +76,10 @@ class Searcher(
         }
     }
 
-    /** Stops the search threads; a search in progress finishes its budget first. */
+    /** Stops the search and helper threads; a search in progress finishes its budget first. */
     fun close() {
         dispatcher.close()
+        helpers.close()
     }
 
     /**

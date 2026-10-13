@@ -12,7 +12,9 @@ import ru.werelaxe.chess.core.GameKind
 import ru.werelaxe.chess.core.GameMove
 import ru.werelaxe.chess.engine.EngineLevel
 import ru.werelaxe.chess.engineservice.config.AppConfig
+import ru.werelaxe.chess.engine.ChessEngine
 import ru.werelaxe.chess.engineservice.service.Engine
+import ru.werelaxe.chess.engineservice.service.HelperPool
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -183,10 +185,62 @@ class ThinkTest {
     }
 
     @Test
+    fun searchesWithTheHelpersAndReturnsThem() {
+        val helpers = HelperPool(4)
+        val engine = Engine { state, level, budget -> ChessEngine(level, Random(1), helpers.parallelism).chooseMove(state, budget) }
+        serviceTest(AppConfig(parallelism = 2, queueLimit = 4, helperThreads = 4), engine, helpers) {
+            think("classic", moves("e2e4", "e7e5"), level = EngineLevel.MEDIUM)
+            think("quantum", listOf(split("g1", "f3", "h3"), normal("e7e5")), kind = GameKind.QUANTUM, level = EngineLevel.MEDIUM)
+            val health = health()
+            assertEquals(4, health.helpers)
+            assertEquals(0, health.helpersBusy)
+            assertEquals(0, helpers.busy)
+        }
+    }
+
+    @Test
+    fun lendsHelpersToARunningSearch() {
+        val helpers = HelperPool(3)
+        val started = CountDownLatch(3)
+        val gate = CountDownLatch(1)
+        val spreading = Engine { _, _, _ ->
+            // Three items: the search thread and two borrowed helpers.
+            helpers.parallelism.map(listOf(1, 2, 3)) {
+                started.countDown()
+                gate.await()
+                it
+            }
+            normal("e2e4")
+        }
+        serviceTest(AppConfig(parallelism = 1, queueLimit = 1, helperThreads = 3), spreading, helpers) {
+            try {
+                coroutineScope {
+                    val request = async { thinkResponse("game", emptyList()) }
+                    withContext(Dispatchers.IO) { assertTrue(started.await(10, TimeUnit.SECONDS)) }
+                    val health = health()
+                    assertEquals(3, health.helpers)
+                    assertEquals(2, health.helpersBusy)
+                    gate.countDown()
+                    assertEquals(HttpStatusCode.OK, request.await().status)
+                }
+            } finally {
+                gate.countDown()
+            }
+            awaitHealth { it.inFlight == 0 && it.helpersBusy == 0 }
+        }
+    }
+
+    @Test
+    fun runsWithoutHelpers() = serviceTest(AppConfig(parallelism = 1, queueLimit = 1, helperThreads = 0)) {
+        think("classic", moves("e2e4"))
+        assertEquals(0, health().helpers)
+    }
+
+    @Test
     fun reportsItsHealth() = serviceTest(AppConfig(parallelism = 3, queueLimit = 12)) {
         val response = client.get("/health")
         assertEquals(HttpStatusCode.OK, response.status)
-        assertEquals("""{"status":"ok","parallelism":3,"inFlight":0,"queued":0}""", response.bodyAsText())
+        assertEquals("""{"status":"ok","parallelism":3,"inFlight":0,"queued":0,"helpers":1,"helpersBusy":0}""", response.bodyAsText())
     }
 
     @Test

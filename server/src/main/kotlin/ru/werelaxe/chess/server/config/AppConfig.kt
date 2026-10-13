@@ -23,7 +23,6 @@ data class AppConfig(
     /** Idle time after which a cached game is dropped from memory. */
     val gameIdleMinutes: Long = 30,
     /** Pause between the moves of a game between two bots. */
-    val botVsBotPauseSeconds: Long = 4,
     /** Whether the bots keep the lobby alive by themselves (section 2.10). */
     val botMatchmaking: Boolean = true,
     val botTickMinMinutes: Long = 3,
@@ -63,7 +62,6 @@ data class AppConfig(
                 botParallelism = env.positiveInt("BOT_PARALLELISM") ?: defaults.botParallelism,
                 botRemoteConcurrency = env.positiveInt("BOT_REMOTE_CONCURRENCY") ?: defaults.botRemoteConcurrency,
                 gameIdleMinutes = env.positiveLong("GAME_IDLE_MINUTES") ?: defaults.gameIdleMinutes,
-                botVsBotPauseSeconds = env.positiveLong("BOT_VS_BOT_PAUSE_SECONDS") ?: defaults.botVsBotPauseSeconds,
                 botMatchmaking = env["BOT_MATCHMAKING"]?.trim()?.lowercase()?.toBooleanStrictOrNull() ?: defaults.botMatchmaking,
                 botTickMinMinutes = tickMin,
                 // The upper bound never falls below the lower one, so the pause stays well defined.

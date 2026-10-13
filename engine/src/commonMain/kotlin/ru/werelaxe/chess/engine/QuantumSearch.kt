@@ -17,13 +17,15 @@ import kotlin.time.TimeMark
  * Expectimax over the universe distribution. Every candidate (normal move, split or
  * observation) is first scored statically on the resulting distribution; the most promising
  * ones are then refined with the opponent's best reply. Observations are chance nodes: their
- * value is the probability-weighted average over the possible outcomes.
+ * value is the probability-weighted average over the possible outcomes. The refinements are
+ * spread over [parallelism].
  */
 internal class QuantumSearch(
     private val candidateLimit: Int,
     private val deadline: TimeMark,
     private val randomness: Int,
     private val random: Random,
+    private val parallelism: SearchParallelism = SearchParallelism.Sequential,
 ) {
     private class Candidate(val move: GameMove, val outcomes: List<Pair<Double, QuantumState>>, var score: Int)
 
@@ -36,11 +38,18 @@ internal class QuantumSearch(
         }
         candidates.sortByDescending { it.score }
 
-        // Refine the top candidates with the opponent's strongest reply while time allows.
+        // Refine the top candidates with the opponent's strongest reply while time allows: a
+        // candidate whose turn comes after the deadline is left out, except the first one, so
+        // that there is always a refined candidate to choose from.
+        val taken = candidates.take(candidateLimit)
+        val scores = parallelism.map(taken.indices.toList()) { index ->
+            if (index > 0 && deadline.hasPassedNow()) null else expected(taken[index].outcomes) { opponentReplyValue(it, me) }
+        }
         val refined = ArrayList<Candidate>()
-        for (candidate in candidates.take(candidateLimit)) {
-            if (deadline.hasPassedNow() && refined.isNotEmpty()) break
-            candidate.score = expected(candidate.outcomes) { opponentReplyValue(it, me) }
+        for ((index, score) in scores.withIndex()) {
+            if (score == null) continue
+            val candidate = taken[index]
+            candidate.score = score
             refined.add(candidate)
         }
         refined.sortByDescending { it.score }

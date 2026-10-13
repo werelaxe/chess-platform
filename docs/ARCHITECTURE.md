@@ -161,7 +161,6 @@ replayed games and the WebSocket subscriber registry; PostgreSQL is the source o
 | `BOT_PARALLELISM` | `2` | concurrent in-process searches (fallback only) |
 | `BOT_REMOTE_CONCURRENCY` | `64` | concurrent requests to the engine service |
 | `GAME_IDLE_MINUTES` | `30` | idle time after which a cached game is dropped from memory |
-| `BOT_VS_BOT_PAUSE_SECONDS` | `4` | pace of a game between two bots (section 2.10) |
 | `BOT_MATCHMAKING` | `true` | whether the bots keep the lobby alive (section 2.10); `false` switches the loop off |
 | `BOT_TICK_MIN_MINUTES` / `BOT_TICK_MAX_MINUTES` | `3` / `10` | pause between matchmaking ticks (the upper bound is raised to the lower one if set below it) |
 | `BOT_OPEN_GAMES_TARGET` | `2` | public open games the bots keep in the lobby (0 switches this off) |
@@ -375,8 +374,8 @@ at a time, default 2). A game is never searched twice at the same time, and a wa
 arrives during a search is honoured afterwards. The chosen move goes through the normal move pipeline (`GameService.move`
 with the bot's principal), so observations get their outcome from the server and clients
 receive the usual `move` events. A reply to a human move is delayed so that at least 700 ms pass
-after the move (the search time counts towards it); between two bots the pause is
-`BOT_VS_BOT_PAUSE_SECONDS` instead. A rejected move (the human resigned
+after the move (the search time counts towards it); between two bots there is no pause, they
+play as fast as the engine answers. A rejected move (the human resigned
 meanwhile, or the engine erred) is logged and followed by a fresh look at the game, a few times
 at most; any other failure is logged and left for the next wake-up.
 
@@ -392,7 +391,7 @@ POST /think   {"gameId":"aZ3kq9...","kind":"QUANTUM","level":"MEDIUM","moves":[G
               -> 204 when the game is already over
               -> 400 {"error":"validation","message":"..."} for an invalid or illegal history
               -> 503 {"error":"overloaded","message":"..."} when the queue is full (the API retries)
-GET  /health  -> 200 {"status":"ok","parallelism":8,"inFlight":3,"queued":0}
+GET  /health  -> 200 {"status":"ok","parallelism":8,"inFlight":3,"queued":0,"helpers":8,"helpersBusy":2}
 ```
 
 The service replays the move list with `Game.replay` (sub-millisecond for classic chess, about
@@ -405,8 +404,23 @@ load the thinking budget shrinks: with `w` requests waiting and `p` threads the 
 multiplied by `min(1, p / w)` but never below `ENGINE_MIN_BUDGET_RATIO` (default 0.25), which
 keeps the reply latency bounded instead of letting the queue grow.
 
+A search is not confined to its thread. The service also keeps `ENGINE_HELPER_THREADS` helper
+threads (default: half of the search threads, at least one) behind a semaphore of the same size, and a search
+borrows whichever are free, without waiting, for the independent parts of its work: a classic
+search splits the root at every iterative-deepening depth ("young brothers wait": the previous
+best move is searched alone to establish the alpha bound, then the other root moves are searched
+concurrently against the bound as it stands when each starts and raise it when they beat it,
+each with its own node counter for the time check), and a quantum search refines its candidates
+with the opponent's reply the same way. A search on a quiet service thus spreads over the idle
+cores, so a bot-versus-bot game waits a fraction of the time per move, while under load the
+helpers are all taken and searches degrade to sequential: never more than parallelism plus
+helpers threads search at once. The playing strength is unchanged (same depths, budgets and
+candidate limits, and the scores match the sequential search; only the choice among equally
+scored moves may differ), and `ENGINE_HELPER_THREADS=0` turns the splitting off. `/health`
+reports `helpers` and `helpersBusy`.
+
 Configuration: `PORT` (default 8081), `ENGINE_PARALLELISM`, `ENGINE_QUEUE_LIMIT`,
-`ENGINE_MIN_BUDGET_RATIO`. The API uses `ENGINE_URL` (compose: `http://engine:8081`), retries
+`ENGINE_HELPER_THREADS`, `ENGINE_MIN_BUDGET_RATIO`. The API uses `ENGINE_URL` (compose: `http://engine:8081`), retries
 503 with backoff for up to `ENGINE_RETRY_SECONDS` (default 30) and falls back to its in-process
 engine after that or on connection errors, so a restart of the service never stalls a game.
 The API keeps at most `BOT_REMOTE_CONCURRENCY` (default 64) requests in flight.
@@ -478,9 +492,9 @@ until the account is renamed; the person's account is not touched.
 
 Playing: `BotPlayer` wakes whenever the seat on turn belongs to a bot, in any game (a bot may
 sit on either side, and two bots may play each other). Moves come from the engine service
-(section 2.7) with the seat's level; bot-versus-bot games are paced to one move every
-`BOT_VS_BOT_PAUSE_SECONDS` (default 4) so they can be watched. Nothing limits how many games
-a bot plays at once beyond the engine service's capacity.
+(section 2.7) with the seat's level; bot-versus-bot games have no artificial pause, each move
+takes as long as the search (the engine service uses idle cores to speed a single search up).
+Nothing limits how many games a bot plays at once beyond the engine service's capacity.
 
 Invitations: creating a game with `opponent: USER` sets `invitee_id`; only that account may
 join, and it may decline (`POST /api/games/{id}/decline`, which deletes the game and notifies

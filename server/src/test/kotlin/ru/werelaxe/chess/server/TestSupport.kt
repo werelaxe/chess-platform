@@ -89,13 +89,12 @@ fun botNamed(level: EngineLevel): String = BotRoster.specs.first { it.level == l
  * application starts, or decorated repositories). The bots' moves come from [moveProvider]: by
  * default the in-process engine at the easy level whatever level a game asks for, with a fresh
  * seeded random for every move so that its choices are reproducible. A bot replies after
- * [botPause], and two bots play at [botVsBotPause].
+ * [botPause]; two bots play without any pause.
  */
 fun serverTest(
     seed: Int = 42,
     config: AppConfig = TEST_CONFIG,
     botPause: Duration = 10.milliseconds,
-    botVsBotPause: Duration = 10.milliseconds,
     moveProvider: MoveProvider = InProcessMoveProvider({ ChessEngine(EngineLevel.EASY, Random(seed)) }),
     random: Random = Random(seed),
     repositories: Repositories = InMemoryStore().repositories(),
@@ -111,7 +110,6 @@ fun serverTest(
             clock = clock,
             moveProvider = moveProvider,
             botPause = botPause,
-            botVsBotPause = botVsBotPause,
         )
     }
     val client = createClient {

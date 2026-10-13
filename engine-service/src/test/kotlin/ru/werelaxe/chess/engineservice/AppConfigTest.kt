@@ -12,15 +12,22 @@ class AppConfigTest {
         assertEquals(8081, config.port)
         assertEquals(Runtime.getRuntime().availableProcessors(), config.parallelism)
         assertEquals(4 * config.parallelism, config.queueLimit)
+        assertEquals(maxOf(1, config.parallelism / 2), config.helperThreads)
         assertEquals(0.25, config.minBudgetRatio)
     }
 
     @Test
     fun readsTheEnvironment() {
         val config = AppConfig.fromEnvironment(
-            mapOf("PORT" to "9000", "ENGINE_PARALLELISM" to "3", "ENGINE_QUEUE_LIMIT" to "5", "ENGINE_MIN_BUDGET_RATIO" to "0.5"),
+            mapOf(
+                "PORT" to "9000",
+                "ENGINE_PARALLELISM" to "3",
+                "ENGINE_QUEUE_LIMIT" to "5",
+                "ENGINE_HELPER_THREADS" to "0",
+                "ENGINE_MIN_BUDGET_RATIO" to "0.5",
+            ),
         )
-        assertEquals(AppConfig(port = 9000, parallelism = 3, queueLimit = 5, minBudgetRatio = 0.5), config)
+        assertEquals(AppConfig(port = 9000, parallelism = 3, queueLimit = 5, helperThreads = 0, minBudgetRatio = 0.5), config)
     }
 
     @Test
@@ -28,6 +35,7 @@ class AppConfigTest {
         val config = AppConfig.fromEnvironment(mapOf("ENGINE_PARALLELISM" to "2", "ENGINE_QUEUE_LIMIT" to "", "PORT" to " "))
         assertEquals(2, config.parallelism)
         assertEquals(8, config.queueLimit)
+        assertEquals(1, config.helperThreads)
         assertEquals(8081, config.port)
     }
 
@@ -36,6 +44,7 @@ class AppConfigTest {
         assertFailsWith<AppConfig.ConfigurationException> { AppConfig.fromEnvironment(mapOf("ENGINE_PARALLELISM" to "many")) }
         assertFailsWith<AppConfig.ConfigurationException> { AppConfig.fromEnvironment(mapOf("ENGINE_PARALLELISM" to "0")) }
         assertFailsWith<AppConfig.ConfigurationException> { AppConfig.fromEnvironment(mapOf("ENGINE_QUEUE_LIMIT" to "-1")) }
+        assertFailsWith<AppConfig.ConfigurationException> { AppConfig.fromEnvironment(mapOf("ENGINE_HELPER_THREADS" to "-1")) }
         assertFailsWith<AppConfig.ConfigurationException> { AppConfig.fromEnvironment(mapOf("ENGINE_MIN_BUDGET_RATIO" to "1.5")) }
     }
 }

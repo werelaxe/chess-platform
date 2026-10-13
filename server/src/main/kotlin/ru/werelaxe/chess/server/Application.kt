@@ -47,7 +47,6 @@ import java.time.Duration
 import kotlin.random.Random
 import kotlin.system.exitProcess
 import kotlin.time.Duration.Companion.minutes
-import kotlin.time.Duration.Companion.seconds
 
 fun main() {
     val log = LoggerFactory.getLogger("ru.werelaxe.chess.server.Main")
@@ -91,7 +90,6 @@ suspend fun Application.module(
     clock: Clock = Clock.systemUTC(),
     moveProvider: MoveProvider = MoveProvider.fromConfig(config) { ChessEngine(it, random) },
     botPause: kotlin.time.Duration = BotPlayer.DEFAULT_PAUSE,
-    botVsBotPause: kotlin.time.Duration = config.botVsBotPauseSeconds.seconds,
 ): AppServices {
     // After the migrations (main connects before starting the server) and before the first
     // request; the in-memory repositories of the tests start empty, so this runs every time.
@@ -113,7 +111,6 @@ suspend fun Application.module(
         moveProvider,
         cache = cache,
         botPause = botPause,
-        botVsBotPause = botVsBotPause,
     )
     val playerService = PlayerService(repositories.users, repositories.games, repositories.ratings, bots, gameService)
     val matchmaker = BotMatchmaker(

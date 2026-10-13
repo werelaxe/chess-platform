@@ -87,7 +87,6 @@ class AppConfigTest {
         assertEquals(8, config.botJoinAfterMinutes)
         assertEquals(60, config.botInvitationTtlMinutes)
         assertEquals(6, config.botMaxActiveGames)
-        assertEquals(4, config.botVsBotPauseSeconds)
         assertEquals(24, config.openGameTtlHours)
     }
 
@@ -103,7 +102,6 @@ class AppConfigTest {
                 "BOT_JOIN_AFTER_MINUTES" to "1",
                 "BOT_INVITATION_TTL_MINUTES" to "15",
                 "BOT_MAX_ACTIVE_GAMES" to "3",
-                "BOT_VS_BOT_PAUSE_SECONDS" to "2",
                 "OPEN_GAME_TTL_HOURS" to "48",
             ),
         )
@@ -115,7 +113,6 @@ class AppConfigTest {
         assertEquals(1, config.botJoinAfterMinutes)
         assertEquals(15, config.botInvitationTtlMinutes)
         assertEquals(3, config.botMaxActiveGames)
-        assertEquals(2, config.botVsBotPauseSeconds)
         // Anything but true/false means the default.
         assertTrue(AppConfig.fromEnvironment(mapOf("JWT_SECRET" to "0123456789abcdef", "BOT_MATCHMAKING" to "off")).botMatchmaking)
     }

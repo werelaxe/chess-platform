@@ -16,10 +16,12 @@ import kotlin.time.TimeSource
  *
  * [budget] replaces the level's wall-clock budget for one move (a loaded engine service
  * shrinks it); the depth, candidate count and randomness of the level are unaffected.
+ * [parallelism] lets a search use more than one thread without changing what it finds.
  */
 class ChessEngine(
     private val level: EngineLevel,
     private val random: Random = Random.Default,
+    private val parallelism: SearchParallelism = SearchParallelism.Sequential,
 ) {
     fun chooseMove(game: Game, budget: Duration = level.timeBudget): GameMove? =
         if (game.isOver) null else chooseMove(game.state, budget)
@@ -27,10 +29,10 @@ class ChessEngine(
     fun chooseMove(state: GameState, budget: Duration = level.timeBudget): GameMove? {
         val deadline = TimeSource.Monotonic.markNow() + budget
         return when (state) {
-            is ClassicState -> ClassicSearch(level.classicDepth, level.quiescence, deadline, level.randomness, random)
+            is ClassicState -> ClassicSearch(level.classicDepth, level.quiescence, deadline, level.randomness, random, parallelism)
                 .bestMove(state.board)
                 ?.let { GameMove.Normal(it.move.from, it.move.to, it.move.promotion) }
-            is QuantumState -> QuantumSearch(level.quantumCandidates, deadline, level.randomness, random).bestMove(state)
+            is QuantumState -> QuantumSearch(level.quantumCandidates, deadline, level.randomness, random, parallelism).bestMove(state)
         }
     }
 }
