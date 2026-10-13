@@ -62,9 +62,11 @@ const val TEST_PASSWORD = "correct-horse"
 
 /**
  * Bots reply almost at once. The matchmaker loop sleeps minutes between its ticks, so it never
- * acts during a test: the tests that need it drive its tick by hand.
+ * acts during a test: the tests that need it drive its tick by hand. No bot-versus-bot game is
+ * started by a tick (the live target is 0): the tests of that feature switch it on, with a
+ * scripted move provider so that the bots do not search for real in the background.
  */
-val TEST_CONFIG = AppConfig(jwtSecret = "test-secret", bcryptCost = 4, botReplyPauseMillis = 10)
+val TEST_CONFIG = AppConfig(jwtSecret = "test-secret", bcryptCost = 4, botReplyPauseMillis = 10, botLiveGamesTarget = 0)
 
 val TEST_START: Instant = Instant.parse("2026-10-07T10:00:00Z")
 
@@ -97,9 +99,7 @@ class ScriptedRandom(vararg rolls: Double) : Random() {
     override fun nextBoolean(): Boolean = false
 }
 
-/** Rolls for a [ScriptedRandom]: on either side of the matchmaker's probabilities. */
-const val NO_JOIN = 0.9
-const val JOIN = 0.1
+/** The roll of a [ScriptedRandom] that makes the matchmaker invite a human; with none queued the dice say no. */
 const val INVITE = 0.1
 
 /** The username of a roster bot of [level]. */

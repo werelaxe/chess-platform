@@ -13,6 +13,7 @@ import com.github.ajalt.clikt.parameters.types.int
 import ru.werelaxe.chess.admin.output.Render
 
 const val OPEN_GAMES_KEY = "bot.open_games_target"
+const val LIVE_GAMES_KEY = "bot.live_games_target"
 const val REPLY_PAUSE_KEY = "bot.reply_pause_millis"
 const val VS_BOT_PAUSE_KEY = "bot.vs_bot_pause_millis"
 
@@ -23,6 +24,7 @@ class SettingsCommand : CliktCommand(name = "settings") {
             SettingsSetCommand(),
             SettingsResetCommand(),
             SettingsOpenGamesCommand(),
+            SettingsLiveGamesCommand(),
             SettingsPausesCommand(),
         )
     }
@@ -76,6 +78,20 @@ class SettingsOpenGamesCommand : CliktCommand(name = "open-games") {
 
     override fun run() {
         val reply = session.exchange { setSetting(OPEN_GAMES_KEY, target.toString()) }
+        echo(session.show(reply) { Render.settings(listOf(it)) })
+    }
+}
+
+class SettingsLiveGamesCommand : CliktCommand(name = "live-games") {
+    private val session by requireObject<Session>()
+    private val target by argument(name = "n", help = "Bot-versus-bot games kept in progress for spectators; 0 switches this off")
+        .int()
+        .check("must not be negative") { it >= 0 }
+
+    override fun help(context: Context) = "Set how many live bot-versus-bot games the matchmaker keeps going ($LIVE_GAMES_KEY)."
+
+    override fun run() {
+        val reply = session.exchange { setSetting(LIVE_GAMES_KEY, target.toString()) }
         echo(session.show(reply) { Render.settings(listOf(it)) })
     }
 }

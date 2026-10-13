@@ -36,7 +36,12 @@ class InMemoryGameRepository(private val store: InMemoryStore = InMemoryStore())
         store.mutex.withLock {
             games.remove(id)
             store.moves.remove(id)
+            store.ratingChanges.removeIf { it.gameId == id }
         }
+    }
+
+    override suspend fun listAll(phase: GamePhase?, limit: Int, offset: Int): List<GameRecord> = store.mutex.withLock {
+        games.values.filter { phase == null || it.phase == phase }.sortedNewestFirst().drop(offset).take(limit)
     }
 
     override suspend fun listPublic(filter: GameFilter?, kind: GameKind?, limit: Int, offset: Int): List<GameRecord> =
@@ -105,23 +110,25 @@ class InMemoryGameRepository(private val store: InMemoryStore = InMemoryStore())
     }
 
     override suspend fun listOpenGamesCreatedBefore(before: Instant, limit: Int): List<GameRecord> = store.mutex.withLock {
-        games.values
-            .filter { it.isOpenToAnybody && it.createdAt <= before }
-            .sortedWith(compareBy<GameRecord> { it.createdAt }.thenBy { it.id })
-            .take(limit)
+        games.values.filter { it.isOpenToAnybody && it.createdAt <= before }.sortedOldestFirst().take(limit)
     }
 
     override suspend fun listOpenGamesCreatedBetween(after: Instant, before: Instant, limit: Int): List<GameRecord> =
         store.mutex.withLock {
             games.values
                 .filter { it.isOpenToAnybody && it.createdAt > after && it.createdAt <= before }
-                .sortedNewestFirst()
+                .sortedOldestFirst()
                 .take(limit)
         }
 
     override suspend fun listActiveGamesOf(playerIds: Collection<Long>): List<GameRecord> = store.mutex.withLock {
         val players = playerIds.toSet()
         games.values.filter { it.phase == GamePhase.ACTIVE && (it.whiteId in players || it.blackId in players) }
+    }
+
+    override suspend fun countActiveGamesAmong(playerIds: Collection<Long>): Int = store.mutex.withLock {
+        val players = playerIds.toSet()
+        games.values.count { it.phase == GamePhase.ACTIVE && it.whiteId in players && it.blackId in players }
     }
 
     override suspend fun countByPhase(): Map<GamePhase, Int> = store.mutex.withLock {
@@ -149,4 +156,8 @@ class InMemoryGameRepository(private val store: InMemoryStore = InMemoryStore())
     /** The same order as the SQL repository: `created_at DESC, id DESC`. */
     private fun List<GameRecord>.sortedNewestFirst(): List<GameRecord> =
         sortedWith(compareByDescending<GameRecord> { it.createdAt }.thenByDescending { it.id })
+
+    /** The same order as the SQL repository: `created_at ASC, id ASC`. */
+    private fun List<GameRecord>.sortedOldestFirst(): List<GameRecord> =
+        sortedWith(compareBy<GameRecord> { it.createdAt }.thenBy { it.id })
 }

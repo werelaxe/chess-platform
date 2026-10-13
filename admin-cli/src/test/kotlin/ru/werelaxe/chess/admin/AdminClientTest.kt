@@ -11,6 +11,7 @@ import kotlinx.coroutines.runBlocking
 import ru.werelaxe.chess.admin.client.AdminApiException
 import ru.werelaxe.chess.admin.client.AdminClient
 import ru.werelaxe.chess.admin.client.BotLevel
+import ru.werelaxe.chess.admin.client.GameStatus
 import ru.werelaxe.chess.admin.client.SpawnBotRequest
 import ru.werelaxe.chess.admin.client.UpdateBotRequest
 import kotlin.test.Test
@@ -72,6 +73,45 @@ class AdminClientTest {
         assertEquals(1, reply.value.activeGameList.size)
         assertEquals(2, reply.value.recentGames.size)
         assertEquals("CHECKMATE", reply.value.recentGames[1].result?.reason)
+    }
+
+    @Test
+    fun listsTheGamesWithTheFiltersAsQueryParameters() = runBlocking {
+        val all = client().use { it.games() }
+        val filtered = client().use { it.games(GameStatus.ACTIVE, 5) }
+        assertEquals(
+            listOf("http://api.test:8080/api/admin/games", "http://api.test:8080/api/admin/games?status=ACTIVE&limit=5"),
+            api.requests.map { it.url },
+        )
+        assertTrue(api.requests.all { it.method == HttpMethod.Get && it.token == FakeAdminApi.TOKEN && it.body == "" })
+        assertEquals(listOf("cX5ms1dZ9NoP", "aZ3kq9bX7LmN", "bY4lr0cY8MnO"), all.value.games.map { it.id })
+        assertNull(all.value.games[0].black)
+        assertEquals(listOf("aZ3kq9bX7LmN"), filtered.value.games.map { it.id })
+    }
+
+    @Test
+    fun dropDeletesTheGameAndIgnoresTheEmptyAnswer() = runBlocking {
+        val reply = client().use { it.dropGame("aZ3kq9bX7LmN") }
+        val request = api.requests.single()
+        assertEquals(HttpMethod.Delete, request.method)
+        assertEquals("http://api.test:8080/api/admin/games/aZ3kq9bX7LmN", request.url)
+        assertEquals(FakeAdminApi.TOKEN, request.token)
+        assertEquals("", reply.raw)
+        assertEquals(Unit, reply.value)
+        val error = assertFailsWith<AdminApiException> { client().use { it.dropGame("nothing") } }
+        assertEquals("404 not_found: Unknown game 'nothing'", error.message)
+    }
+
+    @Test
+    fun abortPostsAndReturnsTheFinishedGame() = runBlocking {
+        val reply = client().use { it.abortGame("aZ3kq9bX7LmN") }
+        val request = api.requests.single()
+        assertEquals(HttpMethod.Post, request.method)
+        assertEquals("http://api.test:8080/api/admin/games/aZ3kq9bX7LmN/abort", request.url)
+        assertEquals("", request.body)
+        assertEquals("FINISHED", reply.value.status)
+        assertEquals("ABANDONMENT", reply.value.result?.reason)
+        assertNull(reply.value.result?.winner)
     }
 
     @Test

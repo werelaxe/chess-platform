@@ -57,6 +57,11 @@ object SettingKeys {
         "Public open games the bots keep waiting in the lobby; 0 switches this off",
         min = 0,
     ) { it.botOpenGamesTarget }
+    val LIVE_GAMES_TARGET = SettingKey.int(
+        "bot.live_games_target",
+        "Bot-versus-bot games the matchmaker keeps in progress; 0 switches this off",
+        min = 0,
+    ) { it.botLiveGamesTarget }
     val REPLY_PAUSE_MILLIS = SettingKey.long(
         "bot.reply_pause_millis",
         "Shortest pause before a bot answers a human's move, in milliseconds",
@@ -96,6 +101,7 @@ object SettingKeys {
     val ALL: List<SettingKey<*>> = listOf(
         MATCHMAKING,
         OPEN_GAMES_TARGET,
+        LIVE_GAMES_TARGET,
         REPLY_PAUSE_MILLIS,
         VS_BOT_PAUSE_MILLIS,
         MAX_ACTIVE_GAMES,
@@ -171,6 +177,9 @@ class Settings(
 
     val openGamesTarget: Int
         get() = this[SettingKeys.OPEN_GAMES_TARGET]
+
+    val liveGamesTarget: Int
+        get() = this[SettingKeys.LIVE_GAMES_TARGET]
 
     val replyPause: kotlin.time.Duration
         get() = this[SettingKeys.REPLY_PAUSE_MILLIS].milliseconds

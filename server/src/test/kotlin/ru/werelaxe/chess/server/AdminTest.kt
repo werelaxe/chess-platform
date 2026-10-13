@@ -3,6 +3,7 @@ package ru.werelaxe.chess.server
 import io.ktor.client.call.body
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.delete
+import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.patch
@@ -13,7 +14,13 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import io.ktor.websocket.Frame
+import io.ktor.websocket.readText
+import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import ru.werelaxe.chess.core.ChessJson
+import ru.werelaxe.chess.core.EndReason
 import ru.werelaxe.chess.core.GameKind
 import ru.werelaxe.chess.core.GameMove
 import ru.werelaxe.chess.engine.EngineLevel
@@ -24,24 +31,30 @@ import ru.werelaxe.chess.server.dto.AdminOverview
 import ru.werelaxe.chess.server.dto.BotsResponse
 import ru.werelaxe.chess.server.dto.ColorChoice
 import ru.werelaxe.chess.server.dto.GameCounts
+import ru.werelaxe.chess.server.dto.GameDto
+import ru.werelaxe.chess.server.dto.GameSummary
 import ru.werelaxe.chess.server.dto.GamesResponse
 import ru.werelaxe.chess.server.dto.PlayerRatings
 import ru.werelaxe.chess.server.dto.SettingEntry
 import ru.werelaxe.chess.server.dto.SettingSource
 import ru.werelaxe.chess.server.dto.SettingsResponse
 import ru.werelaxe.chess.server.model.GamePhase
+import ru.werelaxe.chess.server.model.GameResult
+import ru.werelaxe.chess.server.model.Visibility
 import ru.werelaxe.chess.server.plugins.ADMIN_TOKEN_HEADER
 import ru.werelaxe.chess.server.repository.memory.InMemoryStore
 import ru.werelaxe.chess.server.service.BotMatchmaker.Action
 import ru.werelaxe.chess.server.service.BotRoster
 import ru.werelaxe.chess.server.service.MoveProvider
 import ru.werelaxe.chess.server.service.SettingKeys
+import ru.werelaxe.chess.server.ws.ServerEvent
 import java.time.Duration
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.TimeSource
@@ -60,6 +73,29 @@ class AdminTest {
 
     private suspend fun TestContext.adminGet(path: String, token: String? = ADMIN_TOKEN): HttpResponse =
         client.get("/api/admin$path") { admin(token) }
+
+    private suspend fun TestContext.adminPost(path: String, token: String? = ADMIN_TOKEN): HttpResponse =
+        client.post("/api/admin$path") { admin(token) }
+
+    private suspend fun TestContext.adminDelete(path: String, token: String? = ADMIN_TOKEN): HttpResponse =
+        client.delete("/api/admin$path") { admin(token) }
+
+    /** `GET /api/admin/games` with the given query string. */
+    private suspend fun TestContext.adminGames(query: String = ""): List<GameSummary> {
+        val response = adminGet("/games$query")
+        assertEquals(HttpStatusCode.OK, response.status, response.bodyAsString())
+        return response.body<GamesResponse>().games
+    }
+
+    private suspend fun ReceiveChannel<Frame>.nextEvent(): ServerEvent = withTimeout(5_000) {
+        val frame = assertIs<Frame.Text>(receive())
+        ChessJson.json.decodeFromString(ServerEvent.serializer(), frame.readText())
+    }
+
+    /** A move provider that never moves, for the tests that only count the bots' games. */
+    private val idleBots = object : MoveProvider {
+        override suspend fun chooseMove(gameId: String, kind: GameKind, level: EngineLevel, moves: List<GameMove>): GameMove? = null
+    }
 
     private suspend fun TestContext.spawn(username: String, name: String, level: String, token: String? = ADMIN_TOKEN): HttpResponse =
         client.post("/api/admin/bots") {
@@ -109,6 +145,7 @@ class AdminTest {
         adminGet("/overview").assertError(HttpStatusCode.NotFound, "not_found")
         adminGet("/bots").assertError(HttpStatusCode.NotFound, "not_found")
         adminGet("/settings").assertError(HttpStatusCode.NotFound, "not_found")
+        adminGet("/games").assertError(HttpStatusCode.NotFound, "not_found")
         spawn("fresh_fred", "Fresh Fred", "EASY").assertError(HttpStatusCode.NotFound, "not_found")
         putSetting("bot.open_games_target", """{"value":"3"}""").assertError(HttpStatusCode.NotFound, "not_found")
         assertEquals(roster, offeredBots(), "nothing was created")
@@ -122,6 +159,9 @@ class AdminTest {
         adminGet("/overview", token = ADMIN_TOKEN.dropLast(1)).assertError(HttpStatusCode.Unauthorized, "unauthorized")
         spawn("fresh_fred", "Fresh Fred", "EASY", token = "wrong").assertError(HttpStatusCode.Unauthorized, "unauthorized")
         putSetting("bot.open_games_target", """{"value":"3"}""", token = null).assertError(HttpStatusCode.Unauthorized, "unauthorized")
+        adminGet("/games", token = null).assertError(HttpStatusCode.Unauthorized, "unauthorized")
+        adminDelete("/games/missing12345", token = "wrong").assertError(HttpStatusCode.Unauthorized, "unauthorized")
+        adminPost("/games/missing12345/abort", token = null).assertError(HttpStatusCode.Unauthorized, "unauthorized")
         assertEquals(roster, offeredBots(), "a rejected request changes nothing")
         assertEquals("2", setting("bot.open_games_target").value)
 
@@ -149,6 +189,7 @@ class AdminTest {
         assertEquals(1, overview.activeBotGames)
         assertEquals(SettingKeys.ALL.map { it.name }.toSet(), overview.settings.keys)
         assertEquals("2", overview.settings["bot.open_games_target"])
+        assertEquals("0", overview.settings["bot.live_games_target"])
         assertEquals("true", overview.settings["bot.matchmaking"])
     }
 
@@ -221,7 +262,7 @@ class AdminTest {
         val alice = token("alice")
         // Every roster bot is busy, so the matchmaker has nobody to act with.
         for (bot in roster) invite(alice, bot, color = ColorChoice.WHITE)
-        assertEquals(Action.Nothing, services.matchmaker.tick())
+        assertEquals(emptyList(), services.matchmaker.tick())
 
         val response = spawn("fresh_fred", "  Fresh Fred  ", "HARD")
         assertEquals(HttpStatusCode.Created, response.status, response.bodyAsString())
@@ -243,7 +284,7 @@ class AdminTest {
         assertEquals("Fresh Fred", profile("fresh_fred").user.name)
 
         // The matchmaker sees it without a restart: it is the only bot with a free slot.
-        val tick = assertIs<Action.Created>(services.matchmaker.tick())
+        val tick = assertIs<Action.Created>(services.matchmaker.tick().single())
         assertEquals("fresh_fred", game(tick.gameId).creator.username)
 
         // And it plays when invited, like a roster bot.
@@ -319,6 +360,9 @@ class AdminTest {
         assertEquals(SettingKeys.ALL.map { it.name }, listed.map { it.key })
         assertTrue(listed.all { it.source == SettingSource.DEFAULT && it.value == it.defaultValue && it.description.isNotBlank() })
         assertEquals("3", setting("bot.open_games_target").value, "the default comes from the configuration")
+        assertEquals(listOf("bot.matchmaking", "bot.open_games_target", "bot.live_games_target"), listed.take(3).map { it.key })
+        assertEquals("0", setting("bot.live_games_target").value)
+        assertEquals("Bot-versus-bot games the matchmaker keeps in progress; 0 switches this off", setting("bot.live_games_target").description)
         assertEquals("true", setting("bot.matchmaking").value)
         assertEquals("10", setting("bot.reply_pause_millis").value)
         assertEquals("0", setting("bot.vs_bot_pause_millis").value)
@@ -343,6 +387,7 @@ class AdminTest {
         assertEquals("250", putSetting("bot.reply_pause_millis", """{"value":250}""").body<SettingEntry>().value, "a bare number is accepted")
 
         putSetting("bot.open_games_target", """{"value":"-1"}""").assertError(HttpStatusCode.BadRequest, "validation")
+        putSetting("bot.live_games_target", """{"value":"-1"}""").assertError(HttpStatusCode.BadRequest, "validation")
         putSetting("bot.open_games_target", """{"value":"many"}""").assertError(HttpStatusCode.BadRequest, "validation")
         putSetting("bot.open_games_target", """{"value":"1.5"}""").assertError(HttpStatusCode.BadRequest, "validation")
         putSetting("bot.open_games_target", """{"value":null}""").assertError(HttpStatusCode.BadRequest, "validation")
@@ -377,43 +422,67 @@ class AdminTest {
 
     @Test
     fun openGamesTargetChangeIsAppliedByTheNextTick() = serverTest(config = ADMIN_CONFIG, random = ScriptedRandom()) {
-        assertIs<Action.Created>(services.matchmaker.tick())
-        assertIs<Action.Created>(services.matchmaker.tick())
-        assertEquals(Action.Nothing, services.matchmaker.tick(), "the configured target of 2 is reached")
+        assertIs<Action.Created>(services.matchmaker.tick().single())
+        assertIs<Action.Created>(services.matchmaker.tick().single())
+        assertEquals(emptyList(), services.matchmaker.tick(), "the configured target of 2 is reached")
 
         set("bot.open_games_target", "3")
-        assertIs<Action.Created>(services.matchmaker.tick())
-        assertEquals(Action.Nothing, services.matchmaker.tick())
+        assertIs<Action.Created>(services.matchmaker.tick().single())
+        assertEquals(emptyList(), services.matchmaker.tick())
         assertEquals(3, openGames().size)
 
         set("bot.open_games_target", "0")
-        assertEquals(Action.Nothing, services.matchmaker.tick())
+        assertEquals(emptyList(), services.matchmaker.tick())
         assertEquals(3, openGames().size, "existing games are left alone")
 
         assertEquals(HttpStatusCode.OK, resetSetting("bot.open_games_target").status)
-        assertEquals(Action.Nothing, services.matchmaker.tick(), "back to 2, which is exceeded")
+        assertEquals(emptyList(), services.matchmaker.tick(), "back to 2, which is exceeded")
         assertEquals(3, openGames().size)
+    }
+
+    @Test
+    fun liveGamesTargetChangeIsAppliedByTheNextTick() = serverTest(
+        config = ADMIN_CONFIG.copy(botOpenGamesTarget = 0),
+        random = ScriptedRandom(),
+        moveProvider = idleBots,
+    ) {
+        assertEquals("0", setting("bot.live_games_target").value, "the default comes from the configuration")
+        assertEquals(emptyList(), services.matchmaker.tick())
+
+        set("bot.live_games_target", "1")
+        assertEquals(1, services.settings.liveGamesTarget)
+        val started = assertIs<Action.Started>(services.matchmaker.tick().single())
+        val live = game(started.gameId)
+        assertEquals(GamePhase.ACTIVE, live.status)
+        assertTrue(live.white?.bot == true && live.black?.bot == true)
+        assertEquals(1, adminGet("/overview").body<AdminOverview>().activeBotGames)
+        assertEquals(emptyList(), services.matchmaker.tick(), "the target of one is reached")
+
+        set("bot.live_games_target", "0")
+        assertEquals(HttpStatusCode.OK, adminPost("/games/${started.gameId}/abort").status)
+        assertEquals(emptyList(), services.matchmaker.tick(), "switched off: the aborted game is not replaced")
+        assertEquals(0, adminGet("/overview").body<AdminOverview>().activeBotGames)
     }
 
     @Test
     fun matchmakingIsPausedAndResumedWithoutARestart() = serverTest(config = ADMIN_CONFIG.copy(botMatchmaking = false), random = ScriptedRandom()) {
         assertFalse(services.settings.matchmaking)
-        assertEquals(Action.Nothing, services.matchmaker.tick(), "off by configuration")
+        assertEquals(emptyList(), services.matchmaker.tick(), "off by configuration")
         assertTrue(openGames().isEmpty())
 
         set("bot.matchmaking", "true")
         assertTrue(services.settings.matchmaking)
-        assertIs<Action.Created>(services.matchmaker.tick())
+        assertIs<Action.Created>(services.matchmaker.tick().single())
         assertEquals(1, openGames().size)
 
         set("bot.matchmaking", "false")
-        assertEquals(Action.Nothing, services.matchmaker.tick(), "paused: the tick does nothing")
+        assertEquals(emptyList(), services.matchmaker.tick(), "paused: the tick does nothing")
         assertEquals(1, openGames().size)
 
         assertEquals(HttpStatusCode.OK, resetSetting("bot.matchmaking").status)
-        assertEquals(Action.Nothing, services.matchmaker.tick(), "the configured default is off")
+        assertEquals(emptyList(), services.matchmaker.tick(), "the configured default is off")
         set("bot.matchmaking", "true")
-        assertIs<Action.Created>(services.matchmaker.tick())
+        assertIs<Action.Created>(services.matchmaker.tick().single())
         assertEquals(2, openGames().size)
     }
 
@@ -438,15 +507,114 @@ class AdminTest {
         }
         serverTest(config = ADMIN_CONFIG.copy(botOpenGamesTarget = 1), random = ScriptedRandom(), moveProvider = scripted) {
             set("bot.vs_bot_pause_millis", "300")
-            val created = assertIs<Action.Created>(services.matchmaker.tick())
+            val created = assertIs<Action.Created>(services.matchmaker.tick().single())
             clock.advance(Duration.ofMinutes(9))
-            (random as ScriptedRandom).rolls.add(JOIN)
             val started = TimeSource.Monotonic.markNow()
-            assertEquals(Action.Joined(created.gameId), services.matchmaker.tick())
+            assertEquals(listOf(Action.Joined(created.gameId)), services.matchmaker.tick())
             // The first move follows the join at once; each of the next three waits for the pause.
             assertEquals(4, awaitStoredMoves(created.gameId, 4))
             assertTrue(started.elapsedNow() >= 900.milliseconds, "three paced moves took ${started.elapsedNow()}")
             assertEquals(opening, game(created.gameId).moves)
         }
+    }
+
+    @Test
+    fun gamesAreListedNewestFirstWithAStatusFilter() = serverTest(config = ADMIN_CONFIG) {
+        val alice = token("alice")
+        val bob = token("bob")
+        val waiting = createGame(alice)
+        clock.advance(Duration.ofMinutes(1))
+        val hidden = createGame(alice, visibility = Visibility.PRIVATE)
+        clock.advance(Duration.ofMinutes(1))
+        val invitation = invite(alice, "bob")
+        clock.advance(Duration.ofMinutes(1))
+        val active = activeGame(alice, bob)
+        clock.advance(Duration.ofMinutes(1))
+        val finished = activeGame(alice, bob)
+        foolsMate(alice, bob, finished.id)
+
+        assertEquals(
+            listOf(finished.id, active.id, invitation.id, hidden.id, waiting.id),
+            adminGames().map { it.id },
+            "every game, newest first, whatever its visibility",
+        )
+        assertEquals(listOf(invitation.id, hidden.id, waiting.id), adminGames("?status=WAITING").map { it.id })
+        assertEquals(listOf(active.id), adminGames("?status=active").map { it.id }, "the status is matched regardless of case")
+        val over = adminGames("?status=FINISHED").single()
+        assertEquals(finished.id, over.id)
+        assertEquals(GamePhase.FINISHED, over.status)
+        assertEquals(listOf(active.id, invitation.id), adminGames("?limit=2&offset=1").map { it.id })
+        adminGet("/games?status=open").assertError(HttpStatusCode.BadRequest, "validation")
+        assertEquals(listOf(waiting.id), client.get("/api/games?filter=open").body<GamesResponse>().games.map { it.id }, "the public listing is unchanged")
+    }
+
+    @Test
+    fun deleteRemovesAGameWithItsMovesAndRatingChanges() = serverTest(config = ADMIN_CONFIG) {
+        val alice = token("alice")
+        val bob = token("bob")
+        val finished = activeGame(alice, bob)
+        foolsMate(alice, bob, finished.id)
+        assertEquals(2, repositories.ratings.changesFor(finished.id).size)
+        val bobRating = assertNotNull(profile("bob").ratings.classic).rating
+
+        val response = adminDelete("/games/${finished.id}")
+        assertEquals(HttpStatusCode.NoContent, response.status, response.bodyAsString())
+        getGame(finished.id).assertError(HttpStatusCode.NotFound, "not_found")
+        assertTrue(adminGames().none { it.id == finished.id })
+        assertTrue(myGames(alice).none { it.id == finished.id })
+        assertTrue(profile("bob").recentGames.none { it.id == finished.id })
+        assertTrue(repositories.games.moves(finished.id).isEmpty())
+        assertTrue(repositories.ratings.changesFor(finished.id).isEmpty())
+        assertEquals(bobRating, profile("bob").ratings.classic?.rating, "the ratings the game led to stay")
+        adminDelete("/games/${finished.id}").assertError(HttpStatusCode.NotFound, "not_found")
+        adminPost("/games/${finished.id}/abort").assertError(HttpStatusCode.NotFound, "not_found")
+        adminDelete("/games/nope").assertError(HttpStatusCode.NotFound, "not_found")
+
+        // A game in progress goes the same way: its players simply find it gone.
+        val active = activeGame(alice, bob)
+        assertEquals(HttpStatusCode.NoContent, adminDelete("/games/${active.id}").status)
+        moveResponse(alice, active.id, normal("e2e4")).assertError(HttpStatusCode.NotFound, "not_found")
+        assertEquals(GameCounts(waiting = 0, active = 0, finished = 0), adminGet("/overview").body<AdminOverview>().games)
+    }
+
+    @Test
+    fun abortFinishesAGameByAbandonmentWithoutRatingChanges() = serverTest(config = ADMIN_CONFIG) {
+        val alice = token("alice")
+        val bob = token("bob")
+        val active = activeGame(alice, bob)
+        move(alice, active.id, "e2e4")
+        move(bob, active.id, "e7e5")
+
+        client.webSocket("/api/games/${active.id}/ws") {
+            assertEquals(GamePhase.ACTIVE, assertIs<ServerEvent.GameUpdated>(incoming.nextEvent()).game.status)
+            val response = adminPost("/games/${active.id}/abort")
+            assertEquals(HttpStatusCode.OK, response.status, response.bodyAsString())
+            val aborted = response.body<GameDto>()
+            assertEquals(GamePhase.FINISHED, aborted.status)
+            assertEquals(GameResult(null, EndReason.ABANDONMENT), aborted.result)
+            assertEquals(2, aborted.moves.size)
+            assertNull(aborted.ratingChanges)
+            assertEquals(aborted, assertIs<ServerEvent.GameUpdated>(incoming.nextEvent()).game, "the subscribers see the game end")
+        }
+        assertEquals(GamePhase.FINISHED, game(active.id).status)
+        assertTrue(repositories.ratings.changesFor(active.id).isEmpty())
+        assertEquals(PlayerRatings.NONE, profile("alice").ratings)
+        assertEquals(PlayerRatings.NONE, profile("bob").ratings)
+        moveResponse(alice, active.id, normal("g1f3")).assertError(HttpStatusCode.Conflict, "game_finished")
+        adminPost("/games/${active.id}/abort").assertError(HttpStatusCode.Conflict, "game_finished")
+
+        val finished = activeGame(alice, bob)
+        foolsMate(alice, bob, finished.id)
+        adminPost("/games/${finished.id}/abort").assertError(HttpStatusCode.Conflict, "game_finished")
+        adminPost("/games/nope/abort").assertError(HttpStatusCode.NotFound, "not_found")
+
+        // A waiting game is finished the same way rather than deleted, so that the record stays.
+        val waiting = createGame(alice)
+        val cancelled = adminPost("/games/${waiting.id}/abort").body<GameDto>()
+        assertEquals(GamePhase.FINISHED, cancelled.status)
+        assertEquals(GameResult(null, EndReason.ABANDONMENT), cancelled.result)
+        assertEquals(GamePhase.FINISHED, game(waiting.id).status)
+        joinResponse(bob, waiting.id).assertError(HttpStatusCode.Conflict, "game_full")
+        assertTrue(client.get("/api/games?filter=open").body<GamesResponse>().games.isEmpty())
     }
 }

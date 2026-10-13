@@ -82,11 +82,14 @@ object Render {
                 game.black?.username ?: NONE,
                 game.moveCount.toString(),
                 if (game.rated) "yes" else "no",
-                game.result?.let { "${score(it.winner)} ${it.reason}" } ?: NONE,
+                result(game),
                 timestamp(game.updatedAt),
             )
         },
     )
+
+    /** One line with a game's id, status and result: `aZ3kq9bX7LmN: FINISHED 1/2-1/2 ABANDONMENT`. */
+    fun status(game: GameSummary): String = "${game.id}: ${game.status} ${result(game)}"
 
     fun settings(settings: List<Setting>): String = Table.render(
         listOf("KEY", "VALUE", "DEFAULT", "SOURCE", "DESCRIPTION"),
@@ -96,6 +99,8 @@ object Render {
     /** `yyyy-MM-dd HH:mm` in UTC; anything that is not an ISO instant is shown as it is. */
     fun timestamp(iso: String): String =
         runCatching { timestamps.format(Instant.parse(iso)) }.getOrDefault(iso)
+
+    private fun result(game: GameSummary) = game.result?.let { "${score(it.winner)} ${it.reason}" } ?: NONE
 
     private fun rating(summary: RatingSummary?) = summary?.rating?.toString() ?: NONE
 

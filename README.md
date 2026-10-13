@@ -115,10 +115,14 @@ chess-admin [--api URL] [--token TOKEN] [--json] <command>
   bots show <username>                      a bot with its ratings, active games and recent games
   bots spawn --username <name> --name "<display name>" --level NOVICE|EASY|MEDIUM|HARD|EXPERT
   bots set <username> [--level <level>] [--name "<display name>"]
+  games list [--status WAITING|ACTIVE|FINISHED] [--limit <n>]   the games, newest first
+  games abort <id>                          end a game without a winner; it stays in the records
+  games drop <id>                           delete a game outright
   settings list                             every setting with its default and where the value comes from
   settings set <key> <value>
   settings reset <key>                      back to the default
   settings open-games <n>                   shortcut for bot.open_games_target
+  settings live-games <n>                   shortcut for bot.live_games_target
   settings pauses [--reply <ms>] [--bots <ms>]   shortcuts for bot.reply_pause_millis and bot.vs_bot_pause_millis
 ```
 

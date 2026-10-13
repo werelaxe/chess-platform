@@ -165,6 +165,7 @@ replayed games and the WebSocket subscriber registry; PostgreSQL is the source o
 | `BOT_MATCHMAKING` | `true` | default of `bot.matchmaking` (section 2.11): whether the bots keep the lobby alive (section 2.10); `false` pauses the loop until the setting switches it on |
 | `BOT_TICK_MIN_MINUTES` / `BOT_TICK_MAX_MINUTES` | `3` / `10` | pause between matchmaking ticks (the upper bound is raised to the lower one if set below it) |
 | `BOT_OPEN_GAMES_TARGET` | `2` | public open games the bots keep in the lobby (0 switches this off) |
+| `BOT_LIVE_GAMES_TARGET` | `2` | bot-versus-bot games the matchmaker keeps in progress (0 switches this off) |
 | `BOT_JOIN_AFTER_MINUTES` | `8` | how long an open game waits before a bot may join it |
 | `BOT_INVITATION_TTL_MINUTES` | `60` | lifetime of a bot's invitation to a human |
 | `BOT_MAX_ACTIVE_GAMES` | `6` | games in progress per bot above which it sits matchmaking out |
@@ -513,29 +514,33 @@ game: the public listing leaves it out until it is accepted, whatever its visibi
 
 Matchmaking (`BotMatchmaker`; the loop always runs and its ticks act while `bot.matchmaking`
 is true, section 2.11): a loop that sleeps a random `BOT_TICK_MIN_MINUTES`–`BOT_TICK_MAX_MINUTES`
-(defaults 3–10) and on each tick does one of the following, keeping the lobby alive without
-flooding it:
+(defaults 3–10) and on each tick keeps the lobby alive without flooding it. The tick first
+tops up the live games: while fewer than `BOT_LIVE_GAMES_TARGET` (default 2) `ACTIVE` games
+with a bot in both seats exist, two distinct available bots start one (one creates a public
+rated game of a random kind and colour, the other joins it at once), at most two new games
+per tick so that a raised target fills up over a few ticks. It then does one of the
+following, so a tick may both start a live game and act once more:
 
 * if fewer than `BOT_OPEN_GAMES_TARGET` (default 2) public WAITING games created by bots exist,
   a random bot creates one (random kind and colour, rated, public);
-* otherwise, with probability 1/2, a random bot joins a public WAITING game that has waited
-  at least `BOT_JOIN_AFTER_MINUTES` (default 8) but is younger than `OPEN_GAME_TTL_HOURS`,
-  whoever created it (another bot included), provided the joiner is not its creator; the
-  candidates are the 20 newest such games (the ones whose creator is most likely still
-  there) and one is picked at random. This is how bot-versus-bot games start and how a
-  human who has waited for a while gets an opponent. If the game was joined or cancelled
-  between the listing and the join (409/404), that is logged at DEBUG and the tick goes on
-  to the next branch;
-* otherwise (also when the dice said "join" but no game qualified), with probability 1/4, a
-  random bot invites a random registered human who was seen within the last 7 days, has no
-  pending invitation from a bot and received none in the last 6 hours (declined invitations
-  are gone from the database, so the loop also remembers whom it invited until it restarts);
-  pending bot invitations expire after `BOT_INVITATION_TTL_MINUTES` (default 60) and are
-  deleted by the loop at the start of every tick through `cancelInvitation`, so one that was
-  accepted or declined between the listing and the deletion is left alone (the 409/404 is
-  logged at DEBUG).
+* otherwise, if a public WAITING game has waited at least `BOT_JOIN_AFTER_MINUTES` (default 8)
+  but is younger than `OPEN_GAME_TTL_HOURS`, whoever created it (another bot included), a
+  random bot joins the oldest such game, no dice involved: the creator kept waiting the
+  longest gets an opponent first. The candidates are the 20 oldest such games; one whose
+  creator is the only available bot is passed over for the next, and so is one that was
+  joined or cancelled between the listing and the join (409/404, logged at DEBUG). This is
+  how a human who has waited for a while gets an opponent, and a second way bot-versus-bot
+  games start;
+* otherwise (no game qualified or every join failed), with probability 1/4, a random bot
+  invites a random registered human who was seen within the last 7 days, has no pending
+  invitation from a bot and received none in the last 6 hours (declined invitations are gone
+  from the database, so the loop also remembers whom it invited until it restarts); pending
+  bot invitations expire after `BOT_INVITATION_TTL_MINUTES` (default 60) and are deleted by
+  the loop at the start of every tick through `cancelInvitation`, so one that was accepted or
+  declined between the listing and the deletion is left alone (the 409/404 is logged at
+  DEBUG).
 
-Before choosing, every tick also wakes the bots in the `ACTIVE` games where one is on turn
+Before any of that, every tick also wakes the bots in the `ACTIVE` games where one is on turn
 (`GameService.wakeBots`, section 2.6), so a game interrupted by a restart or a failed search
 resumes without anybody looking at it, and deletes the public open games that nobody joined
 for `OPEN_GAME_TTL_HOURS` (default 24), whoever created them, as abandoned lobbies: they are
@@ -543,10 +548,12 @@ cancelled like a WAITING game (deleted, published with `ABANDONMENT`) and are ne
 a bot; private open games are links their creators share and are kept.
 
 A bot never has more than `BOT_MAX_ACTIVE_GAMES` (default 6) games in progress; the tick skips
-bots at the limit (and does nothing when every bot is at it). All choices use the injectable
-`Random` (`nextDouble` for the probabilities, `nextInt` for the picks) and `Clock`, so tests
-drive the loop by calling its `tick()` directly (its own ticks are minutes apart, so none
-happens during a test).
+bots at the limit (a live game needs two below it; the lobby action does nothing when every
+bot is at it). All choices use the injectable `Random` (`nextDouble` for the invitation
+probability, `nextInt` for the picks) and `Clock`, so tests drive the loop by calling its
+`tick()` directly (its own ticks are minutes apart, so none happens during a test); the tick
+returns what it did, the games started first and then the lobby action, and the loop logs
+each at INFO.
 
 ### 2.11 Administration: runtime settings, admin API and CLI
 
@@ -558,6 +565,7 @@ provide the defaults. Known keys, all validated on write:
 |-----|------|---------|---------|
 | `bot.matchmaking` | boolean | `BOT_MATCHMAKING` | the matchmaker loop acts on its ticks (false pauses it) |
 | `bot.open_games_target` | int >= 0 | `BOT_OPEN_GAMES_TARGET` | public open games kept waiting by bots |
+| `bot.live_games_target` | int >= 0 | `BOT_LIVE_GAMES_TARGET` | bot-versus-bot games kept in progress (0 switches this off) |
 | `bot.reply_pause_millis` | int >= 0 | 700 | shortest pause before a bot answers a human |
 | `bot.vs_bot_pause_millis` | int >= 0 | 0 | shortest pause between the moves of two bots |
 | `bot.max_active_games` | int >= 1 | `BOT_MAX_ACTIVE_GAMES` | games one bot plays at once |
@@ -579,6 +587,13 @@ GET   /api/admin/bots                           -> {bots: [AdminBot]}      Admin
 GET   /api/admin/bots/{username}                -> AdminBotDetails: AdminBot + {activeGameList: [GameSummary], recentGames: [GameSummary] (20)}
 POST  /api/admin/bots  {username, displayName, level}  -> 201 AdminBot   (username rules of 2.2, 409 username_taken; the bot joins the roster at once)
 PATCH /api/admin/bots/{username} {level?, displayName?} -> 200 AdminBot
+GET   /api/admin/games?status=WAITING|ACTIVE|FINISHED&limit=&offset= -> {games: [GameSummary]}   (every game whatever its
+                                                                                 visibility, newest first; limit/offset as in 2.3)
+POST  /api/admin/games/{id}/abort               -> 200 GameDto   (an ACTIVE or WAITING game is finished by ABANDONMENT
+                                                                  with no winner and no rating change, published to its
+                                                                  subscribers as a `game` event; 409 game_finished otherwise)
+DELETE /api/admin/games/{id}                    -> 204            (deletes the game with its moves and rating changes;
+                                                                  the ratings themselves stay; 404 for an unknown id)
 GET   /api/admin/settings                       -> {settings: [{key, value, default, source: "db"|"default", description}]}
 PUT   /api/admin/settings/{key}  {value: string} -> 200 the setting; 400 validation for unknown keys or bad values
 DELETE /api/admin/settings/{key}                -> 200 the setting reset to its default
@@ -604,6 +619,10 @@ chess-admin [--api URL] [--token TOKEN] [--json] <command>
   settings set <key> <value>
   settings reset <key>
   settings open-games <n>                 # shortcut for bot.open_games_target
+  settings live-games <n>                 # shortcut for bot.live_games_target
+  games list [--status WAITING|ACTIVE|FINISHED] [--limit <n>]
+  games abort <id>                        # finish a game with ABANDONMENT, no rating change
+  games drop <id>                         # delete a game outright
   settings pauses [--reply <ms>] [--bots <ms>]   # shortcuts for the two pauses
 ```
 
