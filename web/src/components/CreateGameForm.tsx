@@ -1,25 +1,44 @@
-import { useState, type FormEvent } from "react";
+import { useCallback, useState, type FormEvent } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router";
-import { api } from "../api/client";
-import type { BotLevel, ColorChoice, GameKind, Opponent, Visibility } from "../api/types";
-import { BOT_LEVELS, botLevelHint, botLevelLabel, createGameRequest } from "../core/computer";
+import { api, detailedErrorMessage } from "../api/client";
+import type { ColorChoice, GameKind, Visibility } from "../api/types";
+import { INVITEE_ERROR_STATUSES, createGameRequest, type OpponentMode } from "../core/newGame";
 import { useAuthStore } from "../store/auth";
 import { startSession } from "../store/session";
-import { Choice, ErrorNotice } from "./ui";
+import { BotPicker } from "./BotPicker";
+import { PlayerSearch } from "./PlayerSearch";
+import { Choice, Notice, Toggle } from "./ui";
 
 export function CreateGameForm() {
   const { t } = useTranslation();
   const user = useAuthStore((state) => state.user);
   const navigate = useNavigate();
   const [kind, setKind] = useState<GameKind>("QUANTUM");
-  const [opponent, setOpponent] = useState<Opponent>("HUMAN");
-  const [level, setLevel] = useState<BotLevel>("MEDIUM");
+  const [mode, setMode] = useState<OpponentMode>("OPEN");
+  const [bot, setBot] = useState<string | null>(null);
+  const [playerText, setPlayerText] = useState("");
+  /** The username the player field resolves to; null while it names nobody. */
+  const [player, setPlayer] = useState<string | null>(null);
   const [visibility, setVisibility] = useState<Visibility>("PUBLIC");
   const [color, setColor] = useState<ColorChoice>("RANDOM");
+  const [rated, setRated] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const computer = opponent === "COMPUTER";
+  // A visitor who is not signed in can only go on as a guest, and guests play casual games only.
+  const guest = user === null || user.guest === true;
+  const opponentUsername = mode === "BOT" ? bot : mode === "PLAYER" ? player : null;
+  const incomplete = mode !== "OPEN" && opponentUsername === null;
+  const visibilityHint =
+    mode === "OPEN"
+      ? visibility === "PUBLIC"
+        ? t("create.publicHint")
+        : t("create.privateHint")
+      : visibility === "PUBLIC"
+        ? t("create.publicStartHint")
+        : t("create.privateStartHint");
+
+  const pickBot = useCallback((username: string) => setBot(username), []);
 
   async function create(asGuest: boolean) {
     setSubmitting(true);
@@ -29,7 +48,7 @@ export function CreateGameForm() {
         const session = await api.guest();
         startSession(session.token, session.user);
       }
-      const game = await api.createGame(createGameRequest({ kind, visibility, color, opponent, level }));
+      const game = await api.createGame(createGameRequest({ kind, visibility, color, rated, opponentUsername, guest: asGuest || guest }));
       navigate(`/games/${game.id}`);
     } catch (cause) {
       setError(cause);
@@ -39,6 +58,7 @@ export function CreateGameForm() {
 
   function submit(event: FormEvent) {
     event.preventDefault();
+    if (incomplete) return;
     void create(false);
   }
 
@@ -63,26 +83,27 @@ export function CreateGameForm() {
         <span className="field__label">{t("create.opponent")}</span>
         <Choice
           name={t("create.opponent")}
-          value={opponent}
-          onChange={setOpponent}
+          value={mode}
+          onChange={setMode}
           disabled={submitting}
           options={[
-            { value: "HUMAN", label: t("create.human") },
-            { value: "COMPUTER", label: t("create.computer") },
+            { value: "OPEN", label: t("create.open") },
+            { value: "BOT", label: t("create.bot") },
+            { value: "PLAYER", label: t("create.player") },
           ]}
         />
+        {mode === "OPEN" ? <span className="field__hint">{t("create.openHint")}</span> : null}
       </div>
-      {computer ? (
+      {mode === "BOT" ? (
         <div className="field">
-          <span className="field__label">{t("create.level")}</span>
-          <Choice
-            name={t("create.level")}
-            value={level}
-            onChange={setLevel}
-            disabled={submitting}
-            options={BOT_LEVELS.map((value) => ({ value, label: botLevelLabel(value) }))}
-          />
-          <span className="field__hint">{botLevelHint(level)}</span>
+          <span className="field__label">{t("create.chooseBot")}</span>
+          <BotPicker kind={kind} value={bot} onChange={pickBot} disabled={submitting} />
+        </div>
+      ) : null}
+      {mode === "PLAYER" ? (
+        <div className="field">
+          <span className="field__label">{t("create.playerUsername")}</span>
+          <PlayerSearch kind={kind} value={playerText} onChange={setPlayerText} onMatch={setPlayer} viewer={user} disabled={submitting} />
         </div>
       ) : null}
       <div className="field">
@@ -99,37 +120,40 @@ export function CreateGameForm() {
           ]}
         />
       </div>
-      {computer ? (
-        <div className="field">
-          <span className="field__hint">{t("create.computerUnlisted")}</span>
-        </div>
-      ) : (
-        <div className="field">
-          <span className="field__label">{t("create.visibility")}</span>
-          <Choice
-            name={t("create.visibility")}
-            value={visibility}
-            onChange={setVisibility}
-            disabled={submitting}
-            options={[
-              { value: "PUBLIC", label: t("create.public") },
-              { value: "PRIVATE", label: t("create.private") },
-            ]}
-          />
-          <span className="field__hint">{visibility === "PUBLIC" ? t("create.publicHint") : t("create.privateHint")}</span>
-        </div>
-      )}
-      {error ? <ErrorNotice error={error} /> : null}
+      <div className="field">
+        <Toggle
+          checked={rated && !guest}
+          onChange={setRated}
+          disabled={submitting || guest}
+          label={t("create.rated")}
+          hint={guest ? t("create.ratedGuestHint") : rated ? t("create.ratedHint") : t("create.casualHint")}
+        />
+      </div>
+      <div className="field">
+        <span className="field__label">{t("create.visibility")}</span>
+        <Choice
+          name={t("create.visibility")}
+          value={visibility}
+          onChange={setVisibility}
+          disabled={submitting}
+          options={[
+            { value: "PUBLIC", label: t("create.public") },
+            { value: "PRIVATE", label: t("create.private") },
+          ]}
+        />
+        <span className="field__hint">{visibilityHint}</span>
+      </div>
+      {error ? <Notice kind="error">{detailedErrorMessage(error, INVITEE_ERROR_STATUSES)}</Notice> : null}
       {user ? (
-        <button type="submit" className="btn btn--primary btn--block" disabled={submitting}>
-          {submitting ? t("create.creating") : t("create.submit")}
+        <button type="submit" className="btn btn--primary btn--block" disabled={submitting || incomplete}>
+          {submitting ? t("create.creating") : mode === "OPEN" ? t("create.submit") : t("create.submitInvite")}
         </button>
       ) : (
         <div className="stack">
           <Link to="/login" className="btn btn--primary btn--block">
             {t("create.logIn")}
           </Link>
-          <button type="button" className="btn btn--block" disabled={submitting} onClick={() => void create(true)}>
+          <button type="button" className="btn btn--block" disabled={submitting || incomplete} onClick={() => void create(true)}>
             {submitting ? t("create.creating") : t("create.continueAsGuest")}
           </button>
           <p className="faint small">

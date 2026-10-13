@@ -21,25 +21,33 @@ import ru.werelaxe.chess.server.plugins.configureStatusPages
 import ru.werelaxe.chess.server.plugins.configureWebSockets
 import ru.werelaxe.chess.server.repository.Repositories
 import ru.werelaxe.chess.server.repository.exposed.ExposedGameRepository
+import ru.werelaxe.chess.server.repository.exposed.ExposedRatingRepository
 import ru.werelaxe.chess.server.repository.exposed.ExposedUserRepository
 import ru.werelaxe.chess.server.routes.authRoutes
 import ru.werelaxe.chess.server.routes.fallbackRoutes
 import ru.werelaxe.chess.server.routes.gameRoutes
 import ru.werelaxe.chess.server.routes.healthRoutes
+import ru.werelaxe.chess.server.routes.playerRoutes
 import ru.werelaxe.chess.server.routes.webSocketRoutes
 import ru.werelaxe.chess.server.service.AuthService
+import ru.werelaxe.chess.server.service.BotMatchmaker
 import ru.werelaxe.chess.server.service.BotPlayer
-import ru.werelaxe.chess.server.service.BotUser
+import ru.werelaxe.chess.server.service.BotRoster
+import ru.werelaxe.chess.server.service.Bots
 import ru.werelaxe.chess.server.service.GameCache
 import ru.werelaxe.chess.server.service.GameService
 import ru.werelaxe.chess.server.service.JwtService
+import ru.werelaxe.chess.server.service.MatchmakingSettings
 import ru.werelaxe.chess.server.service.MoveProvider
+import ru.werelaxe.chess.server.service.PlayerService
+import ru.werelaxe.chess.server.service.Presence
 import ru.werelaxe.chess.server.ws.GameHub
 import java.time.Clock
 import java.time.Duration
 import kotlin.random.Random
 import kotlin.system.exitProcess
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 fun main() {
     val log = LoggerFactory.getLogger("ru.werelaxe.chess.server.Main")
@@ -53,6 +61,7 @@ fun main() {
     val repositories = Repositories(
         users = ExposedUserRepository(database),
         games = ExposedGameRepository(database),
+        ratings = ExposedRatingRepository(database),
     )
     val moveProvider = MoveProvider.fromConfig(config)
     log.info("Starting the chess server on port {}", config.port)
@@ -60,6 +69,14 @@ fun main() {
         module(config, repositories, moveProvider = moveProvider)
     }.start(wait = true)
 }
+
+/** The services behind the routes; tests reach them to drive what no request triggers (the matchmaker). */
+class AppServices(
+    val games: GameService,
+    val players: PlayerService,
+    val matchmaker: BotMatchmaker,
+    val bots: Bots,
+)
 
 /**
  * Wires the whole application. Tests call it directly with in-memory repositories, a seeded
@@ -74,29 +91,46 @@ suspend fun Application.module(
     clock: Clock = Clock.systemUTC(),
     moveProvider: MoveProvider = MoveProvider.fromConfig(config) { ChessEngine(it, random) },
     botPause: kotlin.time.Duration = BotPlayer.DEFAULT_PAUSE,
-) {
+    botVsBotPause: kotlin.time.Duration = config.botVsBotPauseSeconds.seconds,
+): AppServices {
     // After the migrations (main connects before starting the server) and before the first
     // request; the in-memory repositories of the tests start empty, so this runs every time.
-    BotUser.ensure(repositories.users, clock)
+    val bots = BotRoster.ensure(repositories.users, clock)
 
     val jwt = JwtService(config.jwtSecret, Duration.ofDays(config.jwtTtlDays), clock)
-    val authService = AuthService(repositories.users, jwt, random, clock, config.bcryptCost)
+    val authService = AuthService(repositories.users, repositories.ratings, jwt, random, clock, config.bcryptCost)
+    val presence = Presence(repositories.users, clock)
     val hub = GameHub()
     val cache = GameCache(idleTimeout = config.gameIdleMinutes.minutes)
     val gameService = GameService(
         repositories.games,
         repositories.users,
+        repositories.ratings,
+        bots,
         hub,
         random,
         clock,
         moveProvider,
         cache = cache,
         botPause = botPause,
+        botVsBotPause = botVsBotPause,
+    )
+    val playerService = PlayerService(repositories.users, repositories.games, repositories.ratings, bots, gameService)
+    val matchmaker = BotMatchmaker(
+        gameService,
+        repositories.games,
+        repositories.users,
+        bots,
+        MatchmakingSettings.fromConfig(config),
+        random,
+        clock,
     )
     monitor.subscribe(ApplicationStopping) {
         gameService.close()
         moveProvider.close()
     }
+    // Games a bot was about to move in when the previous instance stopped resume right away.
+    gameService.wakeBots()
     // Frees the memory of abandoned games even when no request touches the cache; cancelled with the application.
     launch(CoroutineName("game-cache-sweep")) {
         while (true) {
@@ -104,12 +138,15 @@ suspend fun Application.module(
             cache.sweep()
         }
     }
+    if (config.botMatchmaking) {
+        launch(CoroutineName("bot-matchmaker")) { matchmaker.loop() }
+    }
 
     configureSerialization()
     configureStatusPages()
     configureCors(config)
     configureCallLogging()
-    configureSecurity(jwt)
+    configureSecurity(jwt) { presence.touch(it.id) }
     configureRateLimiting()
     configureWebSockets()
 
@@ -117,7 +154,9 @@ suspend fun Application.module(
         healthRoutes()
         authRoutes(authService)
         gameRoutes(gameService)
+        playerRoutes(playerService)
         webSocketRoutes(gameService, hub)
         fallbackRoutes()
     }
+    return AppServices(gameService, playerService, matchmaker, bots)
 }

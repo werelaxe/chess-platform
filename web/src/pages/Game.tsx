@@ -6,21 +6,22 @@ import type { Color, DrawAction, GameDto, GameMove, PieceType, ServerEvent } fro
 import { BRAND_NAME } from "../brand";
 import { Board, type BoardHighlights, type BoardMode } from "../components/Board";
 import { DistributionPanel } from "../components/DistributionPanel";
-import { GameControls } from "../components/GameControls";
+import { GameControls, type InvitationRole } from "../components/GameControls";
 import { GameHeader } from "../components/GameHeader";
 import { ModeBar } from "../components/ModeBar";
 import { MoveList } from "../components/MoveList";
 import { PromotionDialog } from "../components/PromotionDialog";
 import { ErrorNotice, Loading } from "../components/ui";
-import { botColor, playerLabel } from "../core/computer";
 import { IllegalMoveError, LocalGame, type GameSnapshot } from "../core/game";
 import { i18n } from "../i18n";
 import { movesEqual } from "../core/notation";
+import { displayName, isBotSeat } from "../core/players";
 import { PositionCache, replayStepForKey, resolvePly, selectPly, stepPly, type ReplayStep, type ViewedPly } from "../core/replay";
 import { squareIndex, squareName } from "../core/squares";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useGameSocket } from "../hooks/useGameSocket";
 import { useAuthStore } from "../store/auth";
+import { useInvitationsStore } from "../store/invitations";
 import { startSession } from "../store/session";
 
 interface Selection {
@@ -46,7 +47,7 @@ interface Toast {
 }
 
 /** Game actions that run against the server; each has its own failure message. */
-type GameAction = "join" | "joinAsGuest" | "cancel" | "resign" | "draw";
+type GameAction = "join" | "joinAsGuest" | "cancel" | "decline" | "resign" | "draw";
 
 const EMPTY_SET: ReadonlySet<number> = new Set<number>();
 const EMPTY_MOVES: GameMove[] = [];
@@ -87,6 +88,9 @@ export function GamePage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
+  const incomingInvitations = useInvitationsStore((state) => state.incoming);
+  const outgoingInvitations = useInvitationsStore((state) => state.outgoing);
+  const refreshInvitations = useInvitationsStore((state) => state.refresh);
 
   const localRef = useRef<LocalGame | null>(null);
   const loadSequence = useRef(0);
@@ -238,6 +242,28 @@ export function GamePage() {
     return null;
   }, [game, user]);
 
+  /**
+   * The viewer's part in a WAITING invitation. The DTO names the invitee; should it not, the
+   * viewer's own invitation lists still tell whether the game is theirs to accept or to cancel.
+   */
+  const invitationRole = useMemo<InvitationRole | null>(() => {
+    if (!game || game.status !== "WAITING") return null;
+    const invitee = game.invitee ?? null;
+    if (invitee) {
+      if (user && user.id === game.creator.id) return "creator";
+      if (user && user.id === invitee.id) return "invitee";
+      return "outsider";
+    }
+    if (user && incomingInvitations.some((entry) => entry.id === game.id)) return "invitee";
+    if (user && outgoingInvitations.some((entry) => entry.id === game.id)) return "creator";
+    return null;
+  }, [game, user, incomingInvitations, outgoingInvitations]);
+
+  const waitingWithoutInvitee = game?.status === "WAITING" && game.invitee === undefined && user !== null;
+  useEffect(() => {
+    if (waitingWithoutInvitee) void refreshInvitations();
+  }, [waitingWithoutInvitee, id, refreshInvitations]);
+
   const quantum = game?.kind === "QUANTUM";
   const effectiveMode: BoardMode = quantum ? mode : "normal";
   const history = snapshot?.history ?? EMPTY_MOVES;
@@ -291,8 +317,8 @@ export function GamePage() {
   useDocumentTitle(
     game
       ? t("titles.game", {
-          white: game.white ? playerLabel(game.white, game.botLevel) : t("common.unknownPlayer"),
-          black: game.black ? playerLabel(game.black, game.botLevel) : t("common.unknownPlayer"),
+          white: game.white ? displayName(game.white) : t("common.unknownPlayer"),
+          black: game.black ? displayName(game.black) : t("common.unknownPlayer"),
           variant: t(`variants.${game.kind}`),
         })
       : t(loadError ? "titles.gameUnavailable" : "titles.gameLoading", { brand: BRAND_NAME }),
@@ -462,12 +488,12 @@ export function GamePage() {
     clearSelection();
   }
 
-  async function runAction(kind: GameAction, action: () => Promise<GameDto>, after?: (dto: GameDto) => void) {
+  async function runAction(kind: GameAction, action: () => Promise<GameDto | null>, after?: (dto: GameDto | null) => void) {
     setBusy(true);
     busyRef.current = true;
     try {
       const dto = await action();
-      setGame(dto);
+      if (dto) setGame(dto);
       after?.(dto);
     } catch (error) {
       showToast("error", t(`game.failed.${kind}`, { message: errorMessage(error) }));
@@ -478,7 +504,15 @@ export function GamePage() {
   }
 
   function onJoin() {
-    void runAction("join", () => api.joinGame(id), () => resync());
+    void runAction(
+      "join",
+      () => api.joinGame(id),
+      () => {
+        // Accepting an invitation takes it off the lists behind the badge.
+        if (invitationRole === "invitee") void refreshInvitations();
+        resync();
+      },
+    );
   }
 
   function onJoinAsGuest() {
@@ -493,10 +527,32 @@ export function GamePage() {
     );
   }
 
+  function onDecline() {
+    // Declining deletes the invitation; the lists are refreshed so the badge drops at once.
+    void runAction(
+      "decline",
+      async () => {
+        await api.decline(id);
+        return null;
+      },
+      () => {
+        void refreshInvitations();
+        navigate("/invitations");
+      },
+    );
+  }
+
   function onResign() {
     if (game?.status === "WAITING") {
       // Leaving a game nobody joined deletes it.
-      void runAction("cancel", () => api.resign(id), () => navigate("/"));
+      void runAction(
+        "cancel",
+        () => api.resign(id),
+        () => {
+          void refreshInvitations();
+          navigate(invitationRole === "creator" ? "/invitations" : "/");
+        },
+      );
     } else {
       void runAction("resign", () => api.resign(id));
     }
@@ -535,15 +591,13 @@ export function GamePage() {
   const inspectedCell = inspectedIndex !== null ? (shown.view.cells[inspectedIndex] ?? null) : null;
   const shareUrl = `${window.location.origin}/games/${game.id}`;
   const showModeBar = quantum && viewerColor !== null && game.status === "ACTIVE" && snapshot.status.type === "ongoing";
-  const computerColor = botColor(game);
-  const computer = computerColor !== null;
-  const botToMove = computer && game.status === "ACTIVE" && snapshot.status.type === "ongoing" && snapshot.sideToMove === computerColor;
+  const botToMove = game.status === "ACTIVE" && snapshot.status.type === "ongoing" && isBotSeat(game, snapshot.sideToMove);
 
   let hint = "";
   if (browsing) hint = t("game.hints.browsing");
   else if (awaitingObservation) hint = t("game.hints.measuring");
   else if (busy) hint = t("game.hints.sending");
-  else if (!canAct) hint = viewerColor ? (botToMove ? t("game.hints.computerThinking") : t("game.hints.waitingOpponent")) : "";
+  else if (!canAct) hint = viewerColor ? (botToMove ? t("game.hints.botThinking") : t("game.hints.waitingOpponent")) : "";
   else if (effectiveMode === "observe") hint = t("game.hints.observe");
   else if (effectiveMode === "split") {
     hint = !selection ? t("game.hints.splitSelect") : !splitFirst ? t("game.hints.splitFirst") : t("game.hints.splitSecond");
@@ -554,16 +608,17 @@ export function GamePage() {
   let bannerText = "";
   if (browsing) {
     bannerText = shownPly === 0 ? t("game.banners.start") : t("game.banners.viewing", { ply: shownPly, total });
-  } else if (game.status === "WAITING" && !computer) {
-    bannerText = viewerColor
-      ? game.visibility === "PRIVATE"
-        ? t("game.banners.waitingShare")
-        : t("game.banners.waitingLobby")
-      : t("game.banners.waitingSpectator");
+  } else if (game.status === "WAITING") {
+    if (invitationRole === "invitee") bannerText = t("game.banners.invited", { name: displayName(game.creator) });
+    else if (invitationRole === "outsider") bannerText = t("game.banners.invitationSpectator");
+    else if (invitationRole === "creator") {
+      bannerText = game.invitee ? t("game.banners.waitingInvitee", { name: displayName(game.invitee) }) : t("game.banners.waitingInviteeUnnamed");
+    } else if (viewerColor) bannerText = game.visibility === "PRIVATE" ? t("game.banners.waitingShare") : t("game.banners.waitingLobby");
+    else bannerText = t("game.banners.waitingSpectator");
   } else if (awaitingObservation) {
     bannerText = t("game.banners.observing");
   } else if (botToMove) {
-    bannerText = t("game.banners.computerThinking");
+    bannerText = t("game.banners.botThinking");
   } else if (canAct && !busy) {
     bannerText = snapshot.view.checkProbability > 0 ? t("game.banners.yourMoveCheck") : t("game.banners.yourMove");
   }
@@ -605,10 +660,12 @@ export function GamePage() {
             game={game}
             viewer={user}
             viewerColor={viewerColor}
+            invitationRole={invitationRole}
             busy={busy}
             shareUrl={shareUrl}
             onJoin={onJoin}
             onJoinAsGuest={onJoinAsGuest}
+            onDecline={onDecline}
             onResign={onResign}
             onDraw={onDraw}
           />

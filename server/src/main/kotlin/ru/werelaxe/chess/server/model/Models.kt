@@ -27,8 +27,10 @@ data class GameResult(val winner: Color?, val reason: EndReason)
 
 /**
  * [passwordHash] is null for guests, who cannot log in and exist only through their token, and
- * for the computer player ([isBot]), which never logs in at all. [locale] is the UI language the
- * user chose (`en` or `ru`), null until they pick one.
+ * for bots ([isBot]), which never log in at all. [locale] is the UI language the user chose
+ * (`en` or `ru`), null until they pick one; [displayName] is the optional name shown next to
+ * the username. [botLevel] is the strength of a bot and null for people. [lastSeenAt] is the
+ * time of the last authenticated request, refreshed every few minutes at most.
  */
 data class User(
     val id: Long,
@@ -38,11 +40,22 @@ data class User(
     val isBot: Boolean,
     val createdAt: Instant,
     val locale: String?,
+    val displayName: String?,
+    val botLevel: EngineLevel?,
+    val lastSeenAt: Instant?,
 )
+
+/** The fields of the own profile that `PATCH /api/auth/me` can change. */
+enum class ProfileField {
+    LOCALE,
+    DISPLAY_NAME,
+}
 
 /**
  * A row of the `games` table; the moves live separately and are the only game state.
- * [botLevel] is set for games against the computer, in which the creator is the human.
+ * [inviteeId] is set for an invitation: the only account allowed to join it. [rated] is
+ * whether the result counts for the ratings (forced off by a guest seat); the
+ * `ratingBefore` snapshots are taken when the game becomes ACTIVE.
  */
 data class GameRecord(
     val id: String,
@@ -52,10 +65,13 @@ data class GameRecord(
     val creatorId: Long,
     val whiteId: Long?,
     val blackId: Long?,
+    val inviteeId: Long?,
+    val rated: Boolean,
     val moveCount: Int,
     val result: GameResult?,
     val drawOfferedBy: Color?,
-    val botLevel: EngineLevel?,
+    val whiteRatingBefore: Int?,
+    val blackRatingBefore: Int?,
     val createdAt: Instant,
     val updatedAt: Instant,
     val finishedAt: Instant?,
@@ -66,18 +82,16 @@ data class GameRecord(
         else -> null
     }
 
+    fun seat(color: Color): Long? = if (color == Color.WHITE) whiteId else blackId
+
     fun involves(userId: Long): Boolean = creatorId == userId || colorOf(userId) != null
 
-    /** The computer's color in a computer game: the seat the (human) creator does not hold. */
-    val botColor: Color?
-        get() = if (botLevel == null) null else colorOf(creatorId)?.opposite
+    /** Whose turn it is, judged from the move count alone: every move of either variant passes the turn. */
+    val sideToMove: Color
+        get() = if (moveCount % 2 == 0) Color.WHITE else Color.BLACK
 
-    /**
-     * Whether the computer is on turn, judged from the move count alone: every move of either
-     * variant passes the turn, so an even count means white to move.
-     */
-    val isBotsTurn: Boolean
-        get() = phase == GamePhase.ACTIVE && botColor == (if (moveCount % 2 == 0) Color.WHITE else Color.BLACK)
+    val isInvitation: Boolean
+        get() = inviteeId != null
 }
 
 /** The `filter` query parameter of the public game listing. */
@@ -86,3 +100,46 @@ enum class GameFilter(val phase: GamePhase) {
     ACTIVE(GamePhase.ACTIVE),
     FINISHED(GamePhase.FINISHED),
 }
+
+/** A row of `ratings`: one per user and variant, created by the first rated game. */
+data class Rating(
+    val userId: Long,
+    val kind: GameKind,
+    val rating: Int,
+    val games: Int,
+    val wins: Int,
+    val draws: Int,
+    val losses: Int,
+    val peak: Int,
+    val updatedAt: Instant,
+) {
+    companion object {
+        /** The rating of everybody who has not played a rated game in the variant yet. */
+        const val INITIAL = 1500
+
+        fun initial(userId: Long, kind: GameKind, at: Instant) =
+            Rating(userId, kind, INITIAL, games = 0, wins = 0, draws = 0, losses = 0, peak = INITIAL, updatedAt = at)
+    }
+}
+
+/** A row of `rating_changes`: what a rated game did to one player's rating. */
+data class RatingChange(
+    val gameId: String,
+    val userId: Long,
+    val kind: GameKind,
+    val before: Int,
+    val after: Int,
+    val createdAt: Instant,
+)
+
+/** The rating rows of both seats of a game. */
+data class SeatRatings(val white: Rating, val black: Rating)
+
+/**
+ * Maps the rating rows before a game to the rows after it. The repositories apply it inside
+ * the transaction that finishes the game, so the rows it reads are the ones it replaces.
+ */
+typealias RatingUpdate = (before: SeatRatings) -> SeatRatings
+
+/** A leaderboard row: a player and the rating row of the requested variant. */
+data class RatedPlayer(val user: User, val rating: Rating)

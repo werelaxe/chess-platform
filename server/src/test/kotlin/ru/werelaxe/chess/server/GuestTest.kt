@@ -9,7 +9,7 @@ import kotlinx.coroutines.runBlocking
 import ru.werelaxe.chess.server.dto.ColorChoice
 import ru.werelaxe.chess.server.dto.UserProfile
 import ru.werelaxe.chess.server.model.GamePhase
-import ru.werelaxe.chess.server.repository.memory.InMemoryUserRepository
+import ru.werelaxe.chess.server.repository.memory.InMemoryStore
 import ru.werelaxe.chess.server.service.AuthService
 import ru.werelaxe.chess.server.service.JwtService
 import java.time.Clock
@@ -96,7 +96,8 @@ class GuestTest {
         val random = ScriptedRandom(7_000, 7_000, 9_000)
         val clock = Clock.fixed(Instant.parse("2026-10-07T10:00:00Z"), ZoneOffset.UTC)
         val jwt = JwtService("test-secret", Duration.ofDays(1), clock)
-        val auth = AuthService(InMemoryUserRepository(), jwt, random, clock, bcryptCost = 4)
+        val store = InMemoryStore().repositories()
+        val auth = AuthService(store.users, store.ratings, jwt, random, clock, bcryptCost = 4)
 
         val first = auth.createGuest().user
         val second = auth.createGuest().user

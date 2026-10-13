@@ -35,20 +35,22 @@ import ru.werelaxe.chess.server.dto.ErrorResponse
 import ru.werelaxe.chess.server.dto.GameDto
 import ru.werelaxe.chess.server.dto.GameSummary
 import ru.werelaxe.chess.server.dto.GamesResponse
+import ru.werelaxe.chess.server.dto.InvitationsResponse
 import ru.werelaxe.chess.server.dto.MoveRequest
 import ru.werelaxe.chess.server.dto.MoveResponse
 import ru.werelaxe.chess.server.dto.Opponent
-import ru.werelaxe.chess.server.dto.UpdateProfileRequest
+import ru.werelaxe.chess.server.dto.PlayerProfile
 import ru.werelaxe.chess.server.dto.UserProfile
 import ru.werelaxe.chess.server.dto.UserRef
 import ru.werelaxe.chess.server.model.Visibility
 import ru.werelaxe.chess.server.repository.Repositories
-import ru.werelaxe.chess.server.repository.memory.InMemoryGameRepository
-import ru.werelaxe.chess.server.repository.memory.InMemoryUserRepository
+import ru.werelaxe.chess.server.repository.memory.InMemoryStore
+import ru.werelaxe.chess.server.service.BotRoster
 import ru.werelaxe.chess.server.service.InProcessMoveProvider
 import ru.werelaxe.chess.server.service.MoveProvider
 import java.time.Clock
 import java.time.Instant
+import java.time.ZoneId
 import java.time.ZoneOffset
 import kotlin.random.Random
 import kotlin.test.assertEquals
@@ -60,40 +62,75 @@ import kotlin.time.TimeSource
 
 const val TEST_PASSWORD = "correct-horse"
 
-val TEST_CONFIG = AppConfig(jwtSecret = "test-secret", bcryptCost = 4)
+/** Matchmaking is off: the tests that need it drive the matchmaker's tick by hand. */
+val TEST_CONFIG = AppConfig(jwtSecret = "test-secret", bcryptCost = 4, botMatchmaking = false)
+
+val TEST_START: Instant = Instant.parse("2026-10-07T10:00:00Z")
+
+/** A clock the tests move forward by hand. */
+class MutableClock(@Volatile private var now: Instant) : Clock() {
+    override fun getZone(): ZoneId = ZoneOffset.UTC
+
+    override fun withZone(zone: ZoneId): Clock = this
+
+    override fun instant(): Instant = now
+
+    fun advance(duration: java.time.Duration) {
+        now = now.plus(duration)
+    }
+}
+
+/** The username of a roster bot of [level]. */
+fun botNamed(level: EngineLevel): String = BotRoster.specs.first { it.level == level && !it.legacy }.username
 
 /**
- * Runs [block] against a server wired with fresh in-memory repositories and no database. The
- * computer's moves come from [moveProvider]: by default the in-process engine at the easy
- * level whatever level a game asks for, with a fresh seeded random for every move so that its
- * choices are reproducible. The computer replies after [botPause].
+ * Runs [block] against a server wired with in-memory repositories and no database: fresh ones
+ * unless the test passes [repositories] it filled beforehand (rows that must exist when the
+ * application starts, or decorated repositories). The bots' moves come from [moveProvider]: by
+ * default the in-process engine at the easy level whatever level a game asks for, with a fresh
+ * seeded random for every move so that its choices are reproducible. A bot replies after
+ * [botPause], and two bots play at [botVsBotPause].
  */
 fun serverTest(
     seed: Int = 42,
+    config: AppConfig = TEST_CONFIG,
     botPause: Duration = 10.milliseconds,
+    botVsBotPause: Duration = 10.milliseconds,
     moveProvider: MoveProvider = InProcessMoveProvider({ ChessEngine(EngineLevel.EASY, Random(seed)) }),
+    random: Random = Random(seed),
+    repositories: Repositories = InMemoryStore().repositories(),
     block: suspend TestContext.() -> Unit,
 ) = testApplication {
-    val repositories = Repositories(InMemoryUserRepository(), InMemoryGameRepository())
-    val clock = Clock.fixed(Instant.parse("2026-10-07T10:00:00Z"), ZoneOffset.UTC)
+    val clock = MutableClock(TEST_START)
+    lateinit var services: AppServices
     application {
-        module(
-            TEST_CONFIG,
+        services = module(
+            config,
             repositories,
-            random = Random(seed),
+            random = random,
             clock = clock,
             moveProvider = moveProvider,
             botPause = botPause,
+            botVsBotPause = botVsBotPause,
         )
     }
     val client = createClient {
         install(ContentNegotiation) { json(ChessJson.json) }
         install(WebSockets)
     }
-    TestContext(client, repositories).block()
+    // The application starts lazily, on the first request; the health check brings the services up.
+    assertEquals(HttpStatusCode.OK, client.get("/api/health").status)
+    TestContext(client, repositories, services, clock, random).block()
 }
 
-class TestContext(val client: HttpClient, val repositories: Repositories) {
+class TestContext(
+    val client: HttpClient,
+    val repositories: Repositories,
+    val services: AppServices,
+    val clock: MutableClock,
+    /** The application's random, for the tests that script it. */
+    val random: Random,
+) {
     suspend fun register(username: String, password: String = TEST_PASSWORD): HttpResponse =
         client.post("/api/auth/register") {
             contentType(ContentType.Application.Json)
@@ -128,24 +165,32 @@ class TestContext(val client: HttpClient, val repositories: Repositories) {
         return response.body()
     }
 
-    suspend fun setLocale(token: String, locale: String?): HttpResponse =
+    /** `PATCH /api/auth/me` with a raw JSON body. */
+    suspend fun patchMe(token: String, body: String): HttpResponse =
         client.patch("/api/auth/me") {
             bearerAuth(token)
             contentType(ContentType.Application.Json)
-            setBody(UpdateProfileRequest(locale))
+            setBody(body)
         }
+
+    suspend fun setLocale(token: String, locale: String?): HttpResponse =
+        patchMe(token, """{"locale":${locale?.let { "\"$it\"" } ?: "null"}}""")
+
+    suspend fun setDisplayName(token: String, name: String?): HttpResponse =
+        patchMe(token, """{"displayName":${name?.let { "\"$it\"" } ?: "null"}}""")
 
     suspend fun createGameResponse(
         token: String,
         kind: GameKind = GameKind.CLASSIC,
         visibility: Visibility = Visibility.PUBLIC,
         color: ColorChoice = ColorChoice.WHITE,
-        opponent: Opponent = Opponent.HUMAN,
-        level: EngineLevel? = null,
+        rated: Boolean = true,
+        opponent: Opponent = Opponent.OPEN,
+        opponentUsername: String? = null,
     ): HttpResponse = client.post("/api/games") {
         bearerAuth(token)
         contentType(ContentType.Application.Json)
-        setBody(CreateGameRequest(kind, visibility, color, opponent, level))
+        setBody(CreateGameRequest(kind, visibility, color, rated, opponent, opponentUsername))
     }
 
     suspend fun createGame(
@@ -153,28 +198,52 @@ class TestContext(val client: HttpClient, val repositories: Repositories) {
         kind: GameKind = GameKind.CLASSIC,
         visibility: Visibility = Visibility.PUBLIC,
         color: ColorChoice = ColorChoice.WHITE,
-        opponent: Opponent = Opponent.HUMAN,
-        level: EngineLevel? = null,
+        rated: Boolean = true,
+        opponent: Opponent = Opponent.OPEN,
+        opponentUsername: String? = null,
     ): GameDto {
-        val response = createGameResponse(token, kind, visibility, color, opponent, level)
+        val response = createGameResponse(token, kind, visibility, color, rated, opponent, opponentUsername)
         assertEquals(HttpStatusCode.Created, response.status, response.bodyAsString())
         return response.body()
     }
 
-    /** Creates a game against the computer, in which the caller plays [color]. */
-    suspend fun computerGame(
+    /** Invites [opponent] to a game in which the caller plays [color]. */
+    suspend fun invite(
+        token: String,
+        opponent: String,
+        kind: GameKind = GameKind.CLASSIC,
+        color: ColorChoice = ColorChoice.WHITE,
+        visibility: Visibility = Visibility.PUBLIC,
+        rated: Boolean = true,
+    ): GameDto = createGame(token, kind, visibility, color, rated, Opponent.USER, opponent)
+
+    /** Creates a game against a roster bot of [level], in which the caller plays [color]; it is active at once. */
+    suspend fun botGame(
         token: String,
         kind: GameKind = GameKind.CLASSIC,
         color: ColorChoice = ColorChoice.WHITE,
         level: EngineLevel = EngineLevel.EASY,
-    ): GameDto = createGame(token, kind, color = color, opponent = Opponent.COMPUTER, level = level)
+        visibility: Visibility = Visibility.PUBLIC,
+        rated: Boolean = true,
+    ): GameDto = invite(token, botNamed(level), kind, color, visibility, rated)
 
     suspend fun myGames(token: String): List<GameSummary> =
         client.get("/api/games/mine") { bearerAuth(token) }.body<GamesResponse>().games
 
+    suspend fun invitations(token: String): InvitationsResponse =
+        client.get("/api/invitations") { bearerAuth(token) }.body()
+
+    suspend fun profileResponse(username: String): HttpResponse = client.get("/api/players/$username")
+
+    suspend fun profile(username: String): PlayerProfile {
+        val response = profileResponse(username)
+        assertEquals(HttpStatusCode.OK, response.status, response.bodyAsString())
+        return response.body()
+    }
+
     /**
      * Waits until the game has at least [count] moves. Polls the caller's listing, which never
-     * wakes the computer, so that only the trigger under test can have made it move.
+     * wakes a bot, so that only the trigger under test can have made it move.
      */
     suspend fun awaitMoves(token: String, id: String, count: Int): GameSummary {
         val deadline = TimeSource.Monotonic.markNow() + 10.seconds
@@ -182,6 +251,17 @@ class TestContext(val client: HttpClient, val repositories: Repositories) {
             val summary = myGames(token).firstOrNull { it.id == id } ?: fail("Game $id is not listed")
             if (summary.moveCount >= count) return summary
             if (deadline.hasPassedNow()) fail("Game $id has ${summary.moveCount} moves, expected $count")
+            delay(25)
+        }
+    }
+
+    /** Like [awaitMoves] but through the repository, for games the test's users do not take part in. */
+    suspend fun awaitStoredMoves(id: String, count: Int): Int {
+        val deadline = TimeSource.Monotonic.markNow() + 10.seconds
+        while (true) {
+            val moves = repositories.games.findById(id)?.moveCount ?: fail("Game $id is gone")
+            if (moves >= count) return moves
+            if (deadline.hasPassedNow()) fail("Game $id has $moves moves, expected $count")
             delay(25)
         }
     }
@@ -195,9 +275,12 @@ class TestContext(val client: HttpClient, val repositories: Repositories) {
         return response.body()
     }
 
+    suspend fun decline(token: String, id: String): HttpResponse =
+        client.post("/api/games/$id/decline") { bearerAuth(token) }
+
     /** Creates a game as [white] and joins it as [black]; returns the active game. */
-    suspend fun activeGame(white: String, black: String, kind: GameKind = GameKind.CLASSIC): GameDto {
-        val created = createGame(white, kind = kind, color = ColorChoice.WHITE)
+    suspend fun activeGame(white: String, black: String, kind: GameKind = GameKind.CLASSIC, rated: Boolean = true): GameDto {
+        val created = createGame(white, kind = kind, color = ColorChoice.WHITE, rated = rated)
         return join(black, created.id)
     }
 
@@ -215,6 +298,14 @@ class TestContext(val client: HttpClient, val repositories: Repositories) {
     }
 
     suspend fun move(token: String, id: String, uci: String): MoveResponse = move(token, id, normal(uci))
+
+    /** Plays the fool's mate: black wins on the fourth ply. */
+    suspend fun foolsMate(white: String, black: String, id: String) {
+        move(white, id, "f2f3")
+        move(black, id, "e7e5")
+        move(white, id, "g2g4")
+        move(black, id, "d8h4")
+    }
 
     suspend fun resign(token: String, id: String): HttpResponse =
         client.post("/api/games/$id/resign") { bearerAuth(token) }
@@ -253,5 +344,5 @@ fun split(from: String, first: String, second: String): GameMove =
 
 fun observe(square: String): GameMove = GameMove.Observe(Square.parse(square))
 
-/** The own profile as other players see it inside game DTOs. */
-fun UserProfile.ref(): UserRef = UserRef(id, username, guest, bot)
+/** The own profile as other players see it inside game DTOs, with [rating] in the game's kind. */
+fun UserProfile.ref(rating: Int? = null): UserRef = UserRef(id, username, name, guest, bot, botLevel, rating)

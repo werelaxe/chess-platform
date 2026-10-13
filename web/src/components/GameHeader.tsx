@@ -1,35 +1,51 @@
 import { useTranslation } from "react-i18next";
-import type { BotLevel, Color, GameSummary, UserRef } from "../api/types";
+import type { Color, GameDto, RatingChange, UserRef } from "../api/types";
 import type { SocketState } from "../api/ws";
 import type { GameSnapshot } from "../core/game";
-import { botColor } from "../core/computer";
+import { displayName } from "../core/players";
 import { formatResult } from "../core/notation";
-import { KindPill, LifecyclePill, Username, VisibilityPill } from "./ui";
+import { endedWithoutRatingChange, formatRatingChange, formatRatingDelta } from "../core/ratings";
+import { KindPill, LifecyclePill, RatedPill, Rating, Username, VisibilityPill } from "./ui";
 
-function PlayerRow({
+function PlayerCard({
   color,
   player,
   viewer,
   toMove,
   creator,
-  botLevel,
+  change,
 }: {
   color: Color;
   player: UserRef | null;
   viewer: UserRef | null;
   toMove: boolean;
   creator: UserRef;
-  botLevel?: BotLevel | null;
+  /** The rating change of this seat once a rated game is over. */
+  change: RatingChange | null;
 }) {
   const { t } = useTranslation();
   const isViewer = player !== null && viewer !== null && player.id === viewer.id;
+  const showUsername = player !== null && displayName(player) !== player.username;
+  const delta = change ? change.after - change.before : 0;
   return (
     <div className={`player player--${color.toLowerCase()}${toMove ? " player--to-move" : ""}`}>
       <span className={`player__dot player__dot--${color.toLowerCase()}`} aria-hidden="true" />
       {player ? (
-        <span className="player__name">
-          <Username user={player} botLevel={botLevel} />
-          {isViewer ? <span className="faint"> {t("common.you")}</span> : null}
+        <span className="player__body">
+          <span className="player__name">
+            <Username user={player} />
+            {isViewer ? <span className="faint"> {t("common.you")}</span> : null}
+          </span>
+          <span className="player__sub">
+            {showUsername ? <span className="player__username">{player.username}</span> : null}
+            {change ? (
+              <span className={`player__change${delta > 0 ? " is-up" : delta < 0 ? " is-down" : ""}`} title={t("ratings.changeTitle")}>
+                {formatRatingChange(change)}
+              </span>
+            ) : player.guest ? null : (
+              <Rating value={player.rating} title={t("ratings.ratingTitle")} />
+            )}
+          </span>
         </span>
       ) : (
         <span className="player__name player__name--empty">{t("header.waitingPlayer")}</span>
@@ -47,7 +63,7 @@ export function GameHeader({
   viewer,
   socketState,
 }: {
-  game: GameSummary;
+  game: GameDto;
   snapshot: GameSnapshot | null;
   viewer: UserRef | null;
   socketState: SocketState;
@@ -62,45 +78,49 @@ export function GameHeader({
         : null;
   const sideToMove = snapshot?.sideToMove ?? "WHITE";
   const live = game.status === "ACTIVE" && !finished;
-  // Computer games start active with both seats taken, so they never wait for an opponent.
-  const waiting = game.status === "WAITING" && botColor(game) === null;
+  const waiting = game.status === "WAITING";
+  const invitee = game.invitee ?? null;
+  const changes = finished ? game.ratingChanges : null;
+  // The creator's cancel and the invitee's refusal end an invitation the same way; only the server tells them apart.
+  const declined = result?.reason === "ABANDONMENT" && game.declined === true && invitee !== null;
 
   return (
     <section className="panel gh">
       <div className="gh__meta">
         <KindPill kind={game.kind} />
         <LifecyclePill status={finished ? "FINISHED" : game.status} />
+        <RatedPill rated={game.rated} />
         <VisibilityPill visibility={game.visibility} />
         <span className={`conn conn--${socketState}`} title={t("header.socketTitle")}>
           {t(`header.socket.${socketState}`)}
         </span>
       </div>
       <div className="players">
-        <PlayerRow
+        <PlayerCard
           color="WHITE"
           player={game.white}
           viewer={viewer}
           toMove={live && sideToMove === "WHITE"}
           creator={game.creator}
-          botLevel={game.botLevel}
+          change={changes?.white ?? null}
         />
-        <PlayerRow
+        <PlayerCard
           color="BLACK"
           player={game.black}
           viewer={viewer}
           toMove={live && sideToMove === "BLACK"}
           creator={game.creator}
-          botLevel={game.botLevel}
+          change={changes?.black ?? null}
         />
       </div>
       <div className="gh__status">
         {result ? (
           <div className={`gh__result${result.winner === null ? " gh__result--draw" : ""}`}>
-            {formatResult(result.winner, result.reason)}
+            {declined ? t("header.invitationDeclined", { name: displayName(invitee) }) : formatResult(result.winner, result.reason)}
           </div>
         ) : waiting ? (
           <div className="gh__line">
-            <span>{t("header.waitingOpponent")}</span>
+            <span>{invitee ? t("header.waitingInvitee", { name: displayName(invitee) }) : t("header.waitingOpponent")}</span>
           </div>
         ) : (
           <div className="gh__line">
@@ -114,6 +134,18 @@ export function GameHeader({
             ) : null}
           </div>
         )}
+        {changes ? (
+          <div className="gh__line gh__changes">
+            <span>{t("header.ratingChanges")}</span>
+            <span className="mono">
+              {t("header.whiteShort")} {formatRatingDelta(changes.white)} · {t("header.blackShort")} {formatRatingDelta(changes.black)}
+            </span>
+          </div>
+        ) : endedWithoutRatingChange(game) ? (
+          <div className="gh__line" style={{ marginTop: 8 }}>
+            <span className="faint small">{t("header.unratedEnd")}</span>
+          </div>
+        ) : null}
         {game.kind === "QUANTUM" && snapshot ? (
           <div className="gh__line" style={{ marginTop: 8 }}>
             <span className="gh__universes">

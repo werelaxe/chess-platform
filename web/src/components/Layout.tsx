@@ -4,9 +4,11 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { api, isApiError } from "../api/client";
 import { BRAND_NAME } from "../brand";
 import { LOCALES, currentLocale } from "../i18n";
+import { displayName, hasProfile } from "../core/players";
 import { useAuthStore } from "../store/auth";
+import { useInvitationsPolling, useInvitationsStore } from "../store/invitations";
 import { changeLocale, startSession } from "../store/session";
-import { Username } from "./ui";
+import { UserTag, profilePath } from "./ui";
 
 function navClass({ isActive }: { isActive: boolean }): string {
   return `nav__link${isActive ? " is-active" : ""}`;
@@ -34,12 +36,20 @@ function LanguageSwitcher() {
   );
 }
 
+/** The pending incoming invitations, as a count on the navigation link. */
+function InvitationsBadge() {
+  const count = useInvitationsStore((state) => state.incoming.length);
+  if (count === 0) return null;
+  return <span className="nav__badge">{count > 99 ? "99+" : count}</span>;
+}
+
 export function Layout() {
   const { t } = useTranslation();
   const { token, user, clearSession } = useAuthStore();
   const [open, setOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
+  useInvitationsPolling();
 
   // Close the mobile menu whenever the route changes.
   useEffect(() => setOpen(false), [location.pathname]);
@@ -81,10 +91,19 @@ export function Layout() {
               <NavLink to="/" end className={navClass}>
                 {t("nav.lobby")}
               </NavLink>
+              <NavLink to="/players" end className={navClass}>
+                {t("nav.players")}
+              </NavLink>
               {user ? (
-                <NavLink to="/games/mine" className={navClass}>
-                  {t("nav.myGames")}
-                </NavLink>
+                <>
+                  <NavLink to="/games/mine" className={navClass}>
+                    {t("nav.myGames")}
+                  </NavLink>
+                  <NavLink to="/invitations" className={navClass}>
+                    {t("nav.invitations")}
+                    <InvitationsBadge />
+                  </NavLink>
+                </>
               ) : null}
               <NavLink to="/rules" className={navClass}>
                 {t("nav.rules")}
@@ -99,8 +118,18 @@ export function Layout() {
               {user ? (
                 <>
                   <span className="nav__username">
-                    <Username user={user} />
+                    {hasProfile(user) ? (
+                      <Link to={profilePath(user.username)} title={user.username}>
+                        {displayName(user)}
+                      </Link>
+                    ) : (
+                      displayName(user)
+                    )}
+                    <UserTag user={user} />
                   </span>
+                  <Link to="/settings" className="btn btn--ghost btn--small">
+                    {t("nav.settings")}
+                  </Link>
                   {user.guest ? (
                     <Link to="/register" className="nav__hint">
                       <span className="nav__hint-long">{t("nav.registerToKeep")}</span>

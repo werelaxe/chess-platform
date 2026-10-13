@@ -12,15 +12,23 @@
     "notFound": "Page not found - {{brand}}",
     "game": "{{white}} vs {{black}} - {{variant}}",
     "gameLoading": "Game - {{brand}}",
-    "gameUnavailable": "Game unavailable - {{brand}}"
+    "gameUnavailable": "Game unavailable - {{brand}}",
+    "players": "Players - {{brand}}",
+    "profile": "{{name}} - {{brand}}",
+    "profileLoading": "Player - {{brand}}",
+    "invitations": "Invitations - {{brand}}",
+    "settings": "Settings - {{brand}}"
   },
   "nav": {
     "home": "{{brand}} home",
     "main": "Main",
     "lobby": "Lobby",
+    "players": "Players",
     "myGames": "My games",
+    "invitations": "Invitations",
     "rules": "Rules",
     "about": "About",
+    "settings": "Settings",
     "registerToKeep": "Register to keep your games",
     "register": "Register",
     "logIn": "Log in",
@@ -43,19 +51,14 @@
   },
   "user": {
     "guestTag": "guest",
-    "botTag": "bot",
-    "computer": "Computer",
-    "computerWithLevel": "Computer · {{level}}"
+    "botTag": "bot"
   },
   "levels": {
+    "NOVICE": "Novice",
     "EASY": "Easy",
     "MEDIUM": "Medium",
-    "HARD": "Hard"
-  },
-  "levelHints": {
-    "EASY": "A shallow search with some randomness: forgiving, good for learning the moves.",
-    "MEDIUM": "Thinks a few moves ahead.",
-    "HARD": "Takes its full thinking time on every move."
+    "HARD": "Hard",
+    "EXPERT": "Expert"
   },
   "kinds": {
     "CLASSIC": "Classic",
@@ -137,6 +140,7 @@
       "rate_limited": "Too many attempts. Wait a minute and try again.",
       "own_game": "You cannot join your own game.",
       "game_full": "This game is no longer open for joining.",
+      "not_invited": "This invitation is for another player.",
       "not_a_player": "You are not a player of this game.",
       "not_your_turn": "It is not your turn.",
       "illegal_move": "Illegal move",
@@ -163,21 +167,22 @@
   },
   "lobby": {
     "heroTitle": "Chess, <em>in every universe</em> at once.",
-    "heroLede": "Play classic chess, or quantum chess where a single piece can stand on two squares until someone looks. Pick an open game below, create your own, or play against the computer.",
+    "heroLede": "Play classic chess, or quantum chess where a single piece can stand on two squares until someone looks. Pick an open game below, create your own, challenge a bot or invite a player.",
     "variants": "variants",
     "tabs": {
       "open": "Open games",
       "active": "Live games"
     },
     "empty": {
-      "open": "No open games right now. Create one and share the link, play the computer, or wait a moment.",
+      "open": "No open games right now. Create one and share the link, challenge a bot, or wait a moment: bots open games of their own now and then.",
       "active": "Nobody is playing in public at the moment."
     },
     "loading": "Loading games"
   },
   "list": {
     "openSeat": "open seat",
-    "vs": "vs"
+    "vs": "vs",
+    "openGame": "Open the game"
   },
   "create": {
     "title": "New game",
@@ -187,22 +192,39 @@
     },
     "variant": "Variant",
     "opponent": "Opponent",
-    "human": "Human",
-    "computer": "Computer",
-    "level": "Level",
+    "open": "Open",
+    "bot": "Bot",
+    "player": "Player",
+    "openHint": "Anyone may take the other seat; bots join games that have waited a while.",
+    "chooseBot": "Choose a bot",
+    "loadingBots": "Loading the bots",
+    "noBots": "No bots are available right now.",
+    "playerUsername": "Player to invite",
+    "playerPlaceholder": "Username",
+    "playerHint": "Start typing to search and pick a player; they accept or decline the invitation.",
+    "playerPick": "Pick a player from the suggestions.",
+    "playerNoMatch": "No player has that username.",
+    "playerSelf": "You cannot invite yourself.",
+    "searching": "Searching",
     "yourColor": "Your color",
     "color": "Color",
     "white": "White",
     "random": "Random",
     "black": "Black",
-    "computerUnlisted": "Computer games are unlisted: only people with the link can watch.",
+    "rated": "Rated game",
+    "ratedHint": "The result changes both ratings once both sides have moved.",
+    "casualHint": "A casual game: ratings stay as they are.",
+    "ratedGuestHint": "Guests play casual games only. Register to play rated games.",
     "visibility": "Visibility",
     "public": "Public",
     "private": "Private",
     "publicHint": "Listed in the lobby for anyone to join.",
     "privateHint": "Only people with the link can join or watch.",
+    "publicStartHint": "Shown in the lobby's live games once the game starts; anyone may watch.",
+    "privateStartHint": "Only the players and people with the link can watch.",
     "creating": "Creating",
     "submit": "Create game",
+    "submitInvite": "Send invitation",
     "logIn": "Log in",
     "continueAsGuest": "Continue as guest",
     "noAccount": "No account yet? <register>Register</register>, or continue as a guest to create this game right away."
@@ -318,13 +340,14 @@
       "joinAsGuest": "Joining as guest failed: {{message}}",
       "cancel": "Cancelling failed: {{message}}",
       "resign": "Resigning failed: {{message}}",
-      "draw": "Draw request failed: {{message}}"
+      "draw": "Draw request failed: {{message}}",
+      "decline": "Declining failed: {{message}}"
     },
     "hints": {
       "browsing": "An earlier position is shown. Return to the live position to move.",
       "measuring": "Measuring the square, waiting for the outcome.",
       "sending": "Sending your move.",
-      "computerThinking": "Computer is thinking.",
+      "botThinking": "The bot is thinking.",
       "waitingOpponent": "Waiting for your opponent.",
       "observe": "Click an outlined square to measure it. The outcome is random and costs your turn.",
       "splitSelect": "Select a piece to split.",
@@ -339,8 +362,12 @@
       "waitingShare": "Waiting for an opponent. Share the link to invite someone.",
       "waitingLobby": "Waiting for an opponent to join from the lobby.",
       "waitingSpectator": "This game is waiting for a second player.",
+      "waitingInvitee": "Waiting for {{name}} to accept the invitation.",
+      "waitingInviteeUnnamed": "Waiting for the invited player to accept.",
+      "invited": "{{name}} invites you to this game. Accept to take the open seat.",
+      "invitationSpectator": "This game is an invitation to one player. Only they can join.",
       "observing": "Observing, waiting for the outcome from the server.",
-      "computerThinking": "Computer is thinking…",
+      "botThinking": "The bot is thinking…",
       "yourMove": "Your move.",
       "yourMoveCheck": "Your move, you are in check."
     },
@@ -363,7 +390,13 @@
     "check": "check",
     "checkProbability": "check ({{percent}}%)",
     "whiteOffersDraw": "White offers a draw.",
-    "blackOffersDraw": "Black offers a draw."
+    "blackOffersDraw": "Black offers a draw.",
+    "waitingInvitee": "Waiting for {{name}} to accept.",
+    "invitationDeclined": "{{name}} declined the invitation.",
+    "ratingChanges": "Rating changes",
+    "whiteShort": "White",
+    "blackShort": "Black",
+    "unratedEnd": "No rating change: the game ended before both sides had moved."
   },
   "controls": {
     "confirmCancel": "Cancel this game?",
@@ -382,8 +415,12 @@
     "gameLink": "Game link",
     "copy": "Copy",
     "copied": "Copied",
-    "computerUnlisted": "Computer games are unlisted: only people with the link can watch.",
-    "privateGame": "This game is private: only people with the link can find it."
+    "privateGame": "This game is private: only people with the link can find it.",
+    "cancelInvitation": "Cancel invitation",
+    "acceptInvitation": "Accept",
+    "declineInvitation": "Decline",
+    "invitationOnly": "This game is waiting for the invited player.",
+    "signInToAccept": "Sign in to accept"
   },
   "modes": {
     "title": "Quantum move",
@@ -413,5 +450,97 @@
   },
   "board": {
     "label": "Chess board"
+  },
+  "ratings": {
+    "none": "unrated",
+    "ratingTitle": "Rating in this variant",
+    "changeTitle": "Rating before and after this game"
+  },
+  "rated": {
+    "rated": "Rated",
+    "casual": "Casual",
+    "short": "Rated"
+  },
+  "players": {
+    "eyebrow": "Leaderboard",
+    "title": "Players",
+    "lede": "Everyone with a rated game, best first. Ratings are kept separately for the two variants.",
+    "rank": "#",
+    "player": "Player",
+    "rating": "Rating",
+    "games": "Games",
+    "record": "W / D / L",
+    "recordTitle": "Wins, draws and losses in rated games",
+    "search": "Search players",
+    "searchPlaceholder": "Search by name",
+    "searching": "Searching",
+    "loading": "Loading the leaderboard",
+    "emptyLeaderboard": "Nobody has played a rated game in this variant yet.",
+    "emptySearch": "No player matches that name."
+  },
+  "profile": {
+    "eyebrow": "Player",
+    "eyebrowBot": "Bot",
+    "memberSince": "Member since {{date}}",
+    "lastSeen": "last seen {{when}}",
+    "games": "Rated games",
+    "record": "W / D / L",
+    "peak": "Peak",
+    "unrated": "No rated games yet",
+    "recentGames": "Recent games",
+    "noGames": "No games yet.",
+    "yours": {
+      "title": "This is you",
+      "lede": "Change your display name or language in the settings."
+    },
+    "invite": {
+      "title": "Invite to a game",
+      "lede": "{{name}} will see the invitation and can accept or decline it.",
+      "ledeBot": "{{name}} accepts at once; the game starts right away.",
+      "submit": "Send invitation",
+      "signIn": "Sign in to invite this player to a game."
+    },
+    "loading": "Loading the player",
+    "notFound": "Player not found",
+    "notFoundLede": "There is no player named {{username}}. Guests have no profile page.",
+    "unavailable": "Player unavailable",
+    "backToPlayers": "Back to the players"
+  },
+  "invitations": {
+    "eyebrow": "Challenges",
+    "title": "Invitations",
+    "lede": "Games other players invited you to, and the ones you are waiting on. The list refreshes by itself.",
+    "loading": "Loading invitations",
+    "incoming": "Incoming",
+    "outgoing": "Outgoing",
+    "noIncoming": "Nobody has invited you to a game at the moment.",
+    "noOutgoing": "You are not waiting on anyone. Invite a player from their profile or the lobby.",
+    "from": "From",
+    "to": "To",
+    "youPlayWhite": "you play white",
+    "youPlayBlack": "you play black",
+    "view": "View"
+  },
+  "settings": {
+    "title": "Settings",
+    "lede": "How you appear to other players and the language of the interface.",
+    "save": "Save",
+    "saving": "Saving",
+    "displayName": {
+      "title": "Display name",
+      "lede": "Shown instead of your username in games and on the leaderboard; your username stays as it is.",
+      "label": "Display name",
+      "hint": "Up to {{max}} characters. Leave empty to show your username.",
+      "saved": "Display name saved.",
+      "clear": "Clear"
+    },
+    "language": {
+      "title": "Language",
+      "lede": "Applies at once and is remembered on your account.",
+      "names": {
+        "en": "English",
+        "ru": "Russian"
+      }
+    }
   }
 }

@@ -161,6 +161,14 @@ replayed games and the WebSocket subscriber registry; PostgreSQL is the source o
 | `BOT_PARALLELISM` | `2` | concurrent in-process searches (fallback only) |
 | `BOT_REMOTE_CONCURRENCY` | `64` | concurrent requests to the engine service |
 | `GAME_IDLE_MINUTES` | `30` | idle time after which a cached game is dropped from memory |
+| `BOT_VS_BOT_PAUSE_SECONDS` | `4` | pace of a game between two bots (section 2.10) |
+| `BOT_MATCHMAKING` | `true` | whether the bots keep the lobby alive (section 2.10); `false` switches the loop off |
+| `BOT_TICK_MIN_MINUTES` / `BOT_TICK_MAX_MINUTES` | `3` / `10` | pause between matchmaking ticks (the upper bound is raised to the lower one if set below it) |
+| `BOT_OPEN_GAMES_TARGET` | `2` | public open games the bots keep in the lobby (0 switches this off) |
+| `BOT_JOIN_AFTER_MINUTES` | `8` | how long an open game waits before a bot may join it |
+| `BOT_INVITATION_TTL_MINUTES` | `60` | lifetime of a bot's invitation to a human |
+| `BOT_MAX_ACTIVE_GAMES` | `6` | games in progress per bot above which it sits matchmaking out |
+| `OPEN_GAME_TTL_HOURS` | `24` | age after which a public open game nobody joined is deleted by the matchmaking loop, whoever created it (section 2.10) |
 
 Flyway migrations in `server/src/main/resources/db/migration` run at startup.
 
@@ -169,13 +177,19 @@ Flyway migrations in `server/src/main/resources/db/migration` run at startup.
 ```sql
 users(id BIGSERIAL PK, username VARCHAR(20), username_lower VARCHAR(20) UNIQUE,
       password_hash TEXT NULL, is_guest BOOLEAN, is_bot BOOLEAN, locale VARCHAR(8) NULL,
+      display_name VARCHAR(40) NULL, bot_level VARCHAR(8) NULL, last_seen_at TIMESTAMPTZ NULL,
       created_at TIMESTAMPTZ)
 games(id VARCHAR(16) PK, kind VARCHAR(16), visibility VARCHAR(16), status VARCHAR(16),
       creator_id BIGINT FK users, white_id BIGINT FK users NULL, black_id BIGINT FK users NULL,
+      invitee_id BIGINT FK users NULL, rated BOOLEAN,
       move_count INT, result_winner VARCHAR(8) NULL, result_reason VARCHAR(32) NULL,
-      draw_offered_by VARCHAR(8) NULL, bot_level VARCHAR(8) NULL,
+      draw_offered_by VARCHAR(8) NULL, white_rating_before INT NULL, black_rating_before INT NULL,
       created_at, updated_at, finished_at TIMESTAMPTZ NULL)
 moves(game_id FK games ON DELETE CASCADE, ply INT, move JSONB, created_at TIMESTAMPTZ, PK(game_id, ply))
+ratings(user_id FK users, kind VARCHAR(16), rating INT, games INT, wins INT, draws INT, losses INT,
+        peak INT, updated_at TIMESTAMPTZ, PK(user_id, kind))
+rating_changes(id BIGSERIAL PK, game_id FK games ON DELETE CASCADE, user_id FK users, kind VARCHAR(16),
+               rating_before INT, rating_after INT, created_at TIMESTAMPTZ)
 ```
 
 `games.status` is `WAITING` (one player, open for joining), `ACTIVE` or `FINISHED`.
@@ -189,13 +203,23 @@ Guests are ordinary `users` rows named `guest-NNNNNN` (six random digits 100000�
 again on collision) with `is_guest = true` and no `password_hash`; the token issued at creation
 is the only way to act as one. The prefix `guest-` is reserved (case-insensitively): registration
 rejects such names with 400 `validation`, and logging in with one fails with 401
-`invalid_credentials` because the row has no password.
+`invalid_credentials` because the row has no password. The names `leaderboard`, `me` and `bots`
+are reserved the same way (case-insensitively, 400 `validation`): they are literal path
+segments under `/api/players` and `/api/auth`, so a profile so named could never be reached.
 
-The computer is the `users` row named `computer` with `is_bot = true` and no password, created
-at startup when missing (the server refuses to start if a regular account holds the name). It
-cannot log in, and registering the name fails with 409 `username_taken` like any taken name.
-`games.bot_level` (`EASY`, `MEDIUM`, `HARD`) marks a game against the computer; in such a game
-the creator is the human and the computer holds the other seat.
+Bots are `users` rows with `is_bot = true`, a `bot_level` and no password (section 2.10);
+they cannot log in and their names cannot be registered. `users.display_name` is the optional
+name shown next to the username (1–40 characters, set through `PATCH /api/auth/me`);
+`users.last_seen_at` is refreshed by authenticated requests at most once per five minutes.
+
+Ratings live in `ratings(user_id FK users, kind, rating INT, games INT, wins INT, draws INT,
+losses INT, peak INT, updated_at, PK(user_id, kind))` and every change is recorded in
+`rating_changes(id BIGSERIAL PK, game_id FK games, user_id FK users, kind, rating_before INT,
+rating_after INT, created_at)`. `games` gains `rated BOOLEAN NOT NULL DEFAULT FALSE`,
+`invitee_id BIGINT FK users NULL` (the only account allowed to join a WAITING game created
+by invitation) and `white_rating_before` / `black_rating_before INT NULL` (snapshots taken
+when the game becomes ACTIVE). The legacy `games.bot_level` column is dropped; the level of a
+bot game is the `bot_level` of the bot seat.
 
 ### 2.3 HTTP API
 
@@ -207,23 +231,29 @@ the server answers 429 `rate_limited`.
 
 ```
 POST /api/auth/register   {username, password}        -> 201 {token, user}     409 username_taken;
-                                                                                 400 validation for guest-* names
+                                                                                 400 validation for guest-* and the
+                                                                                 reserved names (section 2.2)
 POST /api/auth/login      {username, password}        -> 200 {token, user}     401 on bad credentials or a guest name
 POST /api/auth/guest      (no body)                    -> 201 {token, user}     user.guest = true
 GET  /api/auth/me                                      -> 200 UserProfile      (auth)
-PATCH /api/auth/me        {locale: "en"|"ru"|null}     -> 200 UserProfile      (auth, guests too; 400 validation for
-                                                                                 any other value or a missing field)
+PATCH /api/auth/me        {locale?, displayName?}      -> 200 UserProfile      (auth, guests too; a missing field is
+                                                                                 left alone, null clears it; 400 validation
+                                                                                 for a bad value or an empty patch)
 
-POST /api/games           {kind, visibility, color, opponent, level} -> 201 GameDto  (auth)
+POST /api/games           {kind, visibility, color, rated, opponent, opponentUsername} -> 201 GameDto  (auth)
                             kind: CLASSIC|QUANTUM, visibility: PUBLIC|PRIVATE, color: WHITE|BLACK|RANDOM,
-                            opponent: HUMAN (default) | COMPUTER, level: EASY|MEDIUM|HARD
-                            (required with COMPUTER: 400 validation without it; ignored with HUMAN)
+                            opponent: OPEN (default; anyone may join) | USER (an invitation: only
+                            opponentUsername may join; a bot accepts at once, see 2.10);
+                            rated: boolean, default true for registered users, forced false for guests;
+                            opponentUsername: required with USER (400 validation without it or for
+                            oneself; 404 not_found for an unknown or guest name), ignored with OPEN
 GET  /api/games?filter=open|active|finished&kind=&limit=&offset= -> {games:[GameSummary]}  (public games only)
 GET  /api/games/mine?limit=&offset=                    -> {games:[GameSummary]} (auth; newest first)
 GET  /api/games/{id}                                   -> GameDto              (anyone with the id)
 POST /api/games/{id}/join                              -> 200 GameDto          (auth; 409 game_full unless WAITING,
-                                                                                 hence always for computer games;
-                                                                                 400 if own game)
+                                                                                 hence always for bot games; 400 if
+                                                                                 own game; 403 not_invited when the
+                                                                                 invitation is for somebody else)
 POST /api/games/{id}/moves {move: GameMove}            -> 200 {ply, move, status} (auth; player on turn)
                             400 illegal move, 403 not a player / not your turn,
                             409 game_not_started (WAITING) / game_finished
@@ -232,6 +262,16 @@ POST /api/games/{id}/resign                            -> 200 GameDto          (
 POST /api/games/{id}/draw  {action: OFFER|ACCEPT|DECLINE|WITHDRAW} -> 200 GameDto (auth; player; ACTIVE only;
                                                                                  409 draw_not_available
                                                                                  in computer games)
+POST /api/games/{id}/decline                           -> 204                   (auth; invitee of a WAITING invitation; deletes it
+                                                                                 and publishes the game with "declined": true;
+                                                                                 403 not_invited for anybody else, 409 game_full
+                                                                                 once accepted)
+GET  /api/invitations                                  -> {incoming:[GameSummary], outgoing:[GameSummary]} (auth; WAITING invitations)
+
+GET  /api/players?query=&limit=&offset=                -> {players:[PlayerSummary]} (username or display name contains query, case-insensitive; no guests)
+GET  /api/players/leaderboard?kind=CLASSIC|QUANTUM&limit=&offset= -> {entries:[LeaderboardEntry]} (rated players and bots, best first; no guests)
+GET  /api/players/{username}                           -> PlayerProfile         (404 for unknown or guest usernames)
+GET  /api/bots                                         -> {bots:[PlayerSummary]} (the roster, with levels and ratings)
 GET  /api/health                                       -> 200 {status:"ok"}
 ```
 
@@ -243,7 +283,8 @@ create, join and play games exactly like registered users and appear in `GameSum
 
 The `/api/auth/*` endpoints describe the caller's own account as a `UserProfile` (the `user` of
 the register, login and guest responses, and the body of `/api/auth/me`): the `UserRef` fields
-plus `locale`, the UI language chosen through `PATCH /api/auth/me`. Only `en` and `ru` are
+except the game-bound `rating`, plus `ratings` (as in a `PlayerSummary`, section 2.9) and
+`locale`, the UI language chosen through `PATCH /api/auth/me`. Only `en` and `ru` are
 accepted; `null` clears the choice. The field is always present in the profile and null until
 set. Other players only ever appear as `UserRef` inside game DTOs, so the locale is never shown
 to anyone else. Guests set it like registered users; it lives with the account, so a registered
@@ -261,15 +302,25 @@ response (and the `game` event) carry the DTO with `status: "FINISHED"` and
 `game_finished`.
 
 ```jsonc
-UserRef     {"id": 1, "username": "alice", "guest": false, "bot": false}   // "guest" and "bot" are omitted when false
-UserProfile UserRef + "locale": "en"|"ru"|null                             // the caller's own account; "locale" is
-                                                                           // always present, null until set
-GameSummary {"id":"aZ3kq9...","kind":"QUANTUM","visibility":"PUBLIC","status":"ACTIVE",
-             "white":UserRef|null,"black":UserRef|null,"creator":UserRef,
+UserRef     {"id": 1, "username": "alice", "name": "Alice", "guest": false, "bot": false, "botLevel": null, "rating": 1512}
+            // "guest"/"bot" omitted when false; "name" null when unset; "rating" is the player's current rating
+            // in the game's kind (null for guests, and null outside game DTOs: player listings carry the
+            // ratings separately); "botLevel" set for bots only; "name", "botLevel" and "rating" are always present
+UserProfile {"id", "username", "name", "guest", "bot", "botLevel", "locale": "en"|"ru"|null,
+             "ratings": {"CLASSIC": RatingSummary|null, "QUANTUM": RatingSummary|null}}
+            // the caller's own account; "locale" is always present, null until set
+GameSummary {"id":"aZ3kq9...","kind":"QUANTUM","visibility":"PUBLIC","status":"ACTIVE","rated":true,
+             "white":UserRef|null,"black":UserRef|null,"creator":UserRef,"invitee":UserRef|null,
              "moveCount":12,"result":{"winner":"WHITE"|"BLACK"|null,"reason":"..."}|null,
-             "drawOfferedBy":"WHITE"|"BLACK"|null,"botLevel":"EASY"|"MEDIUM"|"HARD"|null,
+             "drawOfferedBy":"WHITE"|"BLACK"|null,"declined":true,
              "createdAt":"2026-10-07T10:00:00Z","updatedAt":"..."}
+            // "invitee" is the invited player of an invitation (kept after it is accepted), null for an open
+            // game; a bot's level is the "botLevel" of its UserRef. "declined" is present (true) only in the
+            // DTO that reports an invitation its invitee declined (the `game` event and nothing else), so the
+            // creator can tell it from their own cancellation, which looks the same otherwise (FINISHED by
+            // ABANDONMENT); it is omitted everywhere else, like "guest" and "bot" when false
 GameDto     GameSummary + "moves": [GameMove, ...]
+            + "ratingChanges": {"white": {"before", "after"}, "black": {"before", "after"}} | null   (section 2.8)
 ```
 
 ### 2.4 Move handling
@@ -298,29 +349,34 @@ ids are refused with a close frame. Server → client events (JSON, `type` discr
 Client → server: `{"type":"ping"}` every 30 s. The client applies a `move` event locally when
 `ply == localMoveCount`; otherwise it refetches the game and replays.
 
-### 2.6 Computer opponent
+### 2.6 Playing against a bot (the mechanics of the bot player; the roster is in 2.10)
 
-A game created with `opponent: COMPUTER` is `ACTIVE` at once: the human takes the colour they
-chose (`RANDOM` is honoured) and the `computer` account takes the other seat. Its visibility is
-forced to `PRIVATE`: it never appears in the public listing but is reachable by its link and
-listed in `/api/games/mine`. `GameSummary.botLevel` carries the level, and the computer's
-`UserRef` has `"bot": true`. Draw offers are not available (409 `draw_not_available`); resigning
-works as usual, and joining is refused like for any `ACTIVE` game.
+A game against a bot is an invitation to it (`opponent: USER` with the bot's username) and is
+`ACTIVE` at once: the human takes the colour they chose (`RANDOM` is honoured) and the bot
+takes the other seat. Its visibility is whatever was asked for, so a public bot game is listed
+and watchable like any other, and it is rated by default like any other game. The bot's
+`UserRef` has `"bot": true` and its `botLevel`. Draw offers are not available in any game with a
+bot seat (409 `draw_not_available`); resigning works as usual, and joining is refused like for
+any `ACTIVE` game.
 
-The computer plays through `BotPlayer` using the engine in `engine/`
-(`ru.werelaxe.chess.engine.ChessEngine`, levels `EASY`/`MEDIUM`/`HARD` with thinking budgets of
-0.7/1.5/3.5 s). The service wakes it whenever it may be the computer's turn: right after
-creation when it plays white, after every move, and, as self-healing after a restart, whenever
-the game is fetched (`GET /api/games/{id}`) or a WebSocket connects to it. A wake-up checks the
-move count cheaply and, if it is the computer's turn, takes an immutable snapshot of the
-position under the game's lock and asks for a move outside it: normally from the engine
+Bots play through `BotPlayer` using the engine in `engine/`
+(`ru.werelaxe.chess.engine.ChessEngine`, levels `NOVICE`/`EASY`/`MEDIUM`/`HARD`/`EXPERT` with
+thinking budgets of 0.3/0.7/1.5/3.5/6 s). The service wakes it whenever it may be a bot's turn:
+right after creation when it plays white, after every move, when somebody joins its open game,
+and, as self-healing after a restart or a failed search, whenever the game is fetched
+(`GET /api/games/{id}`) or a WebSocket connects to it, and for every `ACTIVE` game with a bot
+on turn at startup and at the start of every matchmaking tick (`GameService.wakeBots`), so
+that an unwatched game between two bots resumes by itself. A wake-up checks the move count cheaply (bot seats are recognised by
+id, from the roster loaded at startup) and, if it is a bot's turn, takes an immutable snapshot
+of the position under the game's lock and asks for a move outside it: normally from the engine
 service (section 2.7) through `ENGINE_URL`, with the in-process engine as a fallback when the
 service is unavailable or `ENGINE_URL` is unset (then at most `BOT_PARALLELISM` searches run
 at a time, default 2). A game is never searched twice at the same time, and a wake-up that
 arrives during a search is honoured afterwards. The chosen move goes through the normal move pipeline (`GameService.move`
-with the computer's principal), so observations get their outcome from the server and clients
+with the bot's principal), so observations get their outcome from the server and clients
 receive the usual `move` events. A reply to a human move is delayed so that at least 700 ms pass
-after the move (the search time counts towards it). A rejected move (the human resigned
+after the move (the search time counts towards it); between two bots the pause is
+`BOT_VS_BOT_PAUSE_SECONDS` instead. A rejected move (the human resigned
 meanwhile, or the engine erred) is logged and followed by a fresh look at the game, a few times
 at most; any other failure is logged and left for the next wake-up.
 
@@ -359,6 +415,119 @@ Games the API keeps in memory (`GameCache`) are dropped not only by the LRU boun
 `GAME_IDLE_MINUTES` (default 30) without activity; they are replayed from the database on the
 next access.
 
+### 2.8 Ratings
+
+Every registered user and bot has one rating per variant (`CLASSIC`, `QUANTUM`); the variants
+are rated separately because the skills differ. Elo with the FIDE-style K factor, in FIDE's
+order: initial rating 1500, K = 40 while the player has fewer than 30 rated games in that
+variant (whatever the rating); afterwards 10 for good once the player's peak rating in the
+variant (the `peak` of the rating row) has reached 2400, even if the rating has dipped below
+it since, and 20 otherwise. Expected score
+`E = 1 / (1 + 10^((opponent - own) / 400))`, new rating = `round(own + K * (score - E))` with
+score 1 / 0.5 / 0, computed for both players from their current ratings when the game finishes
+(read and updated under a row lock, so that games finishing at the same time never lose an
+update). The `white_rating_before` / `black_rating_before` columns are the ratings when the
+game started, kept for the record; a rating row is created by the first rated result, and a
+registered player or bot without one is shown with the initial 1500.
+
+A game is rated when it was created with `rated: true`, both seats are non-guest accounts
+(guests only play unrated games; the flag is forced to false when a guest creates or joins)
+and both sides made at least one move before it finished; a game that ends earlier (for
+example a resignation on move one) finishes normally but changes no rating. Draw by agreement,
+stalemate and the other draw reasons score 0.5 each. Ratings are updated inside the same
+transaction that finishes the game and recorded in `rating_changes`; `GameDto.ratingChanges`
+reports `{white: {before, after}, black: {before, after}}` for finished rated games and null
+otherwise (including a rated game whose result did not count, whose `rated` flag stays true).
+`ratings` also keeps wins/draws/losses, the number of rated games and the peak.
+
+### 2.9 Players, search and leaderboard
+
+`PlayerSummary {user: UserRef, ratings: {CLASSIC: RatingSummary|null, QUANTUM: RatingSummary|null}}`
+with `RatingSummary {rating, games, wins, draws, losses, peak}` (the `user.rating` of a summary
+is null: the ratings are next to it); `LeaderboardEntry` is a `PlayerSummary` plus `rank` and
+`rating`, the rating of the requested kind (also set in its `user`). `PlayerProfile` is a
+`PlayerSummary` plus `memberSince`, `lastSeen` (null for bots), and `recentGames`
+(up to 10 `GameSummary`, newest first). The leaderboard orders by rating, then games, then
+username; players without a rated game in that kind are not listed. Search matches a
+case-insensitive substring of the username or the display name (a blank query lists
+everybody), paged like the game listings. Guests never appear in search, leaderboard or
+profiles (404). Bots appear in all three.
+
+`PATCH /api/auth/me` accepts `{locale?, displayName?}`: `displayName` is trimmed, 1–40
+characters, or null to clear; it must contain at least one letter or digit and nothing
+invisible (400 `validation` otherwise): no control characters (`Char.isISOControl`, which
+includes NUL, newlines and tabs) and none of the Unicode categories Cf, Zl and Zp (zero-width
+spaces and joiners U+200B–U+200F, bidirectional controls U+202A–U+202E and U+2066–U+2069,
+soft hyphens, line and paragraph separators), so that a name is never blank once rendered and
+cannot disguise the text around it. `UserProfile` carries `name` and `ratings` like a
+`PlayerSummary`. The profile's `recentGames` are only the games the public listing shows
+(public ones that are not pending invitations): the profile needs no token, so a private game,
+whose id is its only protection, stays between its players.
+
+### 2.10 Bots
+
+Bots are ordinary accounts that play by themselves: the roster is defined in code
+(`BotRoster`) and created or updated at startup, each with a username, a display name and an
+`EngineLevel`. Five levels exist: `NOVICE`, `EASY`, `MEDIUM`, `HARD`, `EXPERT`. The roster
+(two bots per level except one at `NOVICE` and one at `EXPERT`, eight in total) replaces the
+single `computer` account, which is kept as a legacy `MEDIUM` bot named "Computer" for old
+games: it still plays (and can still be invited by name) but is neither listed by `/api/bots`
+nor used by the matchmaker. A roster name that a person registered before it was reserved is
+logged at ERROR and that bot is left out of the roster (the server starts with the others)
+until the account is renamed; the person's account is not touched.
+
+Playing: `BotPlayer` wakes whenever the seat on turn belongs to a bot, in any game (a bot may
+sit on either side, and two bots may play each other). Moves come from the engine service
+(section 2.7) with the seat's level; bot-versus-bot games are paced to one move every
+`BOT_VS_BOT_PAUSE_SECONDS` (default 4) so they can be watched. Nothing limits how many games
+a bot plays at once beyond the engine service's capacity.
+
+Invitations: creating a game with `opponent: USER` sets `invitee_id`; only that account may
+join, and it may decline (`POST /api/games/{id}/decline`, which deletes the game and notifies
+the creator's page through a `game` event with `ABANDONMENT`). A bot invitee joins immediately
+(the response of `POST /api/games` already shows the game `ACTIVE`). Invitations are listed by
+`GET /api/invitations`; the client polls it for the navigation badge. The creator cancels an
+invitation like any WAITING game (`resign`); internally `GameService.cancelInvitation` does the
+same but only while the invitation is still pending (re-checked under the game's lock; 409
+`game_full` once the invitee accepted, 404 once it was declined), so that a caller acting on
+a listing can never resign a game that started meanwhile. A pending invitation is not an open
+game: the public listing leaves it out until it is accepted, whatever its visibility.
+
+Matchmaking (`BotMatchmaker`, enabled with `BOT_MATCHMAKING=true`, default true outside tests):
+a loop that sleeps a random `BOT_TICK_MIN_MINUTES`–`BOT_TICK_MAX_MINUTES` (defaults 3–10) and
+on each tick does one of the following, keeping the lobby alive without flooding it:
+
+* if fewer than `BOT_OPEN_GAMES_TARGET` (default 2) public WAITING games created by bots exist,
+  a random bot creates one (random kind and colour, rated, public);
+* otherwise, with probability 1/2, a random bot joins a public WAITING game that has waited
+  at least `BOT_JOIN_AFTER_MINUTES` (default 8) but is younger than `OPEN_GAME_TTL_HOURS`,
+  whoever created it (another bot included), provided the joiner is not its creator; the
+  candidates are the 20 newest such games (the ones whose creator is most likely still
+  there) and one is picked at random. This is how bot-versus-bot games start and how a
+  human who has waited for a while gets an opponent. If the game was joined or cancelled
+  between the listing and the join (409/404), that is logged at DEBUG and the tick goes on
+  to the next branch;
+* otherwise (also when the dice said "join" but no game qualified), with probability 1/4, a
+  random bot invites a random registered human who was seen within the last 7 days, has no
+  pending invitation from a bot and received none in the last 6 hours (declined invitations
+  are gone from the database, so the loop also remembers whom it invited until it restarts);
+  pending bot invitations expire after `BOT_INVITATION_TTL_MINUTES` (default 60) and are
+  deleted by the loop at the start of every tick through `cancelInvitation`, so one that was
+  accepted or declined between the listing and the deletion is left alone (the 409/404 is
+  logged at DEBUG).
+
+Before choosing, every tick also wakes the bots in the `ACTIVE` games where one is on turn
+(`GameService.wakeBots`, section 2.6), so a game interrupted by a restart or a failed search
+resumes without anybody looking at it, and deletes the public open games that nobody joined
+for `OPEN_GAME_TTL_HOURS` (default 24), whoever created them, as abandoned lobbies: they are
+cancelled like a WAITING game (deleted, published with `ABANDONMENT`) and are never joined by
+a bot; private open games are links their creators share and are kept.
+
+A bot never has more than `BOT_MAX_ACTIVE_GAMES` (default 6) games in progress; the tick skips
+bots at the limit (and does nothing when every bot is at it). All choices use the injectable
+`Random` (`nextDouble` for the probabilities, `nextInt` for the picks) and `Clock`, so tests
+drive the loop by calling its `tick()` directly; the test configuration disables the loop.
+
 ## 3. Web client (`web`)
 
 Vite + React 19 + TypeScript, router and a small store (zustand). The JS core is a dependency
@@ -366,9 +535,14 @@ Vite + React 19 + TypeScript, router and a small store (zustand). The JS core is
 `src/core/game.ts` which parses the JSON strings into typed objects (`src/api/types.ts` mirrors
 section 1.3 and 2.3).
 
-Pages: Home (lobby: open public games to join, active public games to watch, create game),
-Login, Register, My games, Game, Rules (classic and quantum), About (credits: cburnett pieces,
-CC BY-SA 3.0).
+Pages: Home (lobby: open public games to join, active public games to watch, create game with
+rated/casual and an opponent: open, a bot from the roster, or a player by username), Login,
+Register, My games, Game, Players (leaderboard per variant with search), Player profile
+(ratings, statistics, recent games, "invite to a game"), Invitations (incoming with
+accept/decline, outgoing with cancel; a badge in the navigation shows the count), Settings
+(display name, language), Rules (classic and quantum), About (credits: cburnett pieces,
+CC BY-SA 3.0). Game headers show each player's rating for the game's variant, a rated/casual
+pill, and the rating change once a rated game is over.
 
 Game page behaviour:
 

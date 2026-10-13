@@ -12,9 +12,11 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import ru.werelaxe.chess.server.dto.CredentialsRequest
-import ru.werelaxe.chess.server.dto.UpdateProfileRequest
-import ru.werelaxe.chess.server.dto.UserProfile
+import ru.werelaxe.chess.server.model.ProfileField
 import ru.werelaxe.chess.server.plugins.AUTH_RATE_LIMIT
 import ru.werelaxe.chess.server.plugins.JWT_AUTH
 import ru.werelaxe.chess.server.service.ApiException
@@ -24,6 +26,26 @@ import ru.werelaxe.chess.server.service.UserPrincipal
 /** The authenticated caller; only valid inside an `authenticate(JWT_AUTH)` block. */
 val ApplicationCall.user: UserPrincipal
     get() = principal<UserPrincipal>() ?: throw ApiException.unauthorized()
+
+/** The JSON names of the profile fields `PATCH /api/auth/me` accepts. */
+private val PROFILE_FIELDS = mapOf("locale" to ProfileField.LOCALE, "displayName" to ProfileField.DISPLAY_NAME)
+
+/**
+ * The fields present in a profile patch: a missing field is left alone, `null` clears it and a
+ * string sets it. Parsed by hand because a serializer cannot tell a missing field from a null.
+ */
+private fun JsonObject.profileFields(): Map<ProfileField, String?> {
+    val fields = LinkedHashMap<ProfileField, String?>()
+    for ((name, field) in PROFILE_FIELDS) {
+        val element = this[name] ?: continue
+        fields[field] = when {
+            element is JsonNull -> null
+            element is JsonPrimitive && element.isString -> element.content
+            else -> throw ApiException.validation("$name must be a string or null")
+        }
+    }
+    return fields
+}
 
 fun Route.authRoutes(auth: AuthService) {
     route("/api/auth") {
@@ -42,11 +64,11 @@ fun Route.authRoutes(auth: AuthService) {
         }
         authenticate(JWT_AUTH) {
             get("/me") {
-                call.respond(UserProfile.of(auth.me(call.user)))
+                call.respond(auth.profile(auth.me(call.user)))
             }
             patch("/me") {
-                val request = call.receive<UpdateProfileRequest>()
-                call.respond(UserProfile.of(auth.updateLocale(call.user, request.locale)))
+                val fields = call.receive<JsonObject>().profileFields()
+                call.respond(auth.profile(auth.updateProfile(call.user, fields)))
             }
         }
     }
