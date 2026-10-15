@@ -39,6 +39,9 @@ rules:
   - apiGroups: [traefik.io]
     resources: [middlewares]
     verbs: [get, list, watch, create, update, patch]
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [get, list, watch, create, update, patch]
   # kubectl rollout status follows the new pods.
   - apiGroups: [apps]
     resources: [replicasets, controllerrevisions]
