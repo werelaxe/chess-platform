@@ -62,6 +62,11 @@ object SettingKeys {
         "Bot-versus-bot games the matchmaker keeps in progress; 0 switches this off",
         min = 0,
     ) { it.botLiveGamesTarget }
+    val HUMAN_GAMES_LIMIT = SettingKey.int(
+        "bot.human_games_limit",
+        "Games in progress with a human at or above which bots start no games with each other and bot-versus-bot games wait; 0 switches this off",
+        min = 0,
+    ) { it.botHumanGamesLimit }
     val REPLY_PAUSE_MILLIS = SettingKey.long(
         "bot.reply_pause_millis",
         "Shortest pause before a bot answers a human's move, in milliseconds",
@@ -102,6 +107,7 @@ object SettingKeys {
         MATCHMAKING,
         OPEN_GAMES_TARGET,
         LIVE_GAMES_TARGET,
+        HUMAN_GAMES_LIMIT,
         REPLY_PAUSE_MILLIS,
         VS_BOT_PAUSE_MILLIS,
         MAX_ACTIVE_GAMES,
@@ -180,6 +186,10 @@ class Settings(
 
     val liveGamesTarget: Int
         get() = this[SettingKeys.LIVE_GAMES_TARGET]
+
+    /** Games with a human at or above which the bots hold back ([HumanLoad]); 0 means never. */
+    val humanGamesLimit: Int
+        get() = this[SettingKeys.HUMAN_GAMES_LIMIT]
 
     val replyPause: kotlin.time.Duration
         get() = this[SettingKeys.REPLY_PAUSE_MILLIS].milliseconds

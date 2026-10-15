@@ -1,12 +1,13 @@
 # The computer player, the only CPU-heavy part. The CPU limit is what the JVM sees, so it also
 # sets the number of concurrent searches; the API falls back to its own engine while this one is
-# unavailable.
+# unavailable. The service is stateless (the replay cache is per pod and replaying is cheap), so
+# several replicas behind the Service are fine: the HorizontalPodAutoscaler below owns the
+# replica count, which is why the Deployment declares none.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: engine
 spec:
-  replicas: 1
   selector:
     matchLabels: {app: engine}
   template:
@@ -25,8 +26,8 @@ spec:
             httpGet: {path: /health, port: http}
             periodSeconds: 10
           resources:
-            requests: {cpu: "1", memory: 512Mi}
-            limits: {cpu: "8", memory: 2Gi}
+            requests: {cpu: "4", memory: 512Mi}
+            limits: {cpu: "6", memory: 2Gi}
 ---
 apiVersion: v1
 kind: Service
@@ -36,3 +37,25 @@ spec:
   selector: {app: engine}
   ports:
     - {name: http, port: 8081}
+---
+# Scales the engine with its CPU use (k3s ships metrics-server). Two replicas use up to 12 of
+# the single node's 16 cores, leaving the rest to the API, the database and the web server;
+# maxReplicas is what to raise when nodes are added.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: engine
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: engine
+  minReplicas: 1
+  maxReplicas: 2
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75

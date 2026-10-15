@@ -26,6 +26,7 @@ object Render {
                 "Active games" to overview.games.active.toString(),
                 "Finished games" to overview.games.finished.toString(),
                 "Active bot games" to overview.activeBotGames.toString(),
+                "Human games" to overview.humanGames.toString(),
             ),
         )
         if (overview.settings.isEmpty()) return counts

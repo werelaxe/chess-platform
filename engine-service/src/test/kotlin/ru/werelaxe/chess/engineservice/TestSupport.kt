@@ -21,6 +21,7 @@ import ru.werelaxe.chess.core.GameMove
 import ru.werelaxe.chess.core.Square
 import ru.werelaxe.chess.engine.ChessEngine
 import ru.werelaxe.chess.engine.EngineLevel
+import ru.werelaxe.chess.engine.ThinkPriority
 import ru.werelaxe.chess.engineservice.config.AppConfig
 import ru.werelaxe.chess.engineservice.dto.ErrorResponse
 import ru.werelaxe.chess.engineservice.dto.HealthResponse
@@ -60,9 +61,10 @@ class TestContext(val client: HttpClient, val searcher: Searcher) {
         moves: List<GameMove>,
         kind: GameKind = GameKind.CLASSIC,
         level: EngineLevel = EngineLevel.EASY,
+        priority: ThinkPriority = ThinkPriority.HUMAN,
     ): HttpResponse = client.post("/think") {
         contentType(ContentType.Application.Json)
-        setBody(ThinkRequest(gameId, kind, level, moves))
+        setBody(ThinkRequest(gameId, kind, level, moves, priority))
     }
 
     suspend fun thinkRaw(json: String): HttpResponse = client.post("/think") {

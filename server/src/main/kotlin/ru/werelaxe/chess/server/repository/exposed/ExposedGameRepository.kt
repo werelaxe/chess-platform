@@ -15,6 +15,7 @@ import org.jetbrains.exposed.v1.core.isNotNull
 import org.jetbrains.exposed.v1.core.isNull
 import org.jetbrains.exposed.v1.core.lessEq
 import org.jetbrains.exposed.v1.core.neq
+import org.jetbrains.exposed.v1.core.notInList
 import org.jetbrains.exposed.v1.core.or
 import org.jetbrains.exposed.v1.core.statements.UpdateBuilder
 import org.jetbrains.exposed.v1.core.vendors.ForUpdateOption
@@ -201,6 +202,16 @@ class ExposedGameRepository(private val db: Database) : GameRepository {
                 .where { (Games.status eq GamePhase.ACTIVE) and (Games.whiteId inList ids) and (Games.blackId inList ids) }
                 .count()
                 .toInt()
+        }
+    }
+
+    override suspend fun countActiveGamesWithHumans(botIds: Collection<Long>): Int {
+        val ids = botIds.toSet()
+        return tx {
+            var condition: Op<Boolean> = Games.status eq GamePhase.ACTIVE
+            // Both seats of an ACTIVE game are taken, so a seat outside the bot ids is a person's.
+            if (ids.isNotEmpty()) condition = condition and ((Games.whiteId notInList ids) or (Games.blackId notInList ids))
+            Games.selectAll().where(condition).count().toInt()
         }
     }
 

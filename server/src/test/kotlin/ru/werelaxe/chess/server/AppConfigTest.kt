@@ -85,6 +85,7 @@ class AppConfigTest {
         assertEquals(10, config.botTickMaxMinutes)
         assertEquals(2, config.botOpenGamesTarget)
         assertEquals(2, config.botLiveGamesTarget)
+        assertEquals(0, config.botHumanGamesLimit, "the human-load gate is off by default")
         assertEquals(8, config.botJoinAfterMinutes)
         assertEquals(60, config.botInvitationTtlMinutes)
         assertEquals(6, config.botMaxActiveGames)
@@ -101,6 +102,7 @@ class AppConfigTest {
                 "BOT_TICK_MAX_MINUTES" to "2",
                 "BOT_OPEN_GAMES_TARGET" to "0",
                 "BOT_LIVE_GAMES_TARGET" to "4",
+                "BOT_HUMAN_GAMES_LIMIT" to "25",
                 "BOT_JOIN_AFTER_MINUTES" to "1",
                 "BOT_INVITATION_TTL_MINUTES" to "15",
                 "BOT_MAX_ACTIVE_GAMES" to "3",
@@ -114,6 +116,9 @@ class AppConfigTest {
         assertEquals(0, config.botOpenGamesTarget)
         assertEquals(4, config.botLiveGamesTarget)
         assertEquals(0, AppConfig.fromEnvironment(mapOf("JWT_SECRET" to "0123456789abcdef", "BOT_LIVE_GAMES_TARGET" to "0")).botLiveGamesTarget, "zero switches the live games off")
+        assertEquals(25, config.botHumanGamesLimit)
+        assertEquals(0, AppConfig.fromEnvironment(mapOf("JWT_SECRET" to "0123456789abcdef", "BOT_HUMAN_GAMES_LIMIT" to "0")).botHumanGamesLimit, "zero switches the gate off")
+        assertEquals(0, AppConfig.fromEnvironment(mapOf("JWT_SECRET" to "0123456789abcdef", "BOT_HUMAN_GAMES_LIMIT" to "-3")).botHumanGamesLimit, "a negative limit means the default")
         assertEquals(1, config.botJoinAfterMinutes)
         assertEquals(15, config.botInvitationTtlMinutes)
         assertEquals(3, config.botMaxActiveGames)

@@ -73,9 +73,11 @@ redeployed without stalling a game. The CPU limit of its container (`deploy/k8s/
 `ENGINE_CPUS` in `.env` under docker compose) caps the cores one engine may use, and
 `ENGINE_PARALLELISM` the number of concurrent searches (default: the cores it sees); requests
 beyond that wait in a bounded queue with a shrinking thinking budget and are refused once it is
-full, which the API retries. To add capacity, raise `replicas` in `engine.yaml` (under docker
-compose: `docker compose up -d --scale engine=2`), and the API's requests spread over them
-through the service name.
+full, which the API retries. Moves for people are served before those of bot-versus-bot games,
+and half of the queue is kept for them. In the cluster a HorizontalPodAutoscaler in
+`engine.yaml` adds a second engine pod while the CPU use stays above 75 %; to add capacity
+beyond that, raise its `maxReplicas` (under docker compose: `docker compose up -d --scale
+engine=2`), and the API's requests spread over the pods through the service name.
 
 To look at the running stack, use `kubectl` with the cluster's kubeconfig:
 
@@ -89,7 +91,8 @@ and so on.
 ## Administration
 
 The operational settings of the bots (whether the matchmaker runs, how many open games the bots
-keep in the lobby, the pauses before a bot moves, and so on) live in the `settings` table of the
+keep in the lobby, the pauses before a bot moves, the number of games with people above which
+the bots stop playing each other, and so on) live in the `settings` table of the
 database and apply without a restart; the environment variables of docs/ARCHITECTURE.md 2.1 only
 provide their defaults. They are read and changed through the admin API (section 2.11), which
 the API server enables when `ADMIN_TOKEN` (at least 16 characters) is set in its environment;
@@ -123,6 +126,7 @@ chess-admin [--api URL] [--token TOKEN] [--json] <command>
   settings reset <key>                      back to the default
   settings open-games <n>                   shortcut for bot.open_games_target
   settings live-games <n>                   shortcut for bot.live_games_target
+  settings human-games-limit <n>            shortcut for bot.human_games_limit
   settings pauses [--reply <ms>] [--bots <ms>]   shortcuts for bot.reply_pause_millis and bot.vs_bot_pause_millis
 ```
 
@@ -177,7 +181,10 @@ separately; guests play unrated). The leaderboard and player search live under `
 and every player profile offers an invitation to a game. A roster of bots of different levels
 accepts invitations immediately, keeps a couple of open games waiting in the lobby, joins open
 games that have waited for a while and occasionally challenges recently active players; two
-bots can play each other, and such games are public. See docs/ARCHITECTURE.md sections 2.8–2.10.
+bots can play each other, and such games are public. When many people are playing (the
+`bot.human_games_limit` setting), the bots stop starting games with each other and the ones in
+progress wait, so that the engine serves the people first. See docs/ARCHITECTURE.md sections
+2.8–2.10.
 
 ## Credits
 

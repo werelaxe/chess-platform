@@ -39,8 +39,9 @@ import kotlin.time.TimeSource
 /**
  * All game rules outside the chess rules themselves: lobby, invitations, turns, draw offers,
  * resignation, ratings and the bots' seats. [moveProvider] chooses the bots' moves; tests
- * inject a fast, seeded one. [settings] hold the pauses the bot player keeps before its moves.
- * [cache] holds the replayed games; the caller owns it so that it can sweep it periodically.
+ * inject a fast, seeded one. [settings] hold the pauses the bot player keeps before its moves
+ * and [humanLoad] tells it when to hold a bot-versus-bot game back. [cache] holds the replayed
+ * games; the caller owns it so that it can sweep it periodically.
  */
 class GameService(
     private val games: GameRepository,
@@ -52,11 +53,12 @@ class GameService(
     private val clock: Clock,
     moveProvider: MoveProvider,
     settings: Settings,
+    humanLoad: HumanLoad,
     private val ratingService: RatingService = RatingService(),
     private val ids: GameIdGenerator = GameIdGenerator(),
     private val cache: GameCache = GameCache(),
 ) {
-    private val bot = BotPlayer(this, bots, moveProvider, settings)
+    private val bot = BotPlayer(this, bots, moveProvider, settings, humanLoad)
 
     /** Stops the bot player; call when the application shuts down. */
     fun close() = bot.close()

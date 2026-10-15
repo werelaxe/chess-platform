@@ -12,7 +12,15 @@ import ru.werelaxe.chess.engineservice.service.Searcher
 fun Route.healthRoutes(searcher: Searcher) {
     get("/health") {
         call.respond(
-            HealthResponse("ok", searcher.parallelism, searcher.inFlight, searcher.queued, searcher.helpers.size, searcher.helpers.busy),
+            HealthResponse(
+                "ok",
+                searcher.parallelism,
+                searcher.inFlight,
+                searcher.queued,
+                searcher.queuedBots,
+                searcher.helpers.size,
+                searcher.helpers.busy,
+            ),
         )
     }
 }

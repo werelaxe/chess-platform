@@ -33,6 +33,8 @@ data class AppConfig(
     val botTickMaxMinutes: Long = 10,
     val botOpenGamesTarget: Int = 2,
     val botLiveGamesTarget: Int = 2,
+    /** Games with a human at or above which the bots start no games with each other (section 2.10); 0 switches this off. */
+    val botHumanGamesLimit: Int = 0,
     val botJoinAfterMinutes: Long = 8,
     val botInvitationTtlMinutes: Long = 60,
     val botMaxActiveGames: Int = 6,
@@ -86,6 +88,7 @@ data class AppConfig(
                 botTickMaxMinutes = (env.positiveLong("BOT_TICK_MAX_MINUTES") ?: defaults.botTickMaxMinutes).coerceAtLeast(tickMin),
                 botOpenGamesTarget = env.nonNegativeInt("BOT_OPEN_GAMES_TARGET") ?: defaults.botOpenGamesTarget,
                 botLiveGamesTarget = env.nonNegativeInt("BOT_LIVE_GAMES_TARGET") ?: defaults.botLiveGamesTarget,
+                botHumanGamesLimit = env.nonNegativeInt("BOT_HUMAN_GAMES_LIMIT") ?: defaults.botHumanGamesLimit,
                 botJoinAfterMinutes = env.positiveLong("BOT_JOIN_AFTER_MINUTES") ?: defaults.botJoinAfterMinutes,
                 botInvitationTtlMinutes = env.positiveLong("BOT_INVITATION_TTL_MINUTES") ?: defaults.botInvitationTtlMinutes,
                 botMaxActiveGames = env.nonNegativeInt("BOT_MAX_ACTIVE_GAMES") ?: defaults.botMaxActiveGames,

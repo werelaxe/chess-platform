@@ -113,7 +113,7 @@ data class UpdateBotRequest(val level: BotLevel? = null, val displayName: String
 @Serializable
 data class GameCounts(val waiting: Int, val active: Int, val finished: Int)
 
-/** [settings] is the server's key-value map, shown as it comes. */
+/** [humanGames] are the games in progress with a human seat; [settings] is the server's key-value map, shown as it comes. */
 @Serializable
 data class Overview(
     val users: Int,
@@ -121,6 +121,7 @@ data class Overview(
     val bots: Int,
     val games: GameCounts,
     val activeBotGames: Int,
+    val humanGames: Int,
     val settings: JsonObject = JsonObject(emptyMap()),
 )
 

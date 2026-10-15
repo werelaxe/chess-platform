@@ -5,7 +5,11 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonPrimitive
 import ru.werelaxe.chess.engine.EngineLevel
 
-/** `GET /api/admin/overview` (docs/ARCHITECTURE.md section 2.11); [settings] are the effective values by key. */
+/**
+ * `GET /api/admin/overview` (docs/ARCHITECTURE.md section 2.11): [activeBotGames] are the games
+ * in progress with a bot seat, [humanGames] those with a human seat (the count the human-load
+ * gate of section 2.10 judges), and [settings] the effective values by key.
+ */
 @Serializable
 data class AdminOverview(
     val users: Int,
@@ -13,6 +17,7 @@ data class AdminOverview(
     val bots: Int,
     val games: GameCounts,
     val activeBotGames: Int,
+    val humanGames: Int,
     val settings: Map<String, String>,
 )
 

@@ -48,6 +48,7 @@ class AdminService(
                 finished = byPhase[GamePhase.FINISHED] ?: 0,
             ),
             activeBotGames = games.listActiveGamesOf(bots.ids).size,
+            humanGames = games.countActiveGamesWithHumans(bots.ids),
             settings = settings.effective(),
         )
     }

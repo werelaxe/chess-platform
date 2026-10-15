@@ -13,6 +13,8 @@ import ru.werelaxe.chess.core.GameKind
 import ru.werelaxe.chess.core.GameMove
 import ru.werelaxe.chess.engine.ChessEngine
 import ru.werelaxe.chess.engine.EngineLevel
+import ru.werelaxe.chess.engine.ThinkPriority
+import ru.werelaxe.chess.server.service.EngineBusyException
 import ru.werelaxe.chess.server.service.FallbackMoveProvider
 import ru.werelaxe.chess.server.service.InProcessMoveProvider
 import ru.werelaxe.chess.server.service.MoveProvider
@@ -21,6 +23,7 @@ import java.net.ConnectException
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -39,12 +42,36 @@ class MoveProviderTest {
         retryFor = 100.milliseconds,
     )
 
+    /** A service whose queue is always full. */
+    private fun overloaded() = RemoteMoveProvider(
+        MockEngine {
+            respond(
+                """{"error":"overloaded","message":"The queue is full"}""",
+                HttpStatusCode.ServiceUnavailable,
+                headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+            )
+        },
+        "http://engine:8081",
+        retryFor = 100.milliseconds,
+        initialBackoff = 5.milliseconds,
+    )
+
+    private val untouched = object : MoveProvider {
+        override suspend fun chooseMove(
+            gameId: String,
+            kind: GameKind,
+            level: EngineLevel,
+            moves: List<GameMove>,
+            priority: ThinkPriority,
+        ): GameMove? = fail("The fallback must not be asked")
+    }
+
     @Test
     fun inProcessProviderSearchesTheReplayedPosition() = runBlocking {
         inProcess().use { provider ->
-            val reply = assertNotNull(provider.chooseMove("g", GameKind.CLASSIC, EngineLevel.MEDIUM, opening))
+            val reply = assertNotNull(provider.chooseMove("g", GameKind.CLASSIC, EngineLevel.MEDIUM, opening, ThinkPriority.HUMAN))
             assertTrue(Game.replay(GameKind.CLASSIC, opening).isLegal(reply), "$reply is legal after 1. e4")
-            val quantum = assertNotNull(provider.chooseMove("q", GameKind.QUANTUM, EngineLevel.MEDIUM, emptyList()))
+            val quantum = assertNotNull(provider.chooseMove("q", GameKind.QUANTUM, EngineLevel.MEDIUM, emptyList(), ThinkPriority.BOT))
             assertTrue(Game(GameKind.QUANTUM).isLegal(quantum), "$quantum is legal in the initial position")
         }
     }
@@ -52,14 +79,33 @@ class MoveProviderTest {
     @Test
     fun inProcessProviderReportsAFinishedGame() = runBlocking {
         val foolsMate = listOf(normal("f2f3"), normal("e7e5"), normal("g2g4"), normal("d8h4"))
-        inProcess().use { assertNull(it.chooseMove("g", GameKind.CLASSIC, EngineLevel.EASY, foolsMate)) }
+        inProcess().use { assertNull(it.chooseMove("g", GameKind.CLASSIC, EngineLevel.EASY, foolsMate, ThinkPriority.HUMAN)) }
     }
 
     @Test
     fun fallbackUsesTheInProcessEngineWhenTheServiceFails() = runBlocking {
         FallbackMoveProvider(unreachable(), inProcess()).use { provider ->
-            val reply = assertNotNull(provider.chooseMove("g", GameKind.CLASSIC, EngineLevel.EASY, opening))
+            for (priority in ThinkPriority.entries) {
+                val reply = assertNotNull(provider.chooseMove("g", GameKind.CLASSIC, EngineLevel.EASY, opening, priority))
+                assertTrue(Game.replay(GameKind.CLASSIC, opening).isLegal(reply), "$reply is legal after 1. e4")
+            }
+        }
+    }
+
+    @Test
+    fun fallbackSearchesForAHumanWhenTheServiceIsOverloaded() = runBlocking {
+        FallbackMoveProvider(overloaded(), inProcess()).use { provider ->
+            val reply = assertNotNull(provider.chooseMove("g", GameKind.CLASSIC, EngineLevel.EASY, opening, ThinkPriority.HUMAN))
             assertTrue(Game.replay(GameKind.CLASSIC, opening).isLegal(reply), "$reply is legal after 1. e4")
+        }
+    }
+
+    @Test
+    fun fallbackLetsABotVersusBotGameWaitForAnOverloadedService() = runBlocking {
+        FallbackMoveProvider(overloaded(), untouched).use { provider ->
+            assertFailsWith<EngineBusyException> {
+                provider.chooseMove("g", GameKind.CLASSIC, EngineLevel.EASY, opening, ThinkPriority.BOT)
+            }
         }
     }
 
@@ -75,12 +121,8 @@ class MoveProviderTest {
             },
             "http://engine:8081",
         )
-        val untouched = object : MoveProvider {
-            override suspend fun chooseMove(gameId: String, kind: GameKind, level: EngineLevel, moves: List<GameMove>): GameMove? =
-                fail("The fallback must not be asked while the service works")
-        }
         FallbackMoveProvider(remote, untouched).use {
-            assertEquals(normal("c7c5"), it.chooseMove("g", GameKind.CLASSIC, EngineLevel.HARD, opening))
+            assertEquals(normal("c7c5"), it.chooseMove("g", GameKind.CLASSIC, EngineLevel.HARD, opening, ThinkPriority.HUMAN))
         }
     }
 

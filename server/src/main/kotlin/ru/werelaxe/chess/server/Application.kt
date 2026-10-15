@@ -38,6 +38,7 @@ import ru.werelaxe.chess.server.service.BotRoster
 import ru.werelaxe.chess.server.service.Bots
 import ru.werelaxe.chess.server.service.GameCache
 import ru.werelaxe.chess.server.service.GameService
+import ru.werelaxe.chess.server.service.HumanLoad
 import ru.werelaxe.chess.server.service.JwtService
 import ru.werelaxe.chess.server.service.MoveProvider
 import ru.werelaxe.chess.server.service.PlayerService
@@ -79,6 +80,7 @@ class AppServices(
     val matchmaker: BotMatchmaker,
     val bots: Bots,
     val settings: Settings,
+    val humanLoad: HumanLoad,
 )
 
 /**
@@ -104,6 +106,7 @@ suspend fun Application.module(
     val presence = Presence(repositories.users, clock)
     val hub = GameHub()
     val cache = GameCache(idleTimeout = config.gameIdleMinutes.minutes)
+    val humanLoad = HumanLoad(repositories.games, bots, settings, clock)
     val gameService = GameService(
         repositories.games,
         repositories.users,
@@ -114,6 +117,7 @@ suspend fun Application.module(
         clock,
         moveProvider,
         settings,
+        humanLoad,
         cache = cache,
     )
     val playerService = PlayerService(repositories.users, repositories.games, repositories.ratings, bots, gameService)
@@ -123,6 +127,7 @@ suspend fun Application.module(
         repositories.users,
         bots,
         settings,
+        humanLoad,
         Duration.ofHours(config.openGameTtlHours),
         random,
         clock,
@@ -172,5 +177,5 @@ suspend fun Application.module(
         webSocketRoutes(gameService, hub)
         fallbackRoutes()
     }
-    return AppServices(gameService, playerService, matchmaker, bots, settings)
+    return AppServices(gameService, playerService, matchmaker, bots, settings, humanLoad)
 }

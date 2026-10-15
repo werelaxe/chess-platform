@@ -23,6 +23,7 @@ class RenderTest {
             Active games:      5
             Finished games:    1000
             Active bot games:  3
+            Human games:       4
 
             SETTING                VALUE
             bot.matchmaking        true
@@ -34,8 +35,10 @@ class RenderTest {
 
     @Test
     fun overviewWithoutSettingsIsTheCountsAlone() {
-        val overview = AdminJson.decodeFromString<Overview>("""{"users":1,"guests":0,"bots":8,"games":{"waiting":0,"active":0,"finished":0},"activeBotGames":0}""")
-        assertEquals(7, Render.overview(overview).lines().size)
+        val overview = AdminJson.decodeFromString<Overview>(
+            """{"users":1,"guests":0,"bots":8,"games":{"waiting":0,"active":0,"finished":0},"activeBotGames":0,"humanGames":0}""",
+        )
+        assertEquals(8, Render.overview(overview).lines().size)
     }
 
     @Test

@@ -6,6 +6,7 @@ import io.ktor.http.HttpStatusCode
 import ru.werelaxe.chess.core.GameKind
 import ru.werelaxe.chess.core.GameMove
 import ru.werelaxe.chess.engine.EngineLevel
+import ru.werelaxe.chess.engine.ThinkPriority
 import ru.werelaxe.chess.server.dto.ColorChoice
 import ru.werelaxe.chess.server.dto.CreateGameRequest
 import ru.werelaxe.chess.server.dto.GamesResponse
@@ -60,8 +61,13 @@ private val OPENING = listOf(normal("e2e4"), normal("e7e5"), normal("g1f3"), nor
  * real nor play on in the background; with an empty opening they sit still.
  */
 private fun openingProvider(opening: List<GameMove>) = object : MoveProvider {
-    override suspend fun chooseMove(gameId: String, kind: GameKind, level: EngineLevel, moves: List<GameMove>): GameMove? =
-        opening.getOrNull(moves.size)
+    override suspend fun chooseMove(
+        gameId: String,
+        kind: GameKind,
+        level: EngineLevel,
+        moves: List<GameMove>,
+        priority: ThinkPriority,
+    ): GameMove? = opening.getOrNull(moves.size)
 }
 
 class BotMatchmakerTest {
@@ -146,7 +152,13 @@ class BotMatchmakerTest {
     fun twoBotsPlayEachOtherAtTheBotPace() {
         val thinks = CopyOnWriteArrayList<Pair<Int, EngineLevel>>()
         val scripted = object : MoveProvider {
-            override suspend fun chooseMove(gameId: String, kind: GameKind, level: EngineLevel, moves: List<GameMove>): GameMove? {
+            override suspend fun chooseMove(
+                gameId: String,
+                kind: GameKind,
+                level: EngineLevel,
+                moves: List<GameMove>,
+                priority: ThinkPriority,
+            ): GameMove? {
                 thinks += moves.size to level
                 return OPENING.getOrNull(moves.size)
             }
@@ -278,6 +290,63 @@ class BotMatchmakerTest {
         assertEquals(1, liveGames())
         assertEquals(emptyList(), services.matchmaker.tick(), "every bot is at its cap now")
         assertEquals(1, liveGames())
+    }
+
+    @Test
+    fun humanLoadHoldsBotVersusBotGamesButNotTheHumans() = serverTest(
+        config = TEST_CONFIG.copy(botLiveGamesTarget = 2, botOpenGamesTarget = 0, botHumanGamesLimit = 1),
+        random = ScriptedRandom(),
+        moveProvider = openingProvider(emptyList()),
+    ) {
+        val alice = token("alice")
+        val bob = token("bob")
+        // One game with a human is the limit: the load is high from here on.
+        botGame(alice, color = ColorChoice.WHITE)
+        val bot = services.bots.roster.last()
+        val botsOpen = services.games.create(services.bots.principal(bot), CreateGameRequest(GameKind.CLASSIC, color = ColorChoice.WHITE))
+        clock.advance(Duration.ofMinutes(1))
+        val bobsOpen = createGame(bob)
+        clock.advance(Duration.ofMinutes(8))
+
+        // No live game starts, the bot's older lobby is passed over, and Bob gets his opponent.
+        assertEquals(listOf(Action.Joined(bobsOpen.id)), services.matchmaker.tick())
+        assertEquals(0, liveGames())
+        assertEquals(GamePhase.ACTIVE, game(bobsOpen.id).status)
+        assertEquals(GamePhase.WAITING, game(botsOpen.id).status)
+        assertEquals(emptyList(), services.matchmaker.tick(), "the bot's lobby is still left alone")
+        assertEquals(GamePhase.WAITING, game(botsOpen.id).status)
+        assertEquals(1, services.humanLoad.humanGames(), "the count of the first tick is reused for ten seconds")
+        assertEquals(2, services.humanLoad.refresh(), "Bob's game counts now")
+
+        // Humans are still invited while the load is high.
+        me(alice)
+        (random as ScriptedRandom).rolls.add(INVITE)
+        assertIs<Action.Invited>(services.matchmaker.tick().single())
+
+        // The gate switched off, the next tick does everything it held back.
+        services.settings.set("bot.human_games_limit", "0")
+        val actions = services.matchmaker.tick()
+        assertEquals(2, actions.count { it is Action.Started }, "the live games start: $actions")
+        assertEquals(Action.Joined(botsOpen.id), actions.last(), "and the bot's lobby is joined: $actions")
+        assertEquals(3, liveGames())
+    }
+
+    @Test
+    fun humanLoadLimitZeroHoldsNothing() = serverTest(
+        config = TEST_CONFIG.copy(botLiveGamesTarget = 1, botOpenGamesTarget = 0, botHumanGamesLimit = 0),
+        random = ScriptedRandom(),
+        moveProvider = openingProvider(emptyList()),
+    ) {
+        val alice = token("alice")
+        repeat(3) { botGame(alice, color = ColorChoice.WHITE) }
+        val bot = services.bots.roster.last()
+        val botsOpen = services.games.create(services.bots.principal(bot), CreateGameRequest(GameKind.CLASSIC, color = ColorChoice.WHITE))
+        clock.advance(Duration.ofMinutes(9))
+        assertEquals(3, services.humanLoad.humanGames())
+        val actions = services.matchmaker.tick()
+        assertIs<Action.Started>(actions.first(), "$actions")
+        assertEquals(Action.Joined(botsOpen.id), actions.last(), "$actions")
+        assertEquals(2, liveGames())
     }
 
     @Test

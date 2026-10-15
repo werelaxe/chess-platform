@@ -20,7 +20,9 @@ import ru.werelaxe.chess.core.ChessJson
 import ru.werelaxe.chess.core.GameKind
 import ru.werelaxe.chess.core.GameMove
 import ru.werelaxe.chess.engine.EngineLevel
+import ru.werelaxe.chess.engine.ThinkPriority
 import ru.werelaxe.chess.server.dto.ThinkRequest
+import ru.werelaxe.chess.server.service.EngineBusyException
 import ru.werelaxe.chess.server.service.EngineServiceException
 import ru.werelaxe.chess.server.service.RemoteMoveProvider
 import java.io.IOException
@@ -67,18 +69,20 @@ class RemoteMoveProviderTest {
         maxBackoff = 40.milliseconds,
     )
 
-    private suspend fun RemoteMoveProvider.think(moves: List<GameMove> = listOf(normal("e2e4"))): GameMove? =
-        chooseMove("Game00000001", GameKind.CLASSIC, EngineLevel.EASY, moves)
+    private suspend fun RemoteMoveProvider.think(
+        moves: List<GameMove> = listOf(normal("e2e4")),
+        priority: ThinkPriority = ThinkPriority.HUMAN,
+    ): GameMove? = chooseMove("Game00000001", GameKind.CLASSIC, EngineLevel.EASY, moves, priority)
 
     @Test
     fun postsTheGameAndReturnsTheMove() = runBlocking {
-        var seen: ThinkRequest? = null
+        var body = ""
         var url = ""
         var method = HttpMethod.Get
         val provider = provider { request ->
             url = request.url.toString()
             method = request.method
-            seen = ChessJson.json.decodeFromString(ThinkRequest.serializer(), request.body.toByteArray().decodeToString())
+            body = request.body.toByteArray().decodeToString()
             move("e7e5")
         }
         provider.use {
@@ -86,7 +90,24 @@ class RemoteMoveProviderTest {
         }
         assertEquals("http://engine:8081/think", url)
         assertEquals(HttpMethod.Post, method)
-        assertEquals(ThinkRequest("Game00000001", GameKind.CLASSIC, EngineLevel.EASY, listOf(normal("e2e4"))), seen)
+        assertTrue("\"priority\":\"HUMAN\"" in body, body)
+        assertEquals(
+            ThinkRequest("Game00000001", GameKind.CLASSIC, EngineLevel.EASY, listOf(normal("e2e4")), ThinkPriority.HUMAN),
+            ChessJson.json.decodeFromString(ThinkRequest.serializer(), body),
+        )
+    }
+
+    @Test
+    fun sendsTheBotPriorityOfABotVersusBotGame() = runBlocking {
+        var body = ""
+        provider { request ->
+            body = request.body.toByteArray().decodeToString()
+            move("e7e5")
+        }.use {
+            assertEquals(normal("e7e5"), it.think(priority = ThinkPriority.BOT))
+        }
+        assertTrue("\"priority\":\"BOT\"" in body, body)
+        assertEquals(ThinkPriority.BOT, ChessJson.json.decodeFromString(ThinkRequest.serializer(), body).priority)
     }
 
     @Test
@@ -115,6 +136,28 @@ class RemoteMoveProviderTest {
         }
         assertTrue(started.elapsedNow() >= 200.milliseconds, "gave up after ${started.elapsedNow()}")
         assertTrue(attempts.get() >= 3, "retried ${attempts.get()} times")
+    }
+
+    @Test
+    fun aBotGivesUpOnAnOverloadedServiceAfterAQuarterOfTheWindowAsBusy() = runBlocking {
+        val attempts = AtomicInteger()
+        val started = TimeSource.Monotonic.markNow()
+        provider(retryFor = 400.milliseconds) { attempts.incrementAndGet(); overloaded() }.use {
+            val error = assertFailsWith<EngineBusyException> { it.think(priority = ThinkPriority.BOT) }
+            assertTrue("The queue is full" in error.message.orEmpty(), error.message)
+        }
+        val elapsed = started.elapsedNow()
+        assertTrue(elapsed >= 100.milliseconds && elapsed < 400.milliseconds, "gave up after $elapsed")
+        assertTrue(attempts.get() >= 2, "retried ${attempts.get()} times")
+    }
+
+    @Test
+    fun aBotGetsTheServicesMoveWhenTheOverloadPasses() = runBlocking {
+        val attempts = AtomicInteger()
+        provider { if (attempts.incrementAndGet() < 3) overloaded() else move("e7e5") }.use {
+            assertEquals(normal("e7e5"), it.think(priority = ThinkPriority.BOT))
+        }
+        assertEquals(3, attempts.get())
     }
 
     @Test
