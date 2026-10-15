@@ -7,16 +7,20 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import ru.werelaxe.chess.core.ChessJson
 import ru.werelaxe.chess.core.Game
 import ru.werelaxe.chess.core.GameKind
 import ru.werelaxe.chess.core.GameMove
 import ru.werelaxe.chess.engine.EngineLevel
+import ru.werelaxe.chess.engine.ThinkPriority
 import ru.werelaxe.chess.engineservice.config.AppConfig
 import ru.werelaxe.chess.engine.ChessEngine
+import ru.werelaxe.chess.engineservice.dto.ThinkRequest
 import ru.werelaxe.chess.engineservice.service.Engine
 import ru.werelaxe.chess.engineservice.service.HelperPool
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 import kotlin.test.Test
@@ -85,6 +89,8 @@ class ThinkTest {
         thinkRaw("""{"gameId":"g","kind":"HEXAGONAL","level":"EASY","moves":[]}""")
             .assertError(HttpStatusCode.BadRequest, "validation")
         thinkRaw("""{"gameId":"g","kind":"CLASSIC","level":"GRANDMASTER","moves":[]}""")
+            .assertError(HttpStatusCode.BadRequest, "validation")
+        thinkRaw("""{"gameId":"g","kind":"CLASSIC","level":"EASY","moves":[],"priority":"URGENT"}""")
             .assertError(HttpStatusCode.BadRequest, "validation")
         thinkRaw("""{"gameId":"g","kind":"CLASSIC","level":"EASY","moves":[{"type":"teleport"}]}""")
             .assertError(HttpStatusCode.BadRequest, "validation")
@@ -237,10 +243,100 @@ class ThinkTest {
     }
 
     @Test
+    fun priorityDefaultsToHumanWhenAbsent() {
+        val legacy = """{"gameId":"g","kind":"CLASSIC","level":"EASY","moves":[]}"""
+        assertEquals(ThinkPriority.HUMAN, ChessJson.json.decodeFromString(ThinkRequest.serializer(), legacy).priority)
+        val bot = """{"gameId":"g","kind":"CLASSIC","level":"EASY","moves":[],"priority":"BOT"}"""
+        assertEquals(ThinkPriority.BOT, ChessJson.json.decodeFromString(ThinkRequest.serializer(), bot).priority)
+    }
+
+    /** An engine that records the level of every search and holds each one until the test releases [gate]. */
+    private class HeldEngine {
+        val started = CountDownLatch(1)
+        val gate = Semaphore(0)
+        val levels = CopyOnWriteArrayList<EngineLevel>()
+        val engine = Engine { _, level, _ ->
+            levels += level
+            started.countDown()
+            gate.acquire()
+            normal("e2e4")
+        }
+    }
+
+    @Test
+    fun servesWaitingHumansBeforeWaitingBots() {
+        val held = HeldEngine()
+        serviceTest(AppConfig(parallelism = 1, queueLimit = 4), held.engine) {
+            try {
+                coroutineScope {
+                    // A bot's search runs; another bot and then a human queue behind it (bots think at NOVICE, humans at EASY).
+                    val firstBot = async { thinkResponse("bot-1", emptyList(), level = EngineLevel.NOVICE, priority = ThinkPriority.BOT) }
+                    withContext(Dispatchers.IO) { assertTrue(held.started.await(10, TimeUnit.SECONDS)) }
+                    val secondBot = async { thinkResponse("bot-2", emptyList(), level = EngineLevel.NOVICE, priority = ThinkPriority.BOT) }
+                    awaitHealth { it.queued == 1 && it.queuedBots == 1 }
+                    val human = async { thinkResponse("human", emptyList(), level = EngineLevel.EASY) }
+                    awaitHealth { it.queued == 2 && it.queuedBots == 1 }
+
+                    held.gate.release()
+                    assertEquals(HttpStatusCode.OK, firstBot.await().status)
+                    // The freed thread went to the human although the bot had waited longer.
+                    awaitHealth { it.inFlight == 1 && it.queued == 1 && it.queuedBots == 1 }
+                    held.gate.release()
+                    assertEquals(HttpStatusCode.OK, human.await().status)
+                    awaitHealth { it.inFlight == 1 && it.queued == 0 }
+                    held.gate.release()
+                    assertEquals(HttpStatusCode.OK, secondBot.await().status)
+                }
+            } finally {
+                held.gate.release(10)
+            }
+            assertEquals(listOf(EngineLevel.NOVICE, EngineLevel.EASY, EngineLevel.NOVICE), held.levels)
+            awaitHealth { it.inFlight == 0 && it.queued == 0 }
+        }
+    }
+
+    @Test
+    fun keepsHalfOfTheQueueForHumans() {
+        val held = HeldEngine()
+        serviceTest(AppConfig(parallelism = 1, queueLimit = 4), held.engine) {
+            try {
+                coroutineScope {
+                    val running = async { thinkResponse("running", emptyList(), priority = ThinkPriority.BOT) }
+                    withContext(Dispatchers.IO) { assertTrue(held.started.await(10, TimeUnit.SECONDS)) }
+                    val bots = (1..2).map { async { thinkResponse("bot-$it", emptyList(), priority = ThinkPriority.BOT) } }
+                    awaitHealth { it.queued == 2 && it.queuedBots == 2 }
+
+                    // Half of the queue (two of four) is taken: the next bot is refused, while a human
+                    // still waits, and so does a request without a priority, which is a human's.
+                    thinkResponse("bot-3", emptyList(), priority = ThinkPriority.BOT).assertError(HttpStatusCode.ServiceUnavailable, "overloaded")
+                    assertEquals(2, health().queued)
+                    val legacy = async { thinkRaw("""{"gameId":"legacy","kind":"CLASSIC","level":"EASY","moves":[]}""") }
+                    awaitHealth { it.queued == 3 && it.queuedBots == 2 }
+                    val human = async { thinkResponse("human-1", emptyList()) }
+                    awaitHealth { it.queued == 4 && it.queuedBots == 2 }
+                    // The whole queue is taken now: everybody is refused.
+                    thinkResponse("human-2", emptyList()).assertError(HttpStatusCode.ServiceUnavailable, "overloaded")
+                    thinkResponse("bot-4", emptyList(), priority = ThinkPriority.BOT).assertError(HttpStatusCode.ServiceUnavailable, "overloaded")
+                    assertEquals(4, health().queued)
+
+                    held.gate.release(5)
+                    for (request in listOf(running, legacy, human) + bots) assertEquals(HttpStatusCode.OK, request.await().status)
+                }
+            } finally {
+                held.gate.release(10)
+            }
+            awaitHealth { it.inFlight == 0 && it.queued == 0 && it.queuedBots == 0 }
+        }
+    }
+
+    @Test
     fun reportsItsHealth() = serviceTest(AppConfig(parallelism = 3, queueLimit = 12)) {
         val response = client.get("/health")
         assertEquals(HttpStatusCode.OK, response.status)
-        assertEquals("""{"status":"ok","parallelism":3,"inFlight":0,"queued":0,"helpers":1,"helpersBusy":0}""", response.bodyAsText())
+        assertEquals(
+            """{"status":"ok","parallelism":3,"inFlight":0,"queued":0,"queuedBots":0,"helpers":1,"helpersBusy":0}""",
+            response.bodyAsText(),
+        )
     }
 
     @Test

@@ -22,6 +22,7 @@ import ru.werelaxe.chess.core.ChessJson
 import ru.werelaxe.chess.core.GameKind
 import ru.werelaxe.chess.core.GameMove
 import ru.werelaxe.chess.engine.EngineLevel
+import ru.werelaxe.chess.engine.ThinkPriority
 import ru.werelaxe.chess.server.dto.ErrorResponse
 import ru.werelaxe.chess.server.dto.ThinkRequest
 import ru.werelaxe.chess.server.dto.ThinkResponse
@@ -34,12 +35,22 @@ import kotlin.time.TimeSource
 class EngineServiceException(message: String) : RuntimeException(message)
 
 /**
+ * The engine service is overloaded and the move is for a bot-versus-bot game: the game waits
+ * for its next wake-up ([BotPlayer]) rather than loading this process with a search while the
+ * service is at its busiest; see [RemoteMoveProvider] and [FallbackMoveProvider].
+ */
+class EngineBusyException(message: String) : RuntimeException(message)
+
+/**
  * Asks the engine service (docs/ARCHITECTURE.md section 2.7) for moves over HTTP. At most
  * [concurrency] requests are in flight at a time. An overloaded service (503) is retried with
- * exponential backoff from [initialBackoff] up to [maxBackoff] until [retryFor] has elapsed
- * since the first attempt, then [EngineServiceException] is thrown; a connection failure, a
- * timeout (the level's budget plus [timeoutMargin]) or any other answer throws at once. The
- * caller ([FallbackMoveProvider]) decides what to do then.
+ * exponential backoff from [initialBackoff] up to [maxBackoff] until the retry window has
+ * elapsed since the first attempt: [retryFor] for a human's move, a quarter of it
+ * (`retryFor / [BOT_RETRY_DIVISOR]`) for a bot-versus-bot game, which has nobody waiting at
+ * the board and resumes at a matchmaking tick anyway. Then [EngineServiceException] is thrown
+ * for a human's move and [EngineBusyException] for a bot's; a connection failure, a timeout
+ * (the level's budget plus [timeoutMargin]) or any other answer throws at once, whatever the
+ * priority. The caller ([FallbackMoveProvider]) decides what to do then.
  *
  * The provider owns [engine] and closes it together with its client.
  */
@@ -60,9 +71,16 @@ class RemoteMoveProvider(
         install(HttpTimeout)
     }
 
-    override suspend fun chooseMove(gameId: String, kind: GameKind, level: EngineLevel, moves: List<GameMove>): GameMove? {
-        val request = ThinkRequest(gameId, kind, level, moves)
+    override suspend fun chooseMove(
+        gameId: String,
+        kind: GameKind,
+        level: EngineLevel,
+        moves: List<GameMove>,
+        priority: ThinkPriority,
+    ): GameMove? {
+        val request = ThinkRequest(gameId, kind, level, moves, priority)
         val timeout = level.timeBudget + timeoutMargin
+        val retryWindow = if (priority == ThinkPriority.BOT) retryFor / BOT_RETRY_DIVISOR else retryFor
         val started = TimeSource.Monotonic.markNow()
         var backoff = initialBackoff
         while (true) {
@@ -77,9 +95,10 @@ class RemoteMoveProvider(
                 HttpStatusCode.OK -> return response.body<ThinkResponse>().move
                 HttpStatusCode.NoContent -> return null
                 HttpStatusCode.ServiceUnavailable -> {
-                    val remaining = retryFor - started.elapsedNow()
+                    val remaining = retryWindow - started.elapsedNow()
                     if (!remaining.isPositive()) {
-                        throw EngineServiceException("Engine service overloaded for $retryFor: ${describe(response)}")
+                        val message = "Engine service overloaded for $retryWindow: ${describe(response)}"
+                        throw if (priority == ThinkPriority.BOT) EngineBusyException(message) else EngineServiceException(message)
                     }
                     log.debug("Engine service overloaded for game {}; retrying in {}", gameId, backoff)
                     delay(minOf(backoff, remaining))
@@ -102,7 +121,9 @@ class RemoteMoveProvider(
             .getOrNull() ?: text.take(MAX_QUOTED_BODY)
     }
 
-    private companion object {
-        const val MAX_QUOTED_BODY = 200
+    companion object {
+        /** A bot-versus-bot game retries an overloaded service for this fraction of [retryFor] only. */
+        const val BOT_RETRY_DIVISOR = 4
+        private const val MAX_QUOTED_BODY = 200
     }
 }

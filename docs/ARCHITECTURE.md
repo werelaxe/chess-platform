@@ -166,6 +166,7 @@ replayed games and the WebSocket subscriber registry; PostgreSQL is the source o
 | `BOT_TICK_MIN_MINUTES` / `BOT_TICK_MAX_MINUTES` | `3` / `10` | pause between matchmaking ticks (the upper bound is raised to the lower one if set below it) |
 | `BOT_OPEN_GAMES_TARGET` | `2` | public open games the bots keep in the lobby (0 switches this off) |
 | `BOT_LIVE_GAMES_TARGET` | `2` | bot-versus-bot games the matchmaker keeps in progress (0 switches this off) |
+| `BOT_HUMAN_GAMES_LIMIT` | `0` | default of `bot.human_games_limit` (section 2.11): games in progress with a human at or above which the bots start no games with each other and bot-versus-bot games wait (section 2.10); 0 switches this off |
 | `BOT_JOIN_AFTER_MINUTES` | `8` | how long an open game waits before a bot may join it |
 | `BOT_INVITATION_TTL_MINUTES` | `60` | lifetime of a bot's invitation to a human |
 | `BOT_MAX_ACTIVE_GAMES` | `6` | games in progress per bot above which it sits matchmaking out |
@@ -372,7 +373,16 @@ id, from the roster loaded at startup) and, if it is a bot's turn, takes an immu
 of the position under the game's lock and asks for a move outside it: normally from the engine
 service (section 2.7) through `ENGINE_URL`, with the in-process engine as a fallback when the
 service is unavailable or `ENGINE_URL` is unset (then at most `BOT_PARALLELISM` searches run
-at a time, default 2). A game is never searched twice at the same time, and a wake-up that
+at a time, default 2). The request carries a priority: `HUMAN` when a person is at the board,
+`BOT` when both seats are bots, and the service serves the humans first. A bot-versus-bot game
+is held instead of searched in two cases: while the human load is high (at least
+`bot.human_games_limit` games with a human in progress, section 2.10; checked before every such
+move against a count cached for ten seconds, logged at DEBUG) and when the service stays
+overloaded for a quarter of `ENGINE_RETRY_SECONDS` (`EngineBusyException`, logged at INFO; no
+fallback to the in-process engine, which would load the API exactly when the service is
+busiest). In both cases the game resumes when `GameService.wakeBots` runs at a later
+matchmaking tick. A human's game is never held: an overloaded or unavailable service falls
+back to the in-process engine. A game is never searched twice at the same time, and a wake-up that
 arrives during a search is honoured afterwards. The chosen move goes through the normal move pipeline (`GameService.move`
 with the bot's principal), so observations get their outcome from the server and clients
 receive the usual `move` events. A reply to a human move is delayed so that at least
@@ -389,23 +399,33 @@ service that can be scaled independently of the API (`docker compose up -d --sca
 or replicas on other hosts). It is a small Ktor application around `engine/`:
 
 ```
-POST /think   {"gameId":"aZ3kq9...","kind":"QUANTUM","level":"MEDIUM","moves":[GameMove, ...]}
+POST /think   {"gameId":"aZ3kq9...","kind":"QUANTUM","level":"MEDIUM","moves":[GameMove, ...],"priority":"HUMAN"}
               -> 200 {"move": GameMove, "elapsedMillis": 1234}   (an Observe move has no outcome)
               -> 204 when the game is already over
               -> 400 {"error":"validation","message":"..."} for an invalid or illegal history
-              -> 503 {"error":"overloaded","message":"..."} when the queue is full (the API retries)
-GET  /health  -> 200 {"status":"ok","parallelism":8,"inFlight":3,"queued":0,"helpers":8,"helpersBusy":2}
+              -> 503 {"error":"overloaded","message":"..."} when the queue is full for the request (the API retries)
+GET  /health  -> 200 {"status":"ok","parallelism":8,"inFlight":3,"queued":0,"queuedBots":0,"helpers":8,"helpersBusy":2}
 ```
+
+`priority` is who waits for the move: `HUMAN` (a person is at the board; also the meaning of a
+request without the field, so that an older API is served first rather than last) or `BOT`
+(both seats are bots, section 2.6).
 
 The service replays the move list with `Game.replay` (sub-millisecond for classic chess, about
 10 ms for a long quantum game with hundreds of universes, i.e. about 1% of a search) and keeps
 a small LRU cache of replayed states keyed by `(gameId, ply)` so that the next request for the
 same game only applies the new moves. Searches run on a dispatcher of `ENGINE_PARALLELISM`
 threads (default: the CPUs available to the container); requests beyond that wait in a bounded
-queue (`ENGINE_QUEUE_LIMIT`, default 4 x parallelism) and are refused with 503 above it. Under
-load the thinking budget shrinks: with `w` requests waiting and `p` threads the budget is
-multiplied by `min(1, p / w)` but never below `ENGINE_MIN_BUDGET_RATIO` (default 0.25), which
-keeps the reply latency bounded instead of letting the queue grow.
+queue (`ENGINE_QUEUE_LIMIT`, default 4 x parallelism) and are refused with 503 above it. The
+queue is served humans first: a thread that frees up goes to the oldest waiting `HUMAN`
+request, and a `BOT` request runs only while no human waits. A `HUMAN` request may wait while
+fewer than `ENGINE_QUEUE_LIMIT` requests wait in all, a `BOT` request only while fewer than
+half of that do, so that half of the queue is kept for humans and bot-versus-bot games are the
+first to be refused. `/health` reports the waiting requests as `queued` (all of them) and
+`queuedBots` (the `BOT` ones). Under load the thinking budget shrinks: with `w` requests
+waiting, whatever their priority, and `p` threads the budget is multiplied by `min(1, p / w)`
+but never below `ENGINE_MIN_BUDGET_RATIO` (default 0.25), which keeps the reply latency
+bounded instead of letting the queue grow.
 
 A search is not confined to its thread. The service also keeps `ENGINE_HELPER_THREADS` helper
 threads (default: half of the search threads, at least one) behind a semaphore of the same size, and a search
@@ -426,6 +446,9 @@ Configuration: `PORT` (default 8081), `ENGINE_PARALLELISM`, `ENGINE_QUEUE_LIMIT`
 `ENGINE_HELPER_THREADS`, `ENGINE_MIN_BUDGET_RATIO`. The API uses `ENGINE_URL` (compose: `http://engine:8081`), retries
 503 with backoff for up to `ENGINE_RETRY_SECONDS` (default 30) and falls back to its in-process
 engine after that or on connection errors, so a restart of the service never stalls a game.
+That is the behaviour for a human's move; a bot-versus-bot move retries 503 for a quarter of
+`ENGINE_RETRY_SECONDS` only and then waits for the next matchmaking tick instead of falling
+back (section 2.6), while connection errors and other failures fall back whatever the priority.
 The API keeps at most `BOT_REMOTE_CONCURRENCY` (default 64) requests in flight.
 
 Games the API keeps in memory (`GameCache`) are dropped not only by the LRU bound but also after
@@ -499,7 +522,8 @@ sit on either side, and two bots may play each other). Moves come from the engin
 (section 2.7) with the seat's level; bot-versus-bot games have no artificial pause by default
 (`bot.vs_bot_pause_millis`, section 2.11), each move takes as long as the search (the engine
 service uses idle cores to speed a single search up).
-Nothing limits how many games a bot plays at once beyond the engine service's capacity.
+Nothing limits how many games a bot plays at once beyond the engine service's capacity; what
+limits the games bots play with each other is the human-load gate below.
 
 Invitations: creating a game with `opponent: USER` sets `invitee_id`; only that account may
 join, and it may decline (`POST /api/games/{id}/decline`, which deletes the game and notifies
@@ -540,6 +564,19 @@ following, so a tick may both start a live game and act once more:
   declined between the listing and the deletion is left alone (the 409/404 is logged at
   DEBUG).
 
+The human-load gate: while the human load is high, the bots add no game of their own to the
+engine's work. The tick then starts no live game, whatever the live target, and joins no open
+game that a bot created (such a game is passed over for the next oldest, as a bot's own game
+is); a human's open game is still joined, open games for humans are still created and humans
+are still invited. The load is high when at least `bot.human_games_limit` (section 2.11;
+default `BOT_HUMAN_GAMES_LIMIT`, 0 switches the gate off) games with a human are in progress:
+`ACTIVE` games with at least one seat that no bot holds, guests included. `HumanLoad` counts
+them at most once every ten seconds (the bot player asks before every bot-versus-bot move, the
+matchmaker once per tick); the admin overview shows the live count as `humanGames`. The bot
+player holds bot-versus-bot moves under the same condition (section 2.6), so the live games
+already in progress pause too and resume, through the tick's `wakeBots`, once the load has
+dropped below the limit. A tick that held something back says so once at INFO.
+
 Before any of that, every tick also wakes the bots in the `ACTIVE` games where one is on turn
 (`GameService.wakeBots`, section 2.6), so a game interrupted by a restart or a failed search
 resumes without anybody looking at it, and deletes the public open games that nobody joined
@@ -569,6 +606,7 @@ provide the defaults. Known keys, all validated on write:
 | `bot.matchmaking` | boolean | `BOT_MATCHMAKING` | the matchmaker loop acts on its ticks (false pauses it) |
 | `bot.open_games_target` | int >= 0 | `BOT_OPEN_GAMES_TARGET` | public open games kept waiting by bots |
 | `bot.live_games_target` | int >= 0 | `BOT_LIVE_GAMES_TARGET` | bot-versus-bot games kept in progress (0 switches this off) |
+| `bot.human_games_limit` | int >= 0 | `BOT_HUMAN_GAMES_LIMIT` | games in progress with a human at or above which bots start no games with each other and bot-versus-bot games wait (section 2.10; 0 switches this off) |
 | `bot.reply_pause_millis` | int >= 0 | 700 | shortest pause before a bot answers a human |
 | `bot.vs_bot_pause_millis` | int >= 0 | 0 | shortest pause between the moves of two bots |
 | `bot.max_active_games` | int >= 1 | `BOT_MAX_ACTIVE_GAMES` | games one bot plays at once |
@@ -577,15 +615,17 @@ provide the defaults. Known keys, all validated on write:
 | `bot.tick_min_minutes` / `bot.tick_max_minutes` | int >= 1 | `BOT_TICK_MIN/MAX_MINUTES` | matchmaker sleep range (max is raised to min when lower) |
 
 A `Settings` service caches the table, refreshes it every minute and immediately after a write,
-and hands typed values to `BotPlayer` (pauses, read before every move) and `BotMatchmaker`
-(read at the start of every tick). Unknown keys are rejected.
+and hands typed values to `BotPlayer` (pauses, read before every move), `BotMatchmaker`
+(read at the start of every tick) and `HumanLoad` (the limit, read on every check). Unknown
+keys are rejected.
 
 The admin API is enabled only when `ADMIN_TOKEN` (at least 16 characters) is set; every request
 must carry `X-Admin-Token` with that value (compared in constant time), otherwise 401
 `unauthorized`; with no token configured the routes answer 404. Admin actions are logged.
 
 ```
-GET   /api/admin/overview                       -> {users, guests, bots, games: {waiting, active, finished}, activeBotGames, settings: {...}}
+GET   /api/admin/overview                       -> {users, guests, bots, games: {waiting, active, finished}, activeBotGames, humanGames, settings: {...}}
+                                                   (activeBotGames: games in progress with a bot seat; humanGames: with a human seat, section 2.10)
 GET   /api/admin/bots                           -> {bots: [AdminBot]}      AdminBot = PlayerSummary + {level, legacy, activeGames, totalGames}
 GET   /api/admin/bots/{username}                -> AdminBotDetails: AdminBot + {activeGameList: [GameSummary], recentGames: [GameSummary] (20)}
 POST  /api/admin/bots  {username, displayName, level}  -> 201 AdminBot   (username rules of 2.2, 409 username_taken; the bot joins the roster at once)
@@ -623,6 +663,7 @@ chess-admin [--api URL] [--token TOKEN] [--json] <command>
   settings reset <key>
   settings open-games <n>                 # shortcut for bot.open_games_target
   settings live-games <n>                 # shortcut for bot.live_games_target
+  settings human-games-limit <n>          # shortcut for bot.human_games_limit
   games list [--status WAITING|ACTIVE|FINISHED] [--limit <n>]
   games abort <id>                        # finish a game with ABANDONMENT, no rating change
   games drop <id>                         # delete a game outright
@@ -689,8 +730,15 @@ In the cluster (namespace `chess`) the same images run as the Deployments `engin
 `web` with Services of the same names, so that nginx and the API find each other exactly as
 under compose, and PostgreSQL as the StatefulSet `db` with a persistent volume. `api` is a single
 replica that is replaced rather than rolled (running games and their sockets live in the
-process) and waits for the database in an init container; `engine` carries the CPU limit. The
-database password and the JWT key come from the Secret `chess` (`deploy/k8s/create-secret.sh`).
+process) and waits for the database in an init container. `engine` requests 4 CPUs and is
+limited to 6 (the limit is what the JVM sizes its search threads from) and is scaled by a
+`HorizontalPodAutoscaler` (`autoscaling/v2`, 1 to 2 replicas, target 75 % average CPU
+utilization; k3s ships the metrics-server it needs): the Deployment declares no replica count,
+the autoscaler owns it. The service is stateless (the replay cache is per pod and replaying is
+cheap), so the API's requests spread over the replicas through the `engine` Service. Two
+replicas use up to 12 of the single node's 16 cores, leaving the rest to the API, the database
+and the web server; `maxReplicas` is what to raise when nodes are added. The database password
+and the JWT key come from the Secret `chess` (`deploy/k8s/create-secret.sh`).
 
 nginx serves `index.html` with `Cache-Control: no-cache` and the hashed `/assets/` as
 immutable, hides its version and adds `X-Content-Type-Options`, `X-Frame-Options` and

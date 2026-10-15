@@ -131,6 +131,11 @@ class InMemoryGameRepository(private val store: InMemoryStore = InMemoryStore())
         games.values.count { it.phase == GamePhase.ACTIVE && it.whiteId in players && it.blackId in players }
     }
 
+    override suspend fun countActiveGamesWithHumans(botIds: Collection<Long>): Int = store.mutex.withLock {
+        val bots = botIds.toSet()
+        games.values.count { it.phase == GamePhase.ACTIVE && (it.whiteId !in bots || it.blackId !in bots) }
+    }
+
     override suspend fun countByPhase(): Map<GamePhase, Int> = store.mutex.withLock {
         games.values.groupingBy { it.phase }.eachCount()
     }

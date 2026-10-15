@@ -77,6 +77,12 @@ interface GameRepository {
     /** How many ACTIVE games have both seats held by [playerIds]. */
     suspend fun countActiveGamesAmong(playerIds: Collection<Long>): Int
 
+    /**
+     * How many ACTIVE games have a seat that none of [botIds] holds: the games people (guests
+     * included) are playing, against a bot or against each other.
+     */
+    suspend fun countActiveGamesWithHumans(botIds: Collection<Long>): Int
+
     /** How many games exist in each phase. */
     suspend fun countByPhase(): Map<GamePhase, Int>
 

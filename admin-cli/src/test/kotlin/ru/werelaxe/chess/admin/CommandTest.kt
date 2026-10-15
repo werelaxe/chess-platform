@@ -72,6 +72,7 @@ class CommandTest {
         val result = run("$token overview")
         assertEquals(0, result.statusCode, result.output)
         assertTrue("Users:             123" in result.stdout, result.stdout)
+        assertTrue("Human games:       4" in result.stdout, result.stdout)
         assertTrue("bot.open_games_target  2" in result.stdout, result.stdout)
     }
 
@@ -272,6 +273,20 @@ class CommandTest {
         api.requests.clear()
         run("$token settings live-games -- -1").assertFailed("must not be negative")
         run("$token settings live-games some").assertFailed("some is not a valid integer")
+        assertTrue(api.requests.isEmpty())
+    }
+
+    @Test
+    fun humanGamesLimitIsAShortcutForTheKey() {
+        val result = run("$token settings human-games-limit 20")
+        assertEquals(0, result.statusCode, result.output)
+        assertEquals(HttpMethod.Put, api.requests.single().method)
+        assertEquals("http://localhost:8080/api/admin/settings/bot.human_games_limit", api.requests.single().url)
+        assertEquals("""{"value":"20"}""", api.requests.single().body)
+        assertTrue("bot.human_games_limit  20     0        db      a setting" in result.stdout, result.stdout)
+        api.requests.clear()
+        run("$token settings human-games-limit -- -1").assertFailed("must not be negative")
+        run("$token settings human-games-limit lots").assertFailed("lots is not a valid integer")
         assertTrue(api.requests.isEmpty())
     }
 

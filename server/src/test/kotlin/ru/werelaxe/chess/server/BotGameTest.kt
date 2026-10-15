@@ -17,6 +17,7 @@ import ru.werelaxe.chess.core.Game
 import ru.werelaxe.chess.core.GameKind
 import ru.werelaxe.chess.core.GameMove
 import ru.werelaxe.chess.engine.EngineLevel
+import ru.werelaxe.chess.engine.ThinkPriority
 import ru.werelaxe.chess.server.dto.AuthResponse
 import ru.werelaxe.chess.server.dto.BotsResponse
 import ru.werelaxe.chess.server.dto.ColorChoice
@@ -32,10 +33,12 @@ import ru.werelaxe.chess.server.model.Visibility
 import ru.werelaxe.chess.server.repository.Repositories
 import ru.werelaxe.chess.server.repository.memory.InMemoryStore
 import ru.werelaxe.chess.server.service.BotRoster
+import ru.werelaxe.chess.server.service.EngineBusyException
 import ru.werelaxe.chess.server.service.MoveProvider
 import ru.werelaxe.chess.server.ws.ServerEvent
 import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -151,19 +154,36 @@ class BotGameTest {
     }
 
     /** What the bot player asked a provider for. */
-    private data class Think(val gameId: String, val kind: GameKind, val level: EngineLevel, val moves: List<GameMove>)
+    private data class Think(
+        val gameId: String,
+        val kind: GameKind,
+        val level: EngineLevel,
+        val moves: List<GameMove>,
+        val priority: ThinkPriority,
+    )
+
+    /** A provider that records every request and answers with [script] for the ply, nothing beyond it. */
+    private fun recording(thinks: MutableList<Think>, script: (ply: Int) -> GameMove?) = object : MoveProvider {
+        override suspend fun chooseMove(
+            gameId: String,
+            kind: GameKind,
+            level: EngineLevel,
+            moves: List<GameMove>,
+            priority: ThinkPriority,
+        ): GameMove? {
+            thinks += Think(gameId, kind, level, moves, priority)
+            return script(moves.size)
+        }
+    }
 
     @Test
     fun botMovesComeFromTheInjectedProviderWithTheSeatsLevel() {
         val thinks = CopyOnWriteArrayList<Think>()
-        val scripted = object : MoveProvider {
-            override suspend fun chooseMove(gameId: String, kind: GameKind, level: EngineLevel, moves: List<GameMove>): GameMove? {
-                thinks += Think(gameId, kind, level, moves)
-                return when (moves.size) {
-                    1 -> normal("e7e5")
-                    3 -> normal("b8c6")
-                    else -> null
-                }
+        val scripted = recording(thinks) { ply ->
+            when (ply) {
+                1 -> normal("e7e5")
+                3 -> normal("b8c6")
+                else -> null
             }
         }
         serverTest(moveProvider = scripted) {
@@ -172,7 +192,10 @@ class BotGameTest {
             move(alice, created.id, "e2e4")
             assertEquals(2, awaitMoves(alice, created.id, 2).moveCount)
             assertEquals(listOf(normal("e2e4"), normal("e7e5")), game(created.id).moves)
-            assertEquals(listOf(Think(created.id, GameKind.CLASSIC, EngineLevel.HARD, listOf(normal("e2e4")))), thinks)
+            assertEquals(
+                listOf(Think(created.id, GameKind.CLASSIC, EngineLevel.HARD, listOf(normal("e2e4")), ThinkPriority.HUMAN)),
+                thinks,
+            )
 
             move(alice, created.id, "g1f3")
             assertEquals(4, awaitMoves(alice, created.id, 4).moveCount)
@@ -405,13 +428,98 @@ class BotGameTest {
         assertEquals(0, services.games.wakeBots(), "nothing is on a bot's turn any more")
     }
 
+    /** A public game between two roster bots, which wakes the white bot; the opponent of the human's bot is left out. */
+    private suspend fun TestContext.botVersusBotGame(): GameDto {
+        val (white, black) = services.bots.roster.filter { it.botLevel != EngineLevel.EASY }.take(2)
+        val created = services.games.create(services.bots.principal(white), CreateGameRequest(GameKind.CLASSIC, color = ColorChoice.WHITE))
+        return services.games.join(services.bots.principal(black), created.id)
+    }
+
+    @Test
+    fun botVersusBotGameWaitsUnderHighHumanLoadButAHumansGameNever() {
+        val thinks = CopyOnWriteArrayList<Think>()
+        val scripted = recording(thinks) { ply ->
+            when (ply) {
+                0 -> normal("e2e4")
+                1 -> normal("e7e5")
+                2 -> normal("g1f3")
+                else -> null
+            }
+        }
+        serverTest(config = TEST_CONFIG.copy(botHumanGamesLimit = 1), moveProvider = scripted) {
+            val alice = token("alice")
+            // The bot opens against Alice at once: a human's game, and the one game that makes the load high.
+            val human = botGame(alice, color = ColorChoice.BLACK)
+            assertEquals(1, awaitMoves(alice, human.id, 1).moveCount)
+
+            val live = botVersusBotGame()
+            assertEquals(GamePhase.ACTIVE, live.status)
+            delay(200)
+            assertEquals(0, assertNotNull(repositories.games.findById(live.id)).moveCount, "held while the human load is high")
+            assertTrue(thinks.none { it.gameId == live.id }, "no search for the held game: $thinks")
+
+            // Alice's game goes on as usual, at the human priority.
+            move(alice, human.id, "e7e5")
+            assertEquals(3, awaitMoves(alice, human.id, 3).moveCount)
+            assertEquals(listOf(ThinkPriority.HUMAN, ThinkPriority.HUMAN), thinks.filter { it.gameId == human.id }.map { it.priority })
+            assertTrue(thinks.none { it.gameId == live.id })
+
+            // The limit lifted, the next wake-up (a matchmaking tick) plays the held game at the bot priority.
+            services.settings.set("bot.human_games_limit", "0")
+            assertEquals(1, services.games.wakeBots())
+            assertEquals(3, awaitStoredMoves(live.id, 3))
+            // Three moves, then the fourth request is answered with nothing once the third move wakes the other bot.
+            val priorities = thinks.filter { it.gameId == live.id }.map { it.priority }
+            assertTrue(priorities.size >= 3, "$thinks")
+            assertTrue(priorities.all { it == ThinkPriority.BOT }, "$priorities")
+        }
+    }
+
+    @Test
+    fun botVersusBotGameWaitsForABusyEngineUntilTheNextWakeUp() {
+        val busy = AtomicBoolean(true)
+        val searches = AtomicInteger()
+        val provider = object : MoveProvider {
+            override suspend fun chooseMove(
+                gameId: String,
+                kind: GameKind,
+                level: EngineLevel,
+                moves: List<GameMove>,
+                priority: ThinkPriority,
+            ): GameMove? {
+                searches.incrementAndGet()
+                if (busy.get()) throw EngineBusyException("Engine service overloaded")
+                return if (moves.isEmpty()) normal("e2e4") else null
+            }
+        }
+        serverTest(moveProvider = provider) {
+            val live = botVersusBotGame()
+            withTimeout(5_000) {
+                while (searches.get() < 1) delay(10)
+            }
+            delay(200)
+            assertEquals(1, searches.get(), "no retry of its own: the game waits for the next wake-up")
+            assertEquals(0, assertNotNull(repositories.games.findById(live.id)).moveCount)
+
+            busy.set(false)
+            assertEquals(1, services.games.wakeBots())
+            assertEquals(1, awaitStoredMoves(live.id, 1))
+        }
+    }
+
     private class EngineCrash : Error("the engine blew up")
 
     @Test
     fun slotIsReleasedWhenTheSearchThrowsAnError() {
         val searches = AtomicInteger()
         val crashing = object : MoveProvider {
-            override suspend fun chooseMove(gameId: String, kind: GameKind, level: EngineLevel, moves: List<GameMove>): GameMove? {
+            override suspend fun chooseMove(
+                gameId: String,
+                kind: GameKind,
+                level: EngineLevel,
+                moves: List<GameMove>,
+                priority: ThinkPriority,
+            ): GameMove? {
                 if (searches.getAndIncrement() == 0) throw EngineCrash()
                 return normal("e7e5")
             }

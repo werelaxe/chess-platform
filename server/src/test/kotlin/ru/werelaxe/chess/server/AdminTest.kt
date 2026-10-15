@@ -24,6 +24,7 @@ import ru.werelaxe.chess.core.EndReason
 import ru.werelaxe.chess.core.GameKind
 import ru.werelaxe.chess.core.GameMove
 import ru.werelaxe.chess.engine.EngineLevel
+import ru.werelaxe.chess.engine.ThinkPriority
 import ru.werelaxe.chess.server.dto.AdminBot
 import ru.werelaxe.chess.server.dto.AdminBotDetails
 import ru.werelaxe.chess.server.dto.AdminBotsResponse
@@ -94,7 +95,13 @@ class AdminTest {
 
     /** A move provider that never moves, for the tests that only count the bots' games. */
     private val idleBots = object : MoveProvider {
-        override suspend fun chooseMove(gameId: String, kind: GameKind, level: EngineLevel, moves: List<GameMove>): GameMove? = null
+        override suspend fun chooseMove(
+            gameId: String,
+            kind: GameKind,
+            level: EngineLevel,
+            moves: List<GameMove>,
+            priority: ThinkPriority,
+        ): GameMove? = null
     }
 
     private suspend fun TestContext.spawn(username: String, name: String, level: String, token: String? = ADMIN_TOKEN): HttpResponse =
@@ -187,6 +194,7 @@ class AdminTest {
         assertEquals(BotRoster.specs.size, overview.bots, "the legacy account is a bot too")
         assertEquals(GameCounts(waiting = 1, active = 2, finished = 1), overview.games)
         assertEquals(1, overview.activeBotGames)
+        assertEquals(2, overview.humanGames, "the game against the bot and the game between the two people")
         assertEquals(SettingKeys.ALL.map { it.name }.toSet(), overview.settings.keys)
         assertEquals("2", overview.settings["bot.open_games_target"])
         assertEquals("0", overview.settings["bot.live_games_target"])
@@ -360,9 +368,17 @@ class AdminTest {
         assertEquals(SettingKeys.ALL.map { it.name }, listed.map { it.key })
         assertTrue(listed.all { it.source == SettingSource.DEFAULT && it.value == it.defaultValue && it.description.isNotBlank() })
         assertEquals("3", setting("bot.open_games_target").value, "the default comes from the configuration")
-        assertEquals(listOf("bot.matchmaking", "bot.open_games_target", "bot.live_games_target"), listed.take(3).map { it.key })
+        assertEquals(
+            listOf("bot.matchmaking", "bot.open_games_target", "bot.live_games_target", "bot.human_games_limit"),
+            listed.take(4).map { it.key },
+        )
         assertEquals("0", setting("bot.live_games_target").value)
         assertEquals("Bot-versus-bot games the matchmaker keeps in progress; 0 switches this off", setting("bot.live_games_target").description)
+        assertEquals("0", setting("bot.human_games_limit").value)
+        assertEquals(
+            "Games in progress with a human at or above which bots start no games with each other and bot-versus-bot games wait; 0 switches this off",
+            setting("bot.human_games_limit").description,
+        )
         assertEquals("true", setting("bot.matchmaking").value)
         assertEquals("10", setting("bot.reply_pause_millis").value)
         assertEquals("0", setting("bot.vs_bot_pause_millis").value)
@@ -384,10 +400,13 @@ class AdminTest {
         assertEquals(5, services.settings.openGamesTarget)
         assertEquals("5", adminGet("/overview").body<AdminOverview>().settings["bot.open_games_target"])
         assertEquals("true", set("bot.matchmaking", "TRUE").value, "booleans are normalised")
+        assertEquals("40", set("bot.human_games_limit", "40").value)
+        assertEquals(40, services.settings.humanGamesLimit)
         assertEquals("250", putSetting("bot.reply_pause_millis", """{"value":250}""").body<SettingEntry>().value, "a bare number is accepted")
 
         putSetting("bot.open_games_target", """{"value":"-1"}""").assertError(HttpStatusCode.BadRequest, "validation")
         putSetting("bot.live_games_target", """{"value":"-1"}""").assertError(HttpStatusCode.BadRequest, "validation")
+        putSetting("bot.human_games_limit", """{"value":"-1"}""").assertError(HttpStatusCode.BadRequest, "validation")
         putSetting("bot.open_games_target", """{"value":"many"}""").assertError(HttpStatusCode.BadRequest, "validation")
         putSetting("bot.open_games_target", """{"value":"1.5"}""").assertError(HttpStatusCode.BadRequest, "validation")
         putSetting("bot.open_games_target", """{"value":null}""").assertError(HttpStatusCode.BadRequest, "validation")
@@ -455,7 +474,9 @@ class AdminTest {
         val live = game(started.gameId)
         assertEquals(GamePhase.ACTIVE, live.status)
         assertTrue(live.white?.bot == true && live.black?.bot == true)
-        assertEquals(1, adminGet("/overview").body<AdminOverview>().activeBotGames)
+        val overview = adminGet("/overview").body<AdminOverview>()
+        assertEquals(1, overview.activeBotGames)
+        assertEquals(0, overview.humanGames, "a game between two bots is nobody's")
         assertEquals(emptyList(), services.matchmaker.tick(), "the target of one is reached")
 
         set("bot.live_games_target", "0")
@@ -502,8 +523,13 @@ class AdminTest {
     fun botVersusBotPauseIsReadFromTheSettings() {
         val opening = listOf(normal("e2e4"), normal("e7e5"), normal("g1f3"), normal("b8c6"))
         val scripted = object : MoveProvider {
-            override suspend fun chooseMove(gameId: String, kind: GameKind, level: EngineLevel, moves: List<GameMove>): GameMove? =
-                opening.getOrNull(moves.size)
+            override suspend fun chooseMove(
+                gameId: String,
+                kind: GameKind,
+                level: EngineLevel,
+                moves: List<GameMove>,
+                priority: ThinkPriority,
+            ): GameMove? = opening.getOrNull(moves.size)
         }
         serverTest(config = ADMIN_CONFIG.copy(botOpenGamesTarget = 1), random = ScriptedRandom(), moveProvider = scripted) {
             set("bot.vs_bot_pause_millis", "300")

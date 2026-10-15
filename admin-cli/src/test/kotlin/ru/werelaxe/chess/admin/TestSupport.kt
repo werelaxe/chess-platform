@@ -59,7 +59,7 @@ object Fixtures {
         """"activeGameList":[$ACTIVE_GAME],"recentGames":[$ACTIVE_GAME,$FINISHED_GAME]}"""
 
     const val OVERVIEW = """{"users":123,"guests":45,"bots":8,"games":{"waiting":2,"active":5,"finished":1000},"activeBotGames":3,""" +
-        """"settings":{"bot.open_games_target":"2","bot.matchmaking":"true"}}"""
+        """"humanGames":4,"settings":{"bot.open_games_target":"2","bot.matchmaking":"true"}}"""
 
     const val MATCHMAKING_SETTING = """{"key":"bot.matchmaking","value":"true","default":"true","source":"default",""" +
         """"description":"the matchmaker loop acts on its ticks"}"""
@@ -71,6 +71,7 @@ object Fixtures {
         "bot.matchmaking" to "true",
         "bot.open_games_target" to "2",
         "bot.live_games_target" to "1",
+        "bot.human_games_limit" to "0",
         "bot.reply_pause_millis" to "700",
         "bot.vs_bot_pause_millis" to "0",
     )

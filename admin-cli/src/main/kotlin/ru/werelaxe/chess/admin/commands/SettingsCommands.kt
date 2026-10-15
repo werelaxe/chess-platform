@@ -14,6 +14,7 @@ import ru.werelaxe.chess.admin.output.Render
 
 const val OPEN_GAMES_KEY = "bot.open_games_target"
 const val LIVE_GAMES_KEY = "bot.live_games_target"
+const val HUMAN_GAMES_LIMIT_KEY = "bot.human_games_limit"
 const val REPLY_PAUSE_KEY = "bot.reply_pause_millis"
 const val VS_BOT_PAUSE_KEY = "bot.vs_bot_pause_millis"
 
@@ -25,6 +26,7 @@ class SettingsCommand : CliktCommand(name = "settings") {
             SettingsResetCommand(),
             SettingsOpenGamesCommand(),
             SettingsLiveGamesCommand(),
+            SettingsHumanGamesLimitCommand(),
             SettingsPausesCommand(),
         )
     }
@@ -92,6 +94,23 @@ class SettingsLiveGamesCommand : CliktCommand(name = "live-games") {
 
     override fun run() {
         val reply = session.exchange { setSetting(LIVE_GAMES_KEY, target.toString()) }
+        echo(session.show(reply) { Render.settings(listOf(it)) })
+    }
+}
+
+class SettingsHumanGamesLimitCommand : CliktCommand(name = "human-games-limit") {
+    private val session by requireObject<Session>()
+    private val limit by argument(
+        name = "n",
+        help = "Games in progress with a human at or above which bots start no games with each other; 0 switches this off",
+    )
+        .int()
+        .check("must not be negative") { it >= 0 }
+
+    override fun help(context: Context) = "Set the human load above which the bots stop playing each other ($HUMAN_GAMES_LIMIT_KEY)."
+
+    override fun run() {
+        val reply = session.exchange { setSetting(HUMAN_GAMES_LIMIT_KEY, limit.toString()) }
         echo(session.show(reply) { Render.settings(listOf(it)) })
     }
 }

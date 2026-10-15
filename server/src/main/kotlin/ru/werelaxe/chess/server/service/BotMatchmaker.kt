@@ -29,6 +29,11 @@ import kotlin.time.Duration.Companion.milliseconds
  * active-games cap sit the tick out. Every choice goes through [random] and [clock], so tests
  * drive [tick] directly with scripted values.
  *
+ * While the human load is high ([humanLoad]; `bot.human_games_limit` of section 2.11) the
+ * bots add no game of their own to the engine's work: the tick starts no live game and joins
+ * no open game a bot created. A human's open game is still joined, open games for humans are
+ * still created and humans are still invited. What the gate held back is logged once per tick.
+ *
  * The tunables come from [settings] (section 2.11): the targets are read at the start of
  * every tick and the sleep range before every pause, so a change applies without a restart.
  * With `bot.matchmaking` off a tick does nothing at all, and the loop keeps running so that
@@ -41,6 +46,7 @@ class BotMatchmaker(
     private val users: UserRepository,
     private val bots: Bots,
     private val settings: Settings,
+    private val humanLoad: HumanLoad,
     private val openGameTtl: Duration,
     private val random: Random,
     private val clock: Clock,
@@ -60,6 +66,21 @@ class BotMatchmaker(
         data class Joined(val gameId: String) : Action
 
         data class Invited(val gameId: String, val userId: Long) : Action
+    }
+
+    /**
+     * The human-load gate of one tick: closed while the load is high. Whether it held anything
+     * back is logged once at the end of the tick, so a tick with nothing to hold back is quiet.
+     */
+    private class Gate(private val closed: Boolean) {
+        var suppressed = false
+            private set
+
+        /** Whether a bot-versus-bot game that would start now is held back. */
+        fun holds(): Boolean {
+            if (closed) suppressed = true
+            return closed
+        }
     }
 
     /** Ticks forever after random pauses; cancelled with the application. */
@@ -90,17 +111,26 @@ class BotMatchmaker(
         games.wakeBots()
         expireInvitations(now, invitationTtl)
         expireOpenGames(now)
+        val gate = Gate(closed = humanLoad.high())
         val actions = ArrayList<Action>()
-        actions += startLiveGames(liveGamesTarget, maxActiveGames)
+        actions += startLiveGames(liveGamesTarget, maxActiveGames, gate)
         // The games just started count towards the cap, so the available bots are read afresh.
         val available = availableBots(maxActiveGames)
-        if (available.isEmpty()) return actions
-        if (repository.countOpenGamesBy(bots.ids) < openGamesTarget) {
-            actions += createOpenGame(leastBusy(available)!!)
-        } else {
-            val action = joinOldestGame(available, now, joinAfter)
-                ?: if (random.nextDouble() < INVITE_PROBABILITY) inviteHuman(available, now) else null
-            if (action != null) actions += action
+        if (available.isNotEmpty()) {
+            if (repository.countOpenGamesBy(bots.ids) < openGamesTarget) {
+                actions += createOpenGame(leastBusy(available)!!)
+            } else {
+                val action = joinOldestGame(available, now, joinAfter, gate)
+                    ?: if (random.nextDouble() < INVITE_PROBABILITY) inviteHuman(available, now) else null
+                if (action != null) actions += action
+            }
+        }
+        if (gate.suppressed) {
+            log.info(
+                "Human load high: {} games with humans, limit {}; bots start no games with each other",
+                humanLoad.humanGames(),
+                settings.humanGamesLimit,
+            )
         }
         return actions
     }
@@ -157,15 +187,15 @@ class BotMatchmaker(
     /**
      * Starts bot-versus-bot games while fewer than [target] are in progress, at most
      * [LIVE_GAMES_PER_TICK] per tick so that a raised target fills up over a few ticks rather
-     * than all at once. Each game takes a slot of both bots, so the available bots are read
-     * again before every game; two distinct ones are needed.
+     * than all at once, and none while the [gate] is closed. Each game takes a slot of both
+     * bots, so the available bots are read again before every game; two distinct ones are needed.
      */
-    private suspend fun startLiveGames(target: Int, maxActiveGames: Int): List<Action> {
+    private suspend fun startLiveGames(target: Int, maxActiveGames: Int, gate: Gate): List<Action> {
         if (target <= 0) return emptyList()
         val started = ArrayList<Action>()
         var live = repository.countActiveGamesAmong(bots.ids)
         repeat(LIVE_GAMES_PER_TICK) {
-            if (live >= target) return started
+            if (live >= target || gate.holds()) return started
             val available = availableBots(maxActiveGames)
             if (available.size < 2) return started
             val creator = leastBusy(available)!!
@@ -192,12 +222,14 @@ class BotMatchmaker(
     /**
      * Joins the oldest game that has waited at least [joinAfter] but is younger than the TTL:
      * the one whose creator has been kept waiting the longest. A game the only available bot
-     * created itself, or one joined or cancelled since the listing (a benign race, logged at
-     * DEBUG), is passed over for the next oldest.
+     * created itself, one another bot created while the [gate] is closed (joining it would
+     * start a bot-versus-bot game), or one joined or cancelled since the listing (a benign
+     * race, logged at DEBUG), is passed over for the next oldest.
      */
-    private suspend fun joinOldestGame(available: List<BotLoad>, now: Instant, joinAfter: Duration): Action? {
+    private suspend fun joinOldestGame(available: List<BotLoad>, now: Instant, joinAfter: Duration, gate: Gate): Action? {
         val candidates = repository.listOpenGamesCreatedBetween(now - openGameTtl, now - joinAfter, JOIN_CANDIDATES)
         for (game in candidates) {
+            if (bots.isBot(game.creatorId) && gate.holds()) continue
             val joiner = leastBusy(available.filter { it.user.id != game.creatorId }) ?: continue
             try {
                 games.join(bots.principal(joiner), game.id)

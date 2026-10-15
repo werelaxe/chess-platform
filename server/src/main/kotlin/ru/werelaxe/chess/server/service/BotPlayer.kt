@@ -14,6 +14,7 @@ import ru.werelaxe.chess.core.GameKind
 import ru.werelaxe.chess.core.GameMove
 import ru.werelaxe.chess.core.IllegalMoveException
 import ru.werelaxe.chess.engine.EngineLevel
+import ru.werelaxe.chess.engine.ThinkPriority
 import ru.werelaxe.chess.server.model.GamePhase
 import ru.werelaxe.chess.server.model.GameRecord
 import java.util.concurrent.ConcurrentHashMap
@@ -22,7 +23,8 @@ import kotlin.time.TimeMark
 /**
  * What a bot needs to choose a move: who it is, how strong it plays and the position as the
  * snapshot of the move list ([moves]) taken under the game's lock. [opponentIsBot] selects
- * which of the two pauses of the [Settings] applies before the move.
+ * which of the two pauses of the [Settings] applies before the move and the [ThinkPriority] of
+ * the search; a bot-versus-bot game is also held while the human load is high.
  */
 class BotTurn(
     val gameId: String,
@@ -40,6 +42,12 @@ class BotTurn(
  * outside it; the provider decides where and how many searches run at a time. The pauses are
  * read from [settings] before every move, so a change applies without a restart.
  *
+ * A move against a human is asked for with [ThinkPriority.HUMAN], a move against another bot
+ * with [ThinkPriority.BOT]: the engine service serves the humans first, and a bot-versus-bot
+ * game makes no move at all while the human load is [high][HumanLoad.high] or while the
+ * service is too busy for it ([EngineBusyException]); it resumes when `GameService.wakeBots`
+ * runs at a later matchmaking tick. A human's game is never held.
+ *
  * A game is never searched twice at the same time: a wake-up that arrives while its game is
  * being played is honoured once the current move is done instead of being lost.
  */
@@ -48,6 +56,7 @@ class BotPlayer(
     private val bots: Bots,
     private val moves: MoveProvider,
     private val settings: Settings,
+    private val humanLoad: HumanLoad,
 ) {
     private val log = LoggerFactory.getLogger(BotPlayer::class.java)
 
@@ -143,7 +152,20 @@ class BotPlayer(
         var pacing = movedAt
         repeat(MAX_ATTEMPTS) {
             val turn = games.botTurn(id) ?: return
-            val move = moves.chooseMove(turn.gameId, turn.kind, turn.level, turn.moves) ?: return
+            if (turn.opponentIsBot && humanLoad.high()) {
+                // People need the engine; the game resumes through wakeBots once the load has dropped.
+                log.debug("Bot-versus-bot game {} waits while the human load is high", id)
+                return
+            }
+            val priority = if (turn.opponentIsBot) ThinkPriority.BOT else ThinkPriority.HUMAN
+            val move = try {
+                moves.chooseMove(turn.gameId, turn.kind, turn.level, turn.moves, priority)
+            } catch (e: EngineBusyException) {
+                // The service serves the humans first; the game resumes through wakeBots at the next tick.
+                log.info("Bot-versus-bot game {} waits for the engine: {}", id, e.message)
+                return
+            }
+            if (move == null) return
             // The pause makes a reply to a human feel like one; two bots have their own, nil by default.
             val pause = if (turn.opponentIsBot) settings.vsBotPause else settings.replyPause
             pacing?.let { mark ->
