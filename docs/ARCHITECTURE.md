@@ -722,15 +722,29 @@ are chance nodes (the probability-weighted average over their outcomes); a unive
 king counts 6000 for the other side; a king attackable on the opponent's turn costs 900; a
 distribution that already occurred in the game or earlier in the line is a draw; a quicker win
 scores higher. The static evaluation of a distribution is the probability-weighted average over
-its universes.
+its universes, and deliberately nothing about their number: the evaluation is zero-sum, so a
+term that made a fog of universes cost the side ahead would make the same fog pay the side
+behind, which then splits on every move to get it (a 3 percent discount per doubling was
+tried: the losing side answered with stay-splits of ordinary moves at every level without a
+split cost, and the winning side spent tempi observing three-universe positions). The fog is
+kept down at the root instead: at `NOVICE` and `EASY` a split costs 40 centipawns on top of
+what it leads to (the level's `splitCost`). Those levels pick at random among the moves within
+their randomness margin, and a split is seldom worse than the best move at a glance, so
+without the cost they split on almost every move and bury the game in a fog of hundreds of
+universes that nobody resolves. The cost does not rule splits out (one still enters the random
+pool when it comes within the margin less the cost), it makes them rarer: in `EASY` self-play
+splits fell from about 40 to about 20 percent of the moves, the average universe count from
+about 400 to about 20, and every game ended. The levels that always take the best move split
+only when the search says it pays, and pay nothing; a flat cost at `HARD` lost matches to the
+previous search, so it stays confined to the random levels.
 
-| level | classic depth | quiescence | quantum candidates | quantum depth | randomness | budget |
-|-------|---------------|------------|--------------------|---------------|------------|--------|
-| `NOVICE` | 1 | no | 4 | 2 | 200 | 0.3 s |
-| `EASY` | 2 | no | 6 | 2 | 90 | 0.7 s |
-| `MEDIUM` | 3 | yes | 12 | 4 | 0 | 1.5 s |
-| `HARD` | 6 | yes | 24 | 4 | 0 | 3.5 s |
-| `EXPERT` | 7 | yes | 32 | 4 | 0 | 6 s |
+| level | classic depth | quiescence | quantum candidates | quantum depth | randomness | split cost | budget |
+|-------|---------------|------------|--------------------|---------------|------------|------------|--------|
+| `NOVICE` | 1 | no | 4 | 2 | 200 | 40 | 0.3 s |
+| `EASY` | 2 | no | 6 | 2 | 90 | 40 | 0.7 s |
+| `MEDIUM` | 3 | yes | 12 | 4 | 0 | 0 | 1.5 s |
+| `HARD` | 6 | yes | 24 | 4 | 0 | 0 | 3.5 s |
+| `EXPERT` | 7 | yes | 32 | 4 | 0 | 0 | 6 s |
 
 Randomness: moves scoring within that many centipawns of the best are chosen at random (with
 the injectable `Random`), so the weaker levels vary their play. Both searches spread the
