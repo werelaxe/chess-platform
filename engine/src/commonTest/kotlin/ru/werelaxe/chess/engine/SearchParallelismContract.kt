@@ -75,8 +75,8 @@ abstract class SearchParallelismContract(private val parallelism: SearchParallel
     fun quantumChoicesMatchTheSequentialSearch() {
         val deadline = TimeSource.Monotonic.markNow() + 10.minutes
         for ((state, level) in listOf(quantumPosition(60) to EngineLevel.MEDIUM, quantumPosition(30, seed = 5) to EngineLevel.EASY)) {
-            val sequential = QuantumSearch(level.quantumCandidates, deadline, level.randomness, Random(1)).bestMove(state)
-            val parallel = QuantumSearch(level.quantumCandidates, deadline, level.randomness, Random(1), parallelism).bestMove(state)
+            val sequential = QuantumSearch(level.quantumCandidates, level.quantumDepth, deadline, 10.minutes, level.randomness, Random(1)).bestMove(state)
+            val parallel = QuantumSearch(level.quantumCandidates, level.quantumDepth, deadline, 10.minutes, level.randomness, Random(1), parallelism).bestMove(state)
             assertEquals(sequential, parallel)
         }
     }
@@ -130,7 +130,7 @@ abstract class SearchParallelismContract(private val parallelism: SearchParallel
 
         val state = quantumPosition(300)
         val started = TimeSource.Monotonic.markNow()
-        assertNotNull(QuantumSearch(24, started + 100.milliseconds, 0, Random(1), parallelism).bestMove(state))
+        assertNotNull(QuantumSearch(24, 4, started + 100.milliseconds, 100.milliseconds, 0, Random(1), parallelism).bestMove(state))
         assertTrue(started.elapsedNow() < 1.seconds, "the quantum search took ${started.elapsedNow()}")
     }
 }

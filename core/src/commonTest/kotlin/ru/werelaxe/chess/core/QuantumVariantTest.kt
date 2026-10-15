@@ -14,7 +14,7 @@ class QuantumVariantTest {
     /** A state with one equally weighted universe per FEN. */
     private fun universes(vararg fens: String): QuantumState {
         val universes = fens.associate { board(it) to 1L }
-        return QuantumState(universes, 0, mapOf(universes to 1), null)
+        return QuantumState(universes, 0, PositionHistory.EMPTY.plus(universes), null)
     }
 
     /** The e2 pawn stands on e3 or e4 with equal probability; black has replied a7a6. */
@@ -548,7 +548,7 @@ class QuantumVariantTest {
         val a = board("4k3/8/8/8/8/8/8/N3K3 w - - 0 1")
         val b = board("4k3/8/8/8/8/8/8/4K2N w - - 0 1")
         val universes = mapOf(a to (1L shl 41) + 1, b to (1L shl 41) - 1)
-        var state = QuantumState(universes, 0, mapOf(universes to 1), null)
+        var state = QuantumState(universes, 0, PositionHistory.EMPTY.plus(universes), null)
         val shuffle = listOf("e1d1", "e8d8", "d1e1", "d8e8")
         repeat(2) { for (uci in shuffle) state = QuantumVariant.apply(state, normal(uci)) }
         assertEquals(Color.WHITE, state.sideToMove)
@@ -565,7 +565,7 @@ class QuantumVariantTest {
         for ((b, w) in state.universes.entries.reversed()) rebuilt[b] = w * 3 / 3
         assertEquals(state.universes, rebuilt)
         assertEquals(state.universes.hashCode(), rebuilt.hashCode())
-        assertEquals(1, state.positionCounts[rebuilt])
+        assertEquals(1, state.history.count(rebuilt))
         val counts: Map<Map<Board, Long>, Int> = mapOf(rebuilt to 7)
         assertEquals(7, counts[state.universes])
         assertEquals(2L, state.totalWeight)
@@ -587,7 +587,7 @@ class QuantumVariantTest {
     fun fiftyMoveRuleFiresAtOneHundredPlies() {
         fun withClock(halfmoveClock: Int): QuantumState {
             val initial = QuantumState.initial()
-            return QuantumState(initial.universes, halfmoveClock, initial.positionCounts, null)
+            return QuantumState(initial.universes, halfmoveClock, initial.history, null)
         }
         assertEquals(GameStatus.Ongoing, QuantumVariant.status(withClock(50)))
         assertEquals(GameStatus.Ongoing, QuantumVariant.status(withClock(99)))
@@ -599,7 +599,7 @@ class QuantumVariantTest {
         val heavy = board("4k3/8/8/8/8/8/8/N3K3 w - - 0 1")
         val light = board("4k3/8/8/8/8/8/8/4K2N w - - 0 1")
         val universes = mapOf(heavy to (1L shl 50), light to 1L)
-        val state = QuantumState(universes, 0, mapOf(universes to 1), null)
+        val state = QuantumState(universes, 0, PositionHistory.EMPTY.plus(universes), null)
         // The knight on a1 splits in the heavy universe only; the light one passes with double weight.
         val next = QuantumVariant.apply(state, split("a1", "b3", "c2"))
         assertEquals(2, next.universeCount)
@@ -612,7 +612,7 @@ class QuantumVariantTest {
         val heavy = board("4k3/8/8/8/8/8/8/N3K3 w - - 0 1")
         val light = board("4k3/8/8/8/8/8/8/4K2N w - - 0 1")
         val universes = mapOf(heavy to (1L shl 50) + 1, light to (1L shl 50) - 1)
-        val state = QuantumState(universes, 0, mapOf(universes to 1), null)
+        val state = QuantumState(universes, 0, PositionHistory.EMPTY.plus(universes), null)
         val next = QuantumVariant.apply(state, normal("e1d1"))
         assertTrue(next.universeCount >= 1)
         assertTrue(next.totalWeight > 0)
@@ -621,7 +621,7 @@ class QuantumVariantTest {
     @Test
     fun evenlyWeightedUniversesAreNeverPruned() {
         // Pruning only drops universes below 2^-40 probability. Independent splits never merge, so n of
-        // them produce 2^n equally weighted universes, and positionCounts retains every distribution so far.
+        // them produce 2^n equally weighted universes, and the history retains every distribution so far.
         val game = Game(GameKind.QUANTUM)
         for (file in "abcd") {
             game.apply(split("${file}2", "${file}3", "${file}4"))
@@ -631,7 +631,7 @@ class QuantumVariantTest {
         assertEquals(1 shl 8, state.universeCount)
         assertEquals(1L shl 8, state.totalWeight)
         assertTrue(state.universes.values.all { it == 1L })
-        assertEquals((1 shl 9) - 1, state.positionCounts.keys.sumOf { it.size })
+        assertEquals((1 shl 9) - 1, state.history.toMap().keys.sumOf { it.size })
         assertTrue(game.isLegal(normal("e2e4")))
     }
 
@@ -650,7 +650,7 @@ class QuantumVariantTest {
         assertEquals(a.universes, b.universes)
         assertEquals(a.universes.entries.toList(), b.universes.entries.toList(), "universe order must be reproducible")
         assertEquals(a.halfmoveClock, b.halfmoveClock)
-        assertEquals(a.positionCounts, b.positionCounts)
+        assertEquals(a.history, b.history)
         assertEquals(game.view(), replayed.view())
         assertEquals(game.status(), replayed.status())
         for (seed in 0 until 5) {
