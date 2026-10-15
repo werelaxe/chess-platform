@@ -5,10 +5,12 @@ import ru.werelaxe.chess.core.Color
 import ru.werelaxe.chess.core.Piece
 import ru.werelaxe.chess.core.PieceType
 import ru.werelaxe.chess.core.Square
+import kotlin.math.abs
 
 /**
  * Static evaluation in centipawns: material plus piece-square tables (the classic
- * "simplified evaluation function"). Positive values favour the given perspective.
+ * "simplified evaluation function"), and a mop-up term for the side that is winning a bare
+ * endgame. Positive values favour the given perspective.
  */
 object Evaluation {
     const val PAWN = 100
@@ -22,6 +24,15 @@ object Evaluation {
 
     /** Value attached to a king that exists in a quantum universe where the opponent's does not. */
     const val KING_PRESENCE = 6_000
+
+    /** The value of a draw, by repetition or otherwise, for either side. */
+    const val DRAW = 0
+
+    /** Per square of distance between the defending king and the centre, in the mop-up. */
+    const val MOP_UP_EDGE = 10
+
+    /** Per square of closeness between the two kings, in the mop-up. */
+    const val MOP_UP_CLOSE = 4
 
     fun value(type: PieceType): Int = when (type) {
         PieceType.PAWN -> PAWN
@@ -119,27 +130,83 @@ object Evaluation {
         }
     }
 
-    /** Endgame once both sides are down to a queen or less in non-pawn material. */
-    private fun isEndgame(board: Board): Boolean {
-        var white = 0
-        var black = 0
-        for (piece in board.squares) {
-            if (piece == null || piece.type == PieceType.PAWN || piece.type == PieceType.KING) continue
-            if (piece.color == Color.WHITE) white += value(piece.type) else black += value(piece.type)
-        }
-        return white <= QUEEN && black <= QUEEN
+    /** What one side has on the board besides its king. */
+    private class Material {
+        var pawns = 0
+        var pieces = 0
+        var king = -1
+
+        val total: Int
+            get() = pawns + pieces
     }
 
-    /** Material and piece placement from [perspective]'s point of view. Kings count as zero. */
+    /**
+     * Material and piece placement from [perspective]'s point of view. Kings count as zero.
+     * The endgame tables apply once both sides are down to a queen or less in non-pawn material.
+     */
     fun evaluate(board: Board, perspective: Color): Int {
-        val endgame = isEndgame(board)
-        var score = 0
+        val (white, black) = material(board)
+        val endgame = white.pieces <= QUEEN && black.pieces <= QUEEN
         val squares = board.squares
+        var score = 0
         for (index in squares.indices) {
             val piece = squares[index] ?: continue
             val sign = if (piece.color == perspective) 1 else -1
             score += sign * (value(piece.type) + positional(piece, Square(index), endgame))
         }
+        score += if (perspective == Color.WHITE) mopUp(white, black) - mopUp(black, white) else mopUp(black, white) - mopUp(white, black)
         return score
     }
+
+    /** What is on [board] besides the kings, for each side. */
+    private fun material(board: Board): Pair<Material, Material> {
+        val white = Material()
+        val black = Material()
+        val squares = board.squares
+        for (index in squares.indices) {
+            val piece = squares[index] ?: continue
+            val side = if (piece.color == Color.WHITE) white else black
+            when (piece.type) {
+                PieceType.PAWN -> side.pawns += PAWN
+                PieceType.KING -> side.king = index
+                else -> side.pieces += value(piece.type)
+            }
+        }
+        return white to black
+    }
+
+    /**
+     * Whether one side is ahead by at least a rook against little more than a bare king (a
+     * minor piece and a pawn at most): the endgames that are won by technique, where the
+     * mop-up applies and a deeper search pays off.
+     */
+    fun isBareEndgame(board: Board): Boolean {
+        val (white, black) = material(board)
+        return isMopUp(white, black) || isMopUp(black, white)
+    }
+
+    private fun isMopUp(strong: Material, weak: Material): Boolean =
+        strong.total - weak.total >= ROOK && weak.total <= BISHOP + PAWN
+
+    /**
+     * The mop-up bonus of [strong] against [weak]: a side ahead by at least a rook against
+     * little more than a bare king (a minor piece and a pawn at most) is rewarded for driving
+     * the enemy king towards the edge and bringing its own king closer, which is what wins such
+     * endgames and what the tables alone never ask for. Zero unless both kings are on the board.
+     */
+    private fun mopUp(strong: Material, weak: Material): Int {
+        if (!isMopUp(strong, weak)) return 0
+        if (strong.king < 0 || weak.king < 0) return 0
+        val weakKing = Square(weak.king)
+        val strongKing = Square(strong.king)
+        val fromCentre = centreDistance(weakKing.file) + centreDistance(weakKing.rank)
+        val between = abs(weakKing.file - strongKing.file) + abs(weakKing.rank - strongKing.rank)
+        return MOP_UP_EDGE * fromCentre + MOP_UP_CLOSE * (MAX_KING_DISTANCE - between)
+    }
+
+    /** Distance of a file or rank from the two central ones: 0 for d/e (or ranks 4/5), 3 at the edge. */
+    private fun centreDistance(line: Int): Int = if (line <= 3) 3 - line else line - 4
+
+    /** The largest Manhattan distance between two squares. */
+    private const val MAX_KING_DISTANCE = 14
 }

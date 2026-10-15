@@ -174,6 +174,11 @@ the same library, so the client can show legal moves and apply its own moves ins
 server remains authoritative. The only random element, the outcome of a quantum observation, is
 decided by the server and stored inside the move, which keeps every game fully reproducible.
 
+The computer player (`engine/`) is an alpha-beta search for classic chess and an expectimax
+search over the universes for quantum chess, both with iterative deepening within the level's
+time budget, repetition awareness and an endgame mop-up term; see docs/ARCHITECTURE.md
+section 2.12.
+
 ## Ratings and bots
 
 Registered players and bots have an Elo rating per variant (classic and quantum are rated

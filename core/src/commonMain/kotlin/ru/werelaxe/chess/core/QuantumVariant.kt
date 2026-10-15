@@ -11,13 +11,16 @@ class QuantumState internal constructor(
     val universes: Map<Board, Long>,
     /** Plies since the last move that captured or moved a pawn in at least one universe. */
     val halfmoveClock: Int,
-    /** How many times each distribution occurred, for the threefold repetition rule. */
-    val positionCounts: Map<Map<Board, Long>, Int>,
+    /** The distributions of the game so far, this one included, for the threefold repetition rule. */
+    val history: PositionHistory,
     val lastMove: GameMove?,
 ) : GameState {
     init {
         require(universes.isNotEmpty()) { "A quantum state needs at least one universe" }
     }
+
+    /** How many times the current distribution has occurred in the game, this state included. */
+    val repetitions: Int = history.count(universes)
 
     override val sideToMove: Color
         get() = universes.keys.first().sideToMove
@@ -51,7 +54,7 @@ class QuantumState internal constructor(
 
         fun of(board: Board): QuantumState {
             val universes = mapOf(board to 1L)
-            return QuantumState(universes, 0, mapOf(universes to 1), null)
+            return QuantumState(universes, 0, PositionHistory.EMPTY.plus(universes), null)
         }
     }
 }
@@ -159,8 +162,7 @@ object QuantumVariant : Variant<QuantumState>() {
         }
         val universes = normalize(accumulator.universes)
         val halfmoveClock = if (accumulator.irreversible) 0 else state.halfmoveClock + 1
-        val positionCounts = state.positionCounts + (universes to (state.positionCounts[universes] ?: 0) + 1)
-        return QuantumState(universes, halfmoveClock, positionCounts, move)
+        return QuantumState(universes, halfmoveClock, state.history.plus(universes), move)
     }
 
     private class Accumulator {
@@ -273,7 +275,7 @@ object QuantumVariant : Variant<QuantumState>() {
             }
         }
         if (state.halfmoveClock >= 100) return GameStatus.Finished(null, EndReason.FIFTY_MOVE_RULE)
-        if ((state.positionCounts[state.universes] ?: 0) >= 3) return GameStatus.Finished(null, EndReason.THREEFOLD_REPETITION)
+        if (state.repetitions >= 3) return GameStatus.Finished(null, EndReason.THREEFOLD_REPETITION)
         return GameStatus.Ongoing
     }
 

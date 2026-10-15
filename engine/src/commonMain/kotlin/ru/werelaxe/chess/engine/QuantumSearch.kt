@@ -11,48 +11,94 @@ import ru.werelaxe.chess.core.QuantumState
 import ru.werelaxe.chess.core.QuantumVariant
 import ru.werelaxe.chess.core.Square
 import kotlin.random.Random
+import kotlin.time.Duration
 import kotlin.time.TimeMark
 
 /**
- * Expectimax over the universe distribution. Every candidate (normal move, split or
- * observation) is first scored statically on the resulting distribution; the most promising
- * ones are then refined with the opponent's best reply. Observations are chance nodes: their
- * value is the probability-weighted average over the possible outcomes. The refinements are
- * spread over [parallelism].
+ * Expectimax over the universe distribution with iterative deepening. Every candidate (normal
+ * move, split or observation) is first scored statically on the resulting distribution and
+ * then refined with the opponent's best reply (depth 2): the most promising [candidateLimit]
+ * always (the first one even past the deadline, so that there is a refined move to play), the
+ * rest, in static order, while the first half of the [budget] lasts, so that a quiet position
+ * is searched in full and a move that looks poor at a glance but is the only one to save a
+ * piece is not lost to the static cut. In a bare endgame (one side ahead by at least a rook
+ * against little more than a king, in at least half of the universes) the best
+ * [candidateLimit] by depth-2 score are then searched deeper, while the deadline allows, up to
+ * [maxDepth] plies, two plies at a time so that the opponent always has the last word, where
+ * every inner node orders its replies statically and follows the best few only (a beam). An
+ * iteration counts only when it completes for every candidate; the move comes from the
+ * deepest one that did. The deeper search is what converts such endgames instead of shuffling
+ * for a hundred plies; elsewhere the full-width depth 2 proved the stronger use of the budget
+ * (a beam-pruned depth 4 lost matches to it), so it is not attempted. Observations
+ * are chance nodes: their value is the probability-weighted average over the possible
+ * outcomes. A distribution that already occurred in the game, or earlier in the line, scores
+ * as a draw. The refinements of one iteration are spread over [parallelism].
  */
 internal class QuantumSearch(
     private val candidateLimit: Int,
+    private val maxDepth: Int,
     private val deadline: TimeMark,
+    budget: Duration,
     private val randomness: Int,
     private val random: Random,
     private val parallelism: SearchParallelism = SearchParallelism.Sequential,
 ) {
     private class Candidate(val move: GameMove, val outcomes: List<Pair<Double, QuantumState>>, var score: Int)
 
+    /** Candidates beyond the limit are refined at depth 2 only until this point. */
+    private val widenUntil: TimeMark = deadline - budget / 2
+
+    /** The depth of the last completed iteration of the last [bestMove]; for tests and diagnostics. */
+    var depthReached: Int = 0
+        private set
+
     fun bestMove(state: QuantumState): GameMove? {
         val me = state.sideToMove
         val candidates = generate(state, me, includeSplits = true)
         if (candidates.isEmpty()) return null
         for (candidate in candidates) {
-            candidate.score = expected(candidate.outcomes) { evaluateAfterMyMove(it, me) }
+            candidate.score = expected(candidate.outcomes) { value(it, me, 0, 1, timed = false) }
         }
         candidates.sortByDescending { it.score }
 
-        // Refine the top candidates with the opponent's strongest reply while time allows: a
-        // candidate whose turn comes after the deadline is left out, except the first one, so
-        // that there is always a refined candidate to choose from.
-        val taken = candidates.take(candidateLimit)
-        val scores = parallelism.map(taken.indices.toList()) { index ->
-            if (index > 0 && deadline.hasPassedNow()) null else expected(taken[index].outcomes) { opponentReplyValue(it, me) }
+        // Depth 2: the opponent's strongest reply. The first candidate is always refined, so that
+        // there is one to choose from; the others within the limit while the deadline has not
+        // passed, and the rest while the first half of the budget lasts.
+        val scores = parallelism.map(candidates.indices.toList()) { index ->
+            val due = when {
+                index == 0 -> true
+                index < candidateLimit -> !deadline.hasPassedNow()
+                else -> !widenUntil.hasPassedNow()
+            }
+            if (due) expected(candidates[index].outcomes) { value(it, me, 1, 1, timed = false) } else null
         }
-        val refined = ArrayList<Candidate>()
+        val scored = ArrayList<Candidate>()
         for ((index, score) in scores.withIndex()) {
             if (score == null) continue
-            val candidate = taken[index]
+            val candidate = candidates[index]
             candidate.score = score
-            refined.add(candidate)
+            scored.add(candidate)
         }
-        refined.sortByDescending { it.score }
+        scored.sortByDescending { it.score }
+        var refined = ArrayList(scored.take(candidateLimit))
+        depthReached = 2
+
+        // Deeper iterations in bare endgames, two plies at a time so that the opponent always
+        // has the last word, best candidate first; one cut short by the deadline is discarded whole.
+        var depth = if (state.probability(Evaluation::isBareEndgame) >= BARE_ENDGAME_SHARE) 4 else maxDepth + 1
+        while (depth <= maxDepth) {
+            if (deadline.hasPassedNow()) break
+            val deeper = try {
+                parallelism.map(refined) { candidate -> expected(candidate.outcomes) { value(it, me, depth - 1, 1, timed = true) } }
+            } catch (e: SearchTimeout) {
+                break
+            }
+            for ((index, score) in deeper.withIndex()) refined[index].score = score
+            refined = ArrayList(refined.sortedByDescending { it.score })
+            depthReached = depth
+            depth += 2
+        }
+
         val top = refined.first().score
         val pool = if (randomness > 0) refined.filter { top - it.score <= randomness } else refined.filter { it.score == top }
         return pool[random.nextInt(pool.size)].move
@@ -64,28 +110,43 @@ internal class QuantumSearch(
         return sum.toInt()
     }
 
-    /** Static value of a distribution right after [me] moved (so it is the opponent's turn). */
-    private fun evaluateAfterMyMove(state: QuantumState, me: Color): Int {
-        terminalValue(state, me)?.let { return it }
-        return evaluate(state, me)
-    }
-
-    /** Value after the opponent's best normal move or observation; falls back to the static value. */
-    private fun opponentReplyValue(state: QuantumState, me: Color): Int {
-        terminalValue(state, me)?.let { return it }
-        var worst: Int? = null
-        for (reply in generate(state, me.opposite, includeSplits = false)) {
-            val value = expected(reply.outcomes) { next -> terminalValue(next, me) ?: evaluate(next, me) }
-            if (worst == null || value < worst) worst = value
+    /**
+     * The value of [state] for [me] with [depth] more plies of lookahead; [ply] is the distance
+     * from the root, so that a quicker win scores higher. With [timed] the deadline is checked
+     * at every inner node and [SearchTimeout] thrown when it has passed.
+     */
+    private fun value(state: QuantumState, me: Color, depth: Int, ply: Int, timed: Boolean): Int {
+        terminalValue(state, me, ply)?.let { return it }
+        if (state.repetitions >= 2) return Evaluation.DRAW
+        if (depth == 0) return evaluate(state, me)
+        if (timed && deadline.hasPassedNow()) throw SearchTimeout()
+        val mover = state.sideToMove
+        val replies = generate(state, mover, includeSplits = false)
+        if (replies.isEmpty()) return evaluate(state, me)
+        val mine = mover == me
+        if (depth == 1) {
+            var best: Int? = null
+            for (reply in replies) {
+                val score = expected(reply.outcomes) { value(it, me, 0, ply + 1, timed) }
+                if (best == null || (if (mine) score > best else score < best)) best = score
+            }
+            return best!!
         }
-        return worst ?: evaluate(state, me)
+        for (reply in replies) reply.score = expected(reply.outcomes) { value(it, me, 0, ply + 1, timed) }
+        if (mine) replies.sortByDescending { it.score } else replies.sortBy { it.score }
+        var best: Int? = null
+        for (reply in replies.take(BEAM_WIDTH)) {
+            val score = expected(reply.outcomes) { value(it, me, depth - 1, ply + 1, timed) }
+            if (best == null || (if (mine) score > best else score < best)) best = score
+        }
+        return best!!
     }
 
-    private fun terminalValue(state: QuantumState, me: Color): Int? = when (val status = QuantumVariant.status(state)) {
+    private fun terminalValue(state: QuantumState, me: Color, ply: Int): Int? = when (val status = QuantumVariant.status(state)) {
         is GameStatus.Finished -> when (status.winner) {
-            me -> Evaluation.MATE
-            null -> 0
-            else -> -Evaluation.MATE
+            me -> Evaluation.MATE - ply
+            null -> Evaluation.DRAW
+            else -> -Evaluation.MATE + ply
         }
         GameStatus.Ongoing -> null
     }
@@ -164,5 +225,11 @@ internal class QuantumSearch(
     private companion object {
         const val SPLIT_TARGETS_PER_PIECE = 3
         const val CHECK_RISK = 900
+
+        /** Replies followed deeper at an inner node of the deeper iterations. */
+        const val BEAM_WIDTH = 8
+
+        /** The probability mass of bare-endgame universes from which the deeper iterations run. */
+        const val BARE_ENDGAME_SHARE = 0.5
     }
 }

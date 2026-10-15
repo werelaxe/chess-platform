@@ -12,6 +12,11 @@ internal class SearchTimeout : RuntimeException()
  * Negamax with alpha-beta pruning, iterative deepening, MVV-LVA move ordering and an optional
  * quiescence search on captures. Stops at [deadline]; the best move of the last completed
  * iteration is returned. The root moves of one iteration are spread over [parallelism].
+ *
+ * A position that already occurred in the game ([history]: the positions of the game so far)
+ * or earlier in the line being searched scores as a draw, so a side that is ahead looks for
+ * progress instead of shuffling into a threefold repetition and a side that is behind heads
+ * for one.
  */
 internal class ClassicSearch(
     private val maxDepth: Int,
@@ -20,6 +25,7 @@ internal class ClassicSearch(
     private val randomness: Int,
     private val random: Random,
     private val parallelism: SearchParallelism = SearchParallelism.Sequential,
+    private val history: Set<Board> = emptySet(),
 ) {
     class Result(val move: Move, val score: Int, val depth: Int)
 
@@ -67,11 +73,11 @@ internal class ClassicSearch(
      */
     private fun searchRoot(board: Board, moves: List<Move>, depth: Int): RootScores {
         val alpha = parallelism.sharedBound(-Evaluation.MATE - 1)
-        val first = Line().score(board, moves[0], depth, alpha.get())
+        val first = Line(board).score(board, moves[0], depth, alpha.get())
         alpha.raise(first)
         val rest = parallelism.map(moves.subList(1, moves.size)) { move ->
             val bound = alpha.get()
-            val score = Line().score(board, move, depth, bound)
+            val score = Line(board).score(board, move, depth, bound)
             alpha.raise(score)
             RootScore(score, exact = score > bound)
         }
@@ -96,11 +102,13 @@ internal class ClassicSearch(
         }
 
     /**
-     * The search below one root move, with its own node counter for the time check so that
-     * root moves searched concurrently share nothing but the bound.
+     * The search below one root move, with its own node counter for the time check and its own
+     * path of positions (from the [root] down) for the repetition check, so that root moves
+     * searched concurrently share nothing but the bound.
      */
-    private inner class Line {
+    private inner class Line(root: Board) {
         private var nodes = 0L
+        private val path = ArrayList<Board>().apply { add(root) }
 
         /** The score of [move] for the side to move: exact when above [alpha], an upper bound otherwise. */
         fun score(board: Board, move: Move, depth: Int, alpha: Int): Int =
@@ -108,20 +116,26 @@ internal class ClassicSearch(
 
         private fun negamax(board: Board, depth: Int, alphaIn: Int, beta: Int, ply: Int): Int {
             checkTime()
+            if (board in history || board in path) return Evaluation.DRAW
             val moves = ClassicRules.legalMoves(board)
             if (moves.isEmpty()) {
-                return if (ClassicRules.isInCheck(board, board.sideToMove)) -Evaluation.MATE + ply else 0
+                return if (ClassicRules.isInCheck(board, board.sideToMove)) -Evaluation.MATE + ply else Evaluation.DRAW
             }
-            if (ClassicRules.isInsufficientMaterial(board)) return 0
+            if (ClassicRules.isInsufficientMaterial(board)) return Evaluation.DRAW
             if (depth <= 0) return if (quiescence) quiesce(board, alphaIn, beta, ply) else Evaluation.evaluate(board, board.sideToMove)
 
             var alpha = alphaIn
             var best = -Evaluation.MATE - 1
-            for (move in order(board, moves)) {
-                val score = -negamax(ClassicRules.apply(board, move), depth - 1, -beta, -alpha, ply + 1)
-                if (score > best) best = score
-                if (score > alpha) alpha = score
-                if (alpha >= beta) break
+            path.add(board)
+            try {
+                for (move in order(board, moves)) {
+                    val score = -negamax(ClassicRules.apply(board, move), depth - 1, -beta, -alpha, ply + 1)
+                    if (score > best) best = score
+                    if (score > alpha) alpha = score
+                    if (alpha >= beta) break
+                }
+            } finally {
+                path.removeLast()
             }
             return best
         }

@@ -50,6 +50,13 @@ Classic rules: full FIDE movement including castling (empty and unattacked path)
 promotion with piece choice; checkmate, stalemate, insufficient material, fifty-move rule
 (automatic at 100 plies) and threefold repetition (automatic) end the game.
 
+Repetitions are counted over the whole game. `ClassicState` keeps a map of every position to
+its count; `QuantumState` keeps a `PositionHistory`, a persistent chain of the distributions
+reached so far (each state holds its predecessor's chain plus its own distribution, so
+recording one copies nothing and a move costs the same in a 500-ply game as in a short one),
+and exposes `repetitions`, how many times the current distribution has occurred, which the
+engine also reads to avoid or seek a repetition.
+
 Quantum rules (see `docs/RULES.md` for the player-facing text):
 
 * The state is a weighted multiset of classical universes `Map<Board, Long>`; probability of a
@@ -363,7 +370,7 @@ any `ACTIVE` game.
 
 Bots play through `BotPlayer` using the engine in `engine/`
 (`ru.werelaxe.chess.engine.ChessEngine`, levels `NOVICE`/`EASY`/`MEDIUM`/`HARD`/`EXPERT` with
-thinking budgets of 0.3/0.7/1.5/3.5/6 s). The service wakes it whenever it may be a bot's turn:
+thinking budgets of 0.3/0.7/1.5/3.5/6 s; section 2.12 describes the search). The service wakes it whenever it may be a bot's turn:
 right after creation when it plays white, after every move, when somebody joins its open game,
 and, as self-healing after a restart or a failed search, whenever the game is fetched
 (`GET /api/games/{id}`) or a WebSocket connects to it, and for every `ACTIVE` game with a bot
@@ -672,6 +679,63 @@ chess-admin [--api URL] [--token TOKEN] [--json] <command>
 
 `--api` defaults to `CHESS_API_URL` or `http://localhost:8080`; `--token` defaults to
 `CHESS_ADMIN_TOKEN`. Output is a readable table; `--json` prints the API response.
+
+### 2.12 The engine (`engine`)
+
+`ChessEngine` is pure and stateless: it reads an immutable state and returns a move within a
+wall-clock budget, so the same code serves the engine service, the API's fallback and, later,
+offline clients. Observations come back without an outcome; the server resolves them.
+
+Evaluation (`Evaluation`, shared by both variants, in centipawns): material (100/320/330/500/900)
+plus piece-square tables (the "simplified evaluation function"; the king's table switches to its
+endgame version once neither side has more than a queen in non-pawn material), plus a mop-up
+term for bare endgames: a side ahead by at least a rook against at most a minor piece and a pawn
+is rewarded for the defending king's distance from the centre (10 per square) and for the
+closeness of the two kings (4 per square), which is what wins such endgames and what the tables
+alone never ask for. A draw, by repetition or otherwise, is worth 0 to either side.
+
+Classic chess (`ClassicSearch`): negamax with alpha-beta pruning, iterative deepening up to the
+level's depth, MVV-LVA move ordering and a quiescence search on captures (from `MEDIUM` up).
+A position that already occurred in the game or earlier in the line scores as a draw, so a side
+that is ahead looks for progress instead of shuffling into a threefold repetition and a side
+that is behind heads for one.
+
+Quantum chess (`QuantumSearch`): expectimax over the distribution with iterative deepening.
+Every candidate (normal move, split of each piece between its best few targets or "stay", and
+observation) is scored statically on the resulting distribution and then refined with the
+opponent's strongest reply (depth 2): the best `quantumCandidates` always (the first one even
+past the deadline, so that there is a refined move to play), the rest, in static order, while
+the first half of the budget lasts, so that a quiet position is searched in full and a move
+that looks poor at a glance but is the only one to save a piece is not lost to the static cut.
+In a bare endgame (one side ahead by at least a rook against at most a minor piece and a
+pawn, in at least half of the universes by probability) the best `quantumCandidates` by
+depth-2 score are then searched deeper, while the budget allows, up to the level's
+`quantumDepth`, two plies at a time so that the opponent always has the last word, where every
+inner node orders its replies (normal moves and observations, no splits) statically and
+follows the best eight only. An iteration counts only when it completes for every candidate,
+so the move always comes from the deepest completed one. The deeper search is what converts a
+won endgame (a rook and king against a king in about ten plies at `HARD`) instead of shuffling
+for two hundred plies; it is confined to such endgames because in self-play matches at equal
+budgets the full-width depth 2 beat a beam-pruned depth 4 in positions with more material,
+where the beam misses replies that the full width finds. Observations
+are chance nodes (the probability-weighted average over their outcomes); a universe without a
+king counts 6000 for the other side; a king attackable on the opponent's turn costs 900; a
+distribution that already occurred in the game or earlier in the line is a draw; a quicker win
+scores higher. The static evaluation of a distribution is the probability-weighted average over
+its universes.
+
+| level | classic depth | quiescence | quantum candidates | quantum depth | randomness | budget |
+|-------|---------------|------------|--------------------|---------------|------------|--------|
+| `NOVICE` | 1 | no | 4 | 2 | 200 | 0.3 s |
+| `EASY` | 2 | no | 6 | 2 | 90 | 0.7 s |
+| `MEDIUM` | 3 | yes | 12 | 4 | 0 | 1.5 s |
+| `HARD` | 6 | yes | 24 | 4 | 0 | 3.5 s |
+| `EXPERT` | 7 | yes | 32 | 4 | 0 | 6 s |
+
+Randomness: moves scoring within that many centipawns of the best are chosen at random (with
+the injectable `Random`), so the weaker levels vary their play. Both searches spread the
+independent parts of their work (root moves, candidates) over a `SearchParallelism`
+(section 2.7) without changing the scores they find.
 
 ## 3. Web client (`web`)
 

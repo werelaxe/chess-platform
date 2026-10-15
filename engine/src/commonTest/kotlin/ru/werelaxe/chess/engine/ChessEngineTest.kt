@@ -9,6 +9,7 @@ import ru.werelaxe.chess.core.Game
 import ru.werelaxe.chess.core.GameKind
 import ru.werelaxe.chess.core.GameMove
 import ru.werelaxe.chess.core.GameStatus
+import ru.werelaxe.chess.core.Move
 import ru.werelaxe.chess.core.QuantumState
 import ru.werelaxe.chess.core.QuantumVariant
 import kotlin.random.Random
@@ -16,6 +17,9 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 
 class ChessEngineTest {
@@ -100,10 +104,62 @@ class ChessEngineTest {
 
     @Test
     fun quantumEvaluationPrefersKeepingTheKing() {
-        val search = QuantumSearch(4, TimeSource.Monotonic.markNow() + EngineLevel.MEDIUM.timeBudget, 0, Random(1))
+        val search = QuantumSearch(4, 2, TimeSource.Monotonic.markNow() + EngineLevel.MEDIUM.timeBudget, EngineLevel.MEDIUM.timeBudget, 0, Random(1))
         val both = QuantumState.of(board("4k3/8/8/8/8/8/8/4K3 w - - 0 1"))
         val kingless = QuantumState.of(board("4k3/8/8/8/8/8/8/8 w - - 0 1"))
         assertTrue(search.evaluate(kingless, Color.WHITE) < search.evaluate(both, Color.WHITE) - Evaluation.KING_PRESENCE / 2)
         assertTrue(search.evaluate(kingless, Color.BLACK) > search.evaluate(both, Color.BLACK) + Evaluation.KING_PRESENCE / 2)
+    }
+
+    @Test
+    fun mopUpRewardsCorneringTheKingAndClosingIn() {
+        // White has a queen against a bare king: the black king in the corner with the white king
+        // next to it is worth more than the black king in the centre with the white king far away.
+        val cornered = Evaluation.evaluate(board("7k/8/6K1/8/8/8/8/Q7 w - - 0 1"), Color.WHITE)
+        val central = Evaluation.evaluate(board("8/8/8/4k3/8/8/8/Q5K1 w - - 0 1"), Color.WHITE)
+        // Without the material edge the mop-up is off and only the tables tell the two apart.
+        val equal = Evaluation.evaluate(board("7k/8/6K1/8/8/8/8/8 w - - 0 1"), Color.WHITE)
+        val equalCentral = Evaluation.evaluate(board("8/8/8/4k3/8/8/8/6K1 w - - 0 1"), Color.WHITE)
+        val tables = equal - equalCentral
+        assertTrue(cornered - central > tables + Evaluation.MOP_UP_EDGE * 3, "cornered $cornered, central $central, tables alone $tables")
+    }
+
+    @Test
+    fun classicSearchHeadsForARepetitionWhenBehind() {
+        // Black, a queen down, can step to h7 (a position of the game so far) or to g7 (a new one).
+        val position = board("7k/8/8/8/8/8/Q7/6K1 b - - 0 1")
+        val repeating = ClassicRules.apply(position, Move.parseUci("h8h7"))
+        val deadline = TimeSource.Monotonic.markNow() + 1.minutes
+        val withHistory = assertNotNull(ClassicSearch(3, true, deadline, 0, Random(1), history = setOf(repeating)).bestMove(position))
+        assertEquals(Move.parseUci("h8h7"), withHistory.move)
+        assertEquals(Evaluation.DRAW, withHistory.score)
+        val fresh = assertNotNull(ClassicSearch(3, true, deadline, 0, Random(1)).bestMove(position))
+        assertTrue(fresh.score < -Evaluation.ROOK, "a queen down should score badly without the repetition: ${fresh.score}")
+    }
+
+    @Test
+    fun quantumSearchHeadsForARepetitionWhenBehind() {
+        // The kings shuffle back and forth once, so the distribution is at its second occurrence;
+        // black's Kh7 would bring back one seen before and is worth a draw, anything else a queen.
+        var state = QuantumState.of(board("7k/8/8/8/8/8/Q7/6K1 b - - 0 1"))
+        for (uci in listOf("h8h7", "g1f1", "h7h8", "f1g1")) state = QuantumVariant.apply(state, normal(uci))
+        assertEquals(2, state.repetitions)
+        val search = QuantumSearch(8, 2, TimeSource.Monotonic.markNow() + 1.minutes, 1.minutes, 0, Random(1))
+        assertEquals(normal("h8h7"), search.bestMove(state))
+    }
+
+    @Test
+    fun quantumSearchDeepensWhileTheBudgetAllows() {
+        val endgame = QuantumState.of(board("7k/8/8/8/8/8/8/Q5K1 w - - 0 1"))
+        val generous = QuantumSearch(24, 4, TimeSource.Monotonic.markNow() + 1.minutes, 1.minutes, 0, Random(1))
+        assertNotNull(generous.bestMove(endgame))
+        assertEquals(4, generous.depthReached)
+
+        val crowded = quantumPosition(300)
+        val started = TimeSource.Monotonic.markNow()
+        val tight = QuantumSearch(24, 4, started + 50.milliseconds, 50.milliseconds, 0, Random(1))
+        assertNotNull(tight.bestMove(crowded))
+        assertEquals(2, tight.depthReached)
+        assertTrue(started.elapsedNow() < 2.seconds, "the search took ${started.elapsedNow()}")
     }
 }
