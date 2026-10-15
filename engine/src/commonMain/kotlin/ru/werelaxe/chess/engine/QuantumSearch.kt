@@ -32,7 +32,8 @@ import kotlin.time.TimeMark
  * (a beam-pruned depth 4 lost matches to it), so it is not attempted. Observations
  * are chance nodes: their value is the probability-weighted average over the possible
  * outcomes. A distribution that already occurred in the game, or earlier in the line, scores
- * as a draw. The refinements of one iteration are spread over [parallelism].
+ * as a draw. A split pays [splitCost] on top of what it leads to. The refinements of one
+ * iteration are spread over [parallelism].
  */
 internal class QuantumSearch(
     private val candidateLimit: Int,
@@ -42,6 +43,7 @@ internal class QuantumSearch(
     private val randomness: Int,
     private val random: Random,
     private val parallelism: SearchParallelism = SearchParallelism.Sequential,
+    private val splitCost: Int = 0,
 ) {
     private class Candidate(val move: GameMove, val outcomes: List<Pair<Double, QuantumState>>, var score: Int)
 
@@ -57,7 +59,7 @@ internal class QuantumSearch(
         val candidates = generate(state, me, includeSplits = true)
         if (candidates.isEmpty()) return null
         for (candidate in candidates) {
-            candidate.score = expected(candidate.outcomes) { value(it, me, 0, 1, timed = false) }
+            candidate.score = expected(candidate.outcomes) { value(it, me, 0, 1, timed = false) } - cost(candidate.move)
         }
         candidates.sortByDescending { it.score }
 
@@ -76,7 +78,7 @@ internal class QuantumSearch(
         for ((index, score) in scores.withIndex()) {
             if (score == null) continue
             val candidate = candidates[index]
-            candidate.score = score
+            candidate.score = score - cost(candidate.move)
             scored.add(candidate)
         }
         scored.sortByDescending { it.score }
@@ -93,7 +95,7 @@ internal class QuantumSearch(
             } catch (e: SearchTimeout) {
                 break
             }
-            for ((index, score) in deeper.withIndex()) refined[index].score = score
+            for ((index, score) in deeper.withIndex()) refined[index].score = score - cost(refined[index].move)
             refined = ArrayList(refined.sortedByDescending { it.score })
             depthReached = depth
             depth += 2
@@ -103,6 +105,14 @@ internal class QuantumSearch(
         val pool = if (randomness > 0) refined.filter { top - it.score <= randomness } else refined.filter { it.score == top }
         return pool[random.nextInt(pool.size)].move
     }
+
+    /**
+     * What a root move costs on top of what it leads to: a split pays [splitCost], so that a
+     * piece is split for a gain and not on a whim, which is what keeps the superposition of the
+     * levels that pick their moves at random within a margin from growing into a fog of
+     * universes that nobody can resolve.
+     */
+    private fun cost(move: GameMove): Int = if (move is GameMove.Split) splitCost else 0
 
     private inline fun expected(outcomes: List<Pair<Double, QuantumState>>, value: (QuantumState) -> Int): Int {
         var sum = 0.0
@@ -154,6 +164,10 @@ internal class QuantumSearch(
     /**
      * Probability-weighted classical evaluation plus king terms: a universe where one side has
      * no king counts heavily, and a king that can be captured on the opponent's turn is a risk.
+     * Deliberately no term for the number of universes: the evaluation is zero-sum, so whatever
+     * made a fog cost the side ahead would make the same fog pay the side behind, which then
+     * splits on every move to get it (tried and measured); the fog is kept down at the root
+     * instead, by [splitCost].
      */
     internal fun evaluate(state: QuantumState, me: Color): Int {
         val opponent = me.opposite

@@ -162,4 +162,19 @@ class ChessEngineTest {
         assertEquals(2, tight.depthReached)
         assertTrue(started.elapsedNow() < 2.seconds, "the search took ${started.elapsedNow()}")
     }
+
+    @Test
+    fun aSplitCostNobodyCanAffordRulesSplitsOut() {
+        // From the opening, at EASY's randomness, the search splits now and then; with a
+        // prohibitive split cost it never does, whatever the random picks.
+        val game = Game(GameKind.QUANTUM)
+        val random = Random(9)
+        repeat(12) {
+            val state = game.state as QuantumState
+            val search = QuantumSearch(6, 2, TimeSource.Monotonic.markNow() + 1.minutes, 1.minutes, 90, random, splitCost = Evaluation.MATE)
+            val move = assertNotNull(search.bestMove(state))
+            assertTrue(move !is GameMove.Split, "split chosen at ply $it: $move")
+            game.apply(game.resolve(move, random))
+        }
+    }
 }

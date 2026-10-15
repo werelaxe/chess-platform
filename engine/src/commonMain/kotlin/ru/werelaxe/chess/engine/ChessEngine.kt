@@ -32,7 +32,7 @@ class ChessEngine(
             is ClassicState -> ClassicSearch(level.classicDepth, level.quiescence, deadline, level.randomness, random, parallelism, state.positionCounts.keys)
                 .bestMove(state.board)
                 ?.let { GameMove.Normal(it.move.from, it.move.to, it.move.promotion) }
-            is QuantumState -> QuantumSearch(level.quantumCandidates, level.quantumDepth, deadline, budget, level.randomness, random, parallelism).bestMove(state)
+            is QuantumState -> QuantumSearch(level.quantumCandidates, level.quantumDepth, deadline, budget, level.randomness, random, parallelism, level.splitCost).bestMove(state)
         }
     }
 }
