@@ -92,6 +92,22 @@ kubectl -n chess get pods
 The same goes for `logs -f deployment/api`, `exec -it db-0 -- psql -U chess chess`, `top pods`
 and so on.
 
+Monitoring: Prometheus, Grafana and kube-state-metrics run in the same namespace
+(docs/ARCHITECTURE.md 4.1) and are reached through `kubectl` only, never through the site:
+
+```bash
+kubectl -n chess port-forward svc/grafana 3000:3000     # then http://localhost:3000, user admin
+kubectl -n chess get secret chess -o jsonpath='{.data.grafana-password}' | base64 --decode
+```
+
+The dashboard shows the CPU and memory of the node and of every pod (memory as a percentage
+of the limit; CPU in cores, and as a percentage of the limit for the engine, the only pod with
+one), the active and waiting games, the players online (people and bots), the engine queue
+and the API's request rate and latency. Before the first deployment with the monitoring an
+administrator applies `deploy/k8s/monitoring-rbac.yaml` and the updated
+`deploy/k8s/ci/deployer.yaml`, and adds the `grafana-password` key to the Secret (the comment
+in `deploy/k8s/create-secret.sh` shows the command); without the key Grafana does not start.
+
 ## Administration
 
 The operational settings (whether the matchmaker runs, how many open games the bots keep in

@@ -25,6 +25,8 @@ dependencies {
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.ktor.server.status.pages)
     implementation(libs.ktor.server.call.logging)
+    implementation(libs.ktor.server.metrics.micrometer)
+    implementation(libs.micrometer.registry.prometheus)
     implementation(libs.logback)
 
     testImplementation(kotlin("test"))

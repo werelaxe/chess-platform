@@ -44,6 +44,9 @@ class GameHub(private val maxSubscribersPerGame: Int = MAX_SUBSCRIBERS_PER_GAME)
 
     fun subscriberCount(gameId: String): Int = subscribers[gameId]?.size ?: 0
 
+    /** Open subscriptions over all games. */
+    fun subscriptionCount(): Int = subscribers.values.sumOf { it.size }
+
     /** Queues an event for one subscriber only (the initial snapshot, pong). */
     fun send(subscription: Subscription, event: ServerEvent) {
         subscription.outbound.trySend(encode(event))

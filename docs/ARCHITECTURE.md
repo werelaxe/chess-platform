@@ -294,6 +294,9 @@ GET  /api/players/leaderboard?kind=CLASSIC|QUANTUM&limit=&offset= -> {entries:[L
 GET  /api/players/{username}                           -> PlayerProfile         (404 for unknown or guest usernames)
 GET  /api/bots                                         -> {bots:[PlayerSummary]} (the roster, with levels and ratings)
 GET  /api/health                                       -> 200 {status:"ok"}
+GET  /metrics                                          -> 200 Prometheus text   (outside /api, which is all nginx proxies,
+                                                                                 so reachable inside the cluster only;
+                                                                                 no authentication; section 4.1)
 ```
 
 In both listings `limit` defaults to 50 and is clamped to 1..200; `offset` defaults to 0.
@@ -453,6 +456,7 @@ POST /think   {"gameId":"aZ3kq9...","kind":"QUANTUM","level":"MEDIUM","moves":[G
               -> 400 {"error":"validation","message":"..."} for an invalid or illegal history
               -> 503 {"error":"overloaded","message":"..."} when the queue is full for the request (the API retries)
 GET  /health  -> 200 {"status":"ok","parallelism":8,"inFlight":3,"queued":0,"queuedBots":0,"helpers":8,"helpersBusy":2}
+GET  /metrics -> 200 Prometheus text: the figures of /health as gauges, plus the JVM and request metrics (section 4.1)
 ```
 
 `priority` is who waits for the move: `HUMAN` (a person is at the board; also the meaning of a
@@ -944,3 +948,104 @@ and adds `Strict-Transport-Security`; `WWW_ADDRESS` names an optional `www.` hos
 redirects to it. Certificates persist in the `caddy-data` volume. Requests
 for any other hostname (such as the bare IP address) are served over plain HTTP, and without
 `SITE_ADDRESS` the stack serves plain HTTP on localhost for development.
+
+### 4.1 Monitoring
+
+The cluster runs the lightest monitoring that answers the operator's questions (CPU and memory
+per node and per pod, the games being played, the players online): plain Prometheus, Grafana
+and kube-state-metrics from their official images, no operator, nothing exposed through the
+Ingress. Their manifests (`deploy/k8s/prometheus.yaml`, `grafana.yaml`,
+`kube-state-metrics.yaml`) are part of the kustomization, so `deploy.sh` rolls them out and
+waits for them like the application.
+
+Prometheus (`prom/prometheus`; scrape interval 15 s; two weeks of retention, and never more
+than 2 GB of samples, whichever limit is reached first, on a 3 Gi `PersistentVolumeClaim` of
+the default storage class, `local-path` in k3s; 200 Mi of memory
+requested, 1 Gi limit; the pod is recreated rather than rolled, as the volume is mounted by
+one pod at a time; a changed ConfigMap is re-read within a minute or so, `--config.auto-reload`)
+scrapes:
+
+- the API and the engine at `GET /metrics`, discovered through the endpoints of the `api` and
+  `engine` Services (`kubernetes_sd_configs` with the `endpoints` role), so that every engine
+  replica the autoscaler adds is a target of its own; the series carry a `pod` label;
+- the kubelet of every node (the `node` role): `/metrics/resource` for the node's CPU and
+  memory (`node_cpu_usage_seconds_total`, `node_memory_working_set_bytes`, what metrics-server
+  reads too) and `/metrics/cadvisor` for those of the containers and the size of the machine
+  (`container_cpu_usage_seconds_total`, `container_memory_working_set_bytes`,
+  `machine_cpu_cores`, `machine_memory_bytes`), over HTTPS with the service account token and
+  `insecure_skip_verify`, as the kubelet certificates of k3s are self-signed; the other series
+  of both endpoints are dropped at scrape time;
+- kube-state-metrics (`--resources=pods`): the limits and requests of the containers
+  (`kube_pod_container_resource_limits`) and the phase of the pods.
+
+Grafana (`grafana/grafana`; no volume) is provisioned entirely from ConfigMaps: the Prometheus
+datasource and the dashboard "Chess platform" (the JSON in `grafana.yaml`, also its home
+page), with node CPU and memory as a percentage of the machine, pod CPU and memory as a
+percentage of the limits (and in cores and bytes, as only the engine has a CPU limit), the
+active games by kind, the waiting games, the players online by kind, the recent human games
+against `bot.human_games_limit`, the engine searches in flight and queued, the JVM heaps and
+the API request rate and p95 latency; a `namespace` variable (default `chess`) filters the pod
+panels. Anything changed in the UI is lost at the next restart: the JSON is the source. To
+open it:
+
+```bash
+kubectl -n chess port-forward svc/grafana 3000:3000     # then http://localhost:3000
+kubectl -n chess get secret chess -o jsonpath='{.data.grafana-password}' | base64 --decode
+```
+
+The user is `admin`; the password is the `grafana-password` key of the `chess` Secret.
+`kubectl -n chess port-forward svc/prometheus 9090:9090` opens Prometheus itself the same way.
+
+One-time steps for an administrator, as the Deploy workflow may only change the `chess`
+namespace and cannot read or write the Secret:
+
+1. `kubectl apply -f deploy/k8s/monitoring-rbac.yaml`: the ClusterRoles of Prometheus (nodes,
+   `nodes/metrics`, services, endpoints and pods; the API server's own `/metrics` URL) and of
+   kube-state-metrics (pods), bound to their ServiceAccounts in `chess`. Cluster-scoped, so it
+   is kept outside the kustomization like `ci/deployer.yaml`.
+2. `kubectl apply -f deploy/k8s/ci/deployer.yaml`: the deployer Role now also manages
+   ConfigMaps, PersistentVolumeClaims and ServiceAccounts.
+3. The `grafana-password` key of the Secret: `create-secret.sh` adds it on a new cluster; an
+   existing one needs the patch shown in the script's comment
+   (`kubectl -n chess patch secret chess -p '{"stringData":{"grafana-password":"<generated>"}}'`).
+   Grafana does not start without the key, and `deploy.sh` waits for it.
+
+The application metrics. `GET /metrics` of the API (section 2.3) and of the engine (section
+2.7) serve the Prometheus text format from a Micrometer registry through Ktor's
+`MicrometerMetrics` plugin: the JVM binders (`jvm_memory_*`, `jvm_gc_*`, `jvm_threads_*`,
+`process_*`, `system_*`) and the request timer `ktor_http_server_requests_seconds` (a histogram
+with buckets from 5 ms to 10 s, 30 s for the engine, tagged `route`, `method` and `status`),
+plus the gauges below. Neither endpoint is authenticated: both are reachable inside the cluster
+only, the API's because it lives outside `/api`, which is all nginx proxies, so the site never
+serves it. From Gradle (`./gradlew :server:run`) it is read directly on the API port
+(`curl localhost:8080/metrics`); under docker compose the API publishes no port and its image
+has no HTTP client, so it is read from the web container
+(`docker compose exec web wget -qO- http://api:8080/metrics`). `docker-compose.yml` is
+unchanged, no Prometheus runs there.
+
+The API's gauges are recounted from the repositories every 15 s by a background loop
+(`Metrics`), so that a scrape never queries the database:
+
+| Metric | Definition |
+| --- | --- |
+| `chess_games_active{kind}` | ACTIVE games of the kind (`CLASSIC`, `QUANTUM`) |
+| `chess_games_waiting` | WAITING games: open games and pending invitations |
+| `chess_games_active_bot_versus_bot` | ACTIVE games with a bot in both seats |
+| `chess_games_active_with_humans` | ACTIVE games with at least one human seat, whatever their age |
+| `chess_human_games_recent` | ACTIVE games with a human seat played within the last 15 minutes: what the human-load gate (section 2.10) counts against `bot.human_games_limit`, counted afresh rather than read from the gate's cache |
+| `chess_human_games_limit` | the current `bot.human_games_limit` (0: no limit) |
+| `chess_players_online{kind="human"}` | distinct people who made an authenticated request within the last 5 minutes |
+| `chess_players_online{kind="bot"}` | bots holding a seat in an ACTIVE game |
+| `chess_ws_connections` | open game WebSocket connections, read live (anonymous, so a player with two tabs counts twice) |
+
+"Online" is defined through `Presence`, which sees every authenticated request, because the
+WebSocket is anonymous (section 2.5) and cannot tell who is connected: a person counts for
+five minutes after their last request. The web client polls `/api/invitations` every 30 s
+while a session exists, so anybody with the site open counts, guests and spectators included;
+bots never authenticate, so they never count as people. The count is kept in memory, per API
+instance, which is exact with the single replica.
+
+The engine's gauges are read live from the searcher, the same figures as `/health`:
+`chess_engine_search_threads`, `chess_engine_searches_in_flight`,
+`chess_engine_requests_queued`, `chess_engine_requests_queued_bots`, `chess_engine_helpers` and
+`chess_engine_helpers_busy`.

@@ -1,5 +1,7 @@
 # The production deployment on Kubernetes (namespace "chess"). Roll it out with deploy.sh, which
-# pins the images to a release; create-secret.sh creates the Secret once beforehand.
+# pins the images to a release; create-secret.sh creates the Secret once beforehand. The
+# cluster-scoped objects (ci/deployer.yaml, monitoring-rbac.yaml) are not here: an
+# administrator applies them by hand.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: chess
@@ -10,3 +12,6 @@ resources:
   - api.yaml
   - web.yaml
   - ingress.yaml
+  - kube-state-metrics.yaml
+  - prometheus.yaml
+  - grafana.yaml

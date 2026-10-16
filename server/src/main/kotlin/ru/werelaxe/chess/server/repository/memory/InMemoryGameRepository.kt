@@ -150,6 +150,10 @@ class InMemoryGameRepository(private val store: InMemoryStore = InMemoryStore())
         games.values.groupingBy { it.phase }.eachCount()
     }
 
+    override suspend fun countActiveByKind(): Map<GameKind, Int> = store.mutex.withLock {
+        games.values.filter { it.phase == GamePhase.ACTIVE }.groupingBy { it.kind }.eachCount()
+    }
+
     override suspend fun countGamesOf(playerIds: Collection<Long>): Map<Long, Int> = store.mutex.withLock {
         val players = playerIds.toSet()
         val counts = HashMap<Long, Int>()

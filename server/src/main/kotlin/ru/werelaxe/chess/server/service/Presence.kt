@@ -8,7 +8,11 @@ import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
-/** Refreshes `users.last_seen_at` on authenticated requests, at most once per [interval] per user. */
+/**
+ * Refreshes `users.last_seen_at` on authenticated requests, at most once per [interval] per
+ * user, and remembers in memory when each user was last seen, for [onlineUsers]. Bots never
+ * authenticate, so only people (guests included) pass through here.
+ */
 class Presence(
     private val users: UserRepository,
     private val clock: Clock,
@@ -16,9 +20,11 @@ class Presence(
 ) {
     private val log = LoggerFactory.getLogger(Presence::class.java)
     private val lastWritten = ConcurrentHashMap<Long, Instant>()
+    private val lastSeen = ConcurrentHashMap<Long, Instant>()
 
     suspend fun touch(userId: Long) {
         val now = clock.instant()
+        lastSeen[userId] = now
         var write = false
         lastWritten.compute(userId) { _, last ->
             if (last == null || Duration.between(last, now) >= interval) {
@@ -39,7 +45,21 @@ class Presence(
         }
     }
 
+    /**
+     * How many distinct users made an authenticated request within the last [window]: the
+     * people online of the metrics (docs/ARCHITECTURE.md section 4.1), as seen by this
+     * instance. The users seen earlier than that are forgotten, so the memory stays bounded.
+     */
+    fun onlineUsers(window: Duration = ONLINE_WINDOW): Int {
+        val cutoff = clock.instant() - window
+        lastSeen.values.removeIf { !it.isAfter(cutoff) }
+        return lastSeen.size
+    }
+
     companion object {
         val DEFAULT_INTERVAL: Duration = Duration.ofMinutes(5)
+
+        /** How recently a user must have made a request to count as online. */
+        val ONLINE_WINDOW: Duration = Duration.ofMinutes(5)
     }
 }

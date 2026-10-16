@@ -230,6 +230,14 @@ class ExposedGameRepository(private val db: Database) : GameRepository {
         Games.select(Games.status, count).groupBy(Games.status).associate { it[Games.status] to it[count].toInt() }
     }
 
+    override suspend fun countActiveByKind(): Map<GameKind, Int> = tx {
+        val count = Games.id.count()
+        Games.select(Games.kind, count)
+            .where { Games.status eq GamePhase.ACTIVE }
+            .groupBy(Games.kind)
+            .associate { it[Games.kind] to it[count].toInt() }
+    }
+
     override suspend fun countGamesOf(playerIds: Collection<Long>): Map<Long, Int> {
         if (playerIds.isEmpty()) return emptyMap()
         val ids = playerIds.toSet()

@@ -93,6 +93,9 @@ interface GameRepository {
     /** How many games exist in each phase. */
     suspend fun countByPhase(): Map<GamePhase, Int>
 
+    /** How many ACTIVE games there are of each kind; kinds without any are left out. */
+    suspend fun countActiveByKind(): Map<GameKind, Int>
+
     /** How many games each of [playerIds] holds a seat in, whatever the phase; players without any are left out. */
     suspend fun countGamesOf(playerIds: Collection<Long>): Map<Long, Int>
 }
