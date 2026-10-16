@@ -1,6 +1,6 @@
 # The computer player, the only CPU-heavy part. The CPU limit is what the JVM sees, so it also
-# sets the number of concurrent searches; the API falls back to its own engine while this one is
-# unavailable. The service is stateless (the replay cache is per pod and replaying is cheap), so
+# sets the number of concurrent searches; while this service is unavailable the API searches a
+# person's game itself and holds games between two bots. The service is stateless (the replay cache is per pod and replaying is cheap), so
 # several replicas behind the Service are fine: the HorizontalPodAutoscaler below owns the
 # replica count, which is why the Deployment declares none.
 apiVersion: apps/v1
@@ -19,12 +19,22 @@ spec:
           image: ghcr.io/werelaxe/chess-platform-engine
           env:
             - {name: PORT, value: "8081"}
-            - {name: JAVA_OPTS, value: -XX:MaxRAMPercentage=75}
+            # An OutOfMemoryError ends the process rather than leaving it half dead; Kubernetes
+            # restarts the container.
+            - {name: JAVA_OPTS, value: -XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError}
           ports:
             - {name: http, containerPort: 8081}
           readinessProbe:
             httpGet: {path: /health, port: http}
             periodSeconds: 10
+          # The readiness probe only takes a pod out of the Service; a JVM that hangs (an
+          # OutOfMemoryError it survived, say) is replaced only by a liveness probe. Three
+          # failed probes, 20 s apart, restart the container.
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
           resources:
             requests: {cpu: "4", memory: 512Mi}
             limits: {cpu: "6", memory: 2Gi}

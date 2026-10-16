@@ -20,6 +20,7 @@ import ru.werelaxe.chess.server.service.InProcessMoveProvider
 import ru.werelaxe.chess.server.service.MoveProvider
 import ru.werelaxe.chess.server.service.RemoteMoveProvider
 import java.net.ConnectException
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -56,6 +57,18 @@ class MoveProviderTest {
         initialBackoff = 5.milliseconds,
     )
 
+    /** A service that answers every request with an internal error. */
+    private fun failing() = RemoteMoveProvider(
+        MockEngine {
+            respond(
+                """{"error":"internal","message":"The engine blew up"}""",
+                HttpStatusCode.InternalServerError,
+                headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+            )
+        },
+        "http://engine:8081",
+    )
+
     private val untouched = object : MoveProvider {
         override suspend fun chooseMove(
             gameId: String,
@@ -76,6 +89,30 @@ class MoveProviderTest {
         }
     }
 
+    /** [plies] pawn splits from the a-file on, each doubling the universes: a fog of 2^[plies]. */
+    private fun pawnFog(plies: Int): List<GameMove> = (0 until plies).map { ply ->
+        val file = "abcdefgh"[ply / 2]
+        if (ply % 2 == 0) split("${file}2", "${file}3", "${file}4") else split("${file}7", "${file}6", "${file}5")
+    }
+
+    @Test
+    fun inProcessProviderSearchesAFogAboveTheCeilingShallowly() = runBlocking {
+        val levels = CopyOnWriteArrayList<EngineLevel>()
+        val engines = { level: EngineLevel -> levels += level; ChessEngine(level, Random(7)) }
+        InProcessMoveProvider(engines, parallelism = 1, maxUniverses = 4).use { provider ->
+            // Eight universes above a ceiling of four: a NOVICE search on the likeliest four, legal in all eight.
+            val fog = pawnFog(3)
+            val reply = assertNotNull(provider.chooseMove("q", GameKind.QUANTUM, EngineLevel.HARD, fog, ThinkPriority.HUMAN))
+            val game = Game.replay(GameKind.QUANTUM, fog)
+            assertTrue(game.isLegal(game.resolve(reply, Random(1))), "$reply is legal in the fog")
+            assertEquals(listOf(EngineLevel.NOVICE), levels)
+
+            // Within the ceiling the level asked for searches the position as it stands.
+            assertNotNull(provider.chooseMove("q", GameKind.QUANTUM, EngineLevel.EASY, pawnFog(2), ThinkPriority.HUMAN))
+            assertEquals(listOf(EngineLevel.NOVICE, EngineLevel.EASY), levels)
+        }
+    }
+
     @Test
     fun inProcessProviderReportsAFinishedGame() = runBlocking {
         val foolsMate = listOf(normal("f2f3"), normal("e7e5"), normal("g2g4"), normal("d8h4"))
@@ -83,12 +120,40 @@ class MoveProviderTest {
     }
 
     @Test
-    fun fallbackUsesTheInProcessEngineWhenTheServiceFails() = runBlocking {
+    fun fallbackSearchesForAHumanWhenTheServiceIsUnreachable() = runBlocking {
         FallbackMoveProvider(unreachable(), inProcess()).use { provider ->
-            for (priority in ThinkPriority.entries) {
-                val reply = assertNotNull(provider.chooseMove("g", GameKind.CLASSIC, EngineLevel.EASY, opening, priority))
-                assertTrue(Game.replay(GameKind.CLASSIC, opening).isLegal(reply), "$reply is legal after 1. e4")
+            val reply = assertNotNull(provider.chooseMove("g", GameKind.CLASSIC, EngineLevel.EASY, opening, ThinkPriority.HUMAN))
+            assertTrue(Game.replay(GameKind.CLASSIC, opening).isLegal(reply), "$reply is legal after 1. e4")
+        }
+    }
+
+    @Test
+    fun fallbackSearchesForAHumanWhenTheServiceAnswersAnError() = runBlocking {
+        FallbackMoveProvider(failing(), inProcess()).use { provider ->
+            val reply = assertNotNull(provider.chooseMove("g", GameKind.CLASSIC, EngineLevel.EASY, opening, ThinkPriority.HUMAN))
+            assertTrue(Game.replay(GameKind.CLASSIC, opening).isLegal(reply), "$reply is legal after 1. e4")
+        }
+    }
+
+    @Test
+    fun fallbackLetsABotVersusBotGameWaitForAnUnreachableService() = runBlocking {
+        FallbackMoveProvider(unreachable(), untouched).use { provider ->
+            val error = assertFailsWith<EngineBusyException> {
+                provider.chooseMove("g", GameKind.CLASSIC, EngineLevel.EASY, opening, ThinkPriority.BOT)
             }
+            val message = error.message.orEmpty()
+            assertTrue("bot-versus-bot game g at ply 1" in message && "Connection refused" in message, message)
+        }
+    }
+
+    @Test
+    fun fallbackLetsABotVersusBotGameWaitWhenTheServiceAnswersAnError() = runBlocking {
+        FallbackMoveProvider(failing(), untouched).use { provider ->
+            val error = assertFailsWith<EngineBusyException> {
+                provider.chooseMove("g", GameKind.CLASSIC, EngineLevel.EASY, opening, ThinkPriority.BOT)
+            }
+            val message = error.message.orEmpty()
+            assertTrue("500" in message && "The engine blew up" in message, message)
         }
     }
 

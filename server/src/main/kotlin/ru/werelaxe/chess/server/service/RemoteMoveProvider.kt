@@ -35,9 +35,10 @@ import kotlin.time.TimeSource
 class EngineServiceException(message: String) : RuntimeException(message)
 
 /**
- * The engine service is overloaded and the move is for a bot-versus-bot game: the game waits
- * for its next wake-up ([BotPlayer]) rather than loading this process with a search while the
- * service is at its busiest; see [RemoteMoveProvider] and [FallbackMoveProvider].
+ * The engine service is overloaded or unavailable and the move is for a bot-versus-bot game:
+ * the game waits for its next wake-up ([BotPlayer]) rather than loading this process with a
+ * search while the service is at its busiest or down; see [RemoteMoveProvider] and
+ * [FallbackMoveProvider].
  */
 class EngineBusyException(message: String) : RuntimeException(message)
 

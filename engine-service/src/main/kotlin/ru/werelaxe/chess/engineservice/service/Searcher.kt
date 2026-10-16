@@ -9,8 +9,10 @@ import ru.werelaxe.chess.core.Game
 import ru.werelaxe.chess.core.GameKind
 import ru.werelaxe.chess.core.GameMove
 import ru.werelaxe.chess.core.IllegalMoveException
+import ru.werelaxe.chess.core.QuantumState
 import ru.werelaxe.chess.engine.EngineLevel
 import ru.werelaxe.chess.engine.ThinkPriority
+import ru.werelaxe.chess.engine.UniverseCeiling
 import ru.werelaxe.chess.engineservice.config.AppConfig
 import ru.werelaxe.chess.engineservice.dto.ThinkRequest
 import java.util.concurrent.Executors
@@ -39,6 +41,13 @@ sealed interface ThinkResult {
  * with the number of waiting requests, whatever their priority, so that the reply latency
  * stays bounded instead of the queue growing. A search spreads over the [helpers] that are
  * idle when it runs, so that a quiet service answers faster.
+ *
+ * A quantum position with more universes than [AppConfig.maxUniverses] is never searched as it
+ * stands: the search would allocate hundreds of states of that many boards each at any level,
+ * which is what exhausts the heap. The engine sees its most probable universes only, at
+ * [UniverseCeiling.SHALLOW_LEVEL] within [UniverseCeiling.SHALLOW_BUDGET] (see
+ * [UniverseCeiling]), logged at WARN once per search performed, and the game goes on with a
+ * weaker move rather than with no engine.
  */
 class Searcher(
     config: AppConfig,
@@ -50,6 +59,7 @@ class Searcher(
 
     val parallelism: Int = config.parallelism
     private val minBudgetRatio = config.minBudgetRatio
+    private val ceiling = UniverseCeiling(config.maxUniverses)
 
     private val threadCounter = AtomicInteger()
     private val threads = Executors.newFixedThreadPool(parallelism) { runnable ->
@@ -79,10 +89,19 @@ class Searcher(
         if (game.isOver) return ThinkResult.GameOver
         val state = game.state
         return admitted(request.priority) {
-            val budget = budget(request.level)
             val started = TimeSource.Monotonic.markNow()
-            val move = withContext(dispatcher) { engine.chooseMove(state, request.level, budget) }
-                ?: throw IllegalStateException("The engine found no move in an ongoing game")
+            val move = withContext(dispatcher) {
+                val restricted = ceiling.restrict(state)
+                if (restricted == null) {
+                    engine.chooseMove(state, request.level, budget(request.level))
+                } else {
+                    log.warn(
+                        "Position of game {} has {} universes, above the ceiling {}; answering with a shallow search on its {} most probable",
+                        request.gameId, (state as QuantumState).universeCount, ceiling.maxUniverses, restricted.universeCount,
+                    )
+                    engine.chooseMove(restricted, UniverseCeiling.SHALLOW_LEVEL, UniverseCeiling.SHALLOW_BUDGET)
+                }
+            } ?: throw IllegalStateException("The engine found no move in an ongoing game")
             ThinkResult.Move(move, started.elapsedNow())
         }
     }

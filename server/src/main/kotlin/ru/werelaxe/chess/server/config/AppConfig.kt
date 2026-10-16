@@ -1,5 +1,7 @@
 package ru.werelaxe.chess.server.config
 
+import ru.werelaxe.chess.engine.UniverseCeiling
+
 /** Server configuration; see docs/ARCHITECTURE.md sections 2.1, 2.10 and 2.11 for the environment variables. */
 data class AppConfig(
     val port: Int = 8080,
@@ -18,6 +20,12 @@ data class AppConfig(
     val engineRetrySeconds: Long = 30,
     /** Concurrent in-process searches. */
     val botParallelism: Int = 2,
+    /**
+     * A quantum position with more universes than this is searched in process on its most
+     * probable universes only, so that one fog position cannot exhaust the heap (the same guard
+     * as the engine service's `ENGINE_MAX_UNIVERSES`, section 2.7); 0 means no ceiling.
+     */
+    val botMaxUniverses: Int = UniverseCeiling.DEFAULT_MAX_UNIVERSES,
     /** Concurrent requests to the engine service. */
     val botRemoteConcurrency: Int = 64,
     /** Idle time after which a cached game is dropped from memory. */
@@ -85,6 +93,7 @@ data class AppConfig(
                 engineUrl = env["ENGINE_URL"]?.trim()?.takeIf { it.isNotEmpty() },
                 engineRetrySeconds = env.positiveLong("ENGINE_RETRY_SECONDS") ?: defaults.engineRetrySeconds,
                 botParallelism = env.positiveInt("BOT_PARALLELISM") ?: defaults.botParallelism,
+                botMaxUniverses = env.nonNegativeInt("BOT_MAX_UNIVERSES") ?: defaults.botMaxUniverses,
                 botRemoteConcurrency = env.positiveInt("BOT_REMOTE_CONCURRENCY") ?: defaults.botRemoteConcurrency,
                 gameIdleMinutes = env.positiveLong("GAME_IDLE_MINUTES") ?: defaults.gameIdleMinutes,
                 adminToken = adminToken,

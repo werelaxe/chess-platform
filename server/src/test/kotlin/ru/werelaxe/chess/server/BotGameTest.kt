@@ -1,6 +1,7 @@
 package ru.werelaxe.chess.server
 
 import io.ktor.client.call.body
+import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.get
 import io.ktor.http.HttpStatusCode
@@ -34,8 +35,11 @@ import ru.werelaxe.chess.server.repository.Repositories
 import ru.werelaxe.chess.server.repository.memory.InMemoryStore
 import ru.werelaxe.chess.server.service.BotRoster
 import ru.werelaxe.chess.server.service.EngineBusyException
+import ru.werelaxe.chess.server.service.FallbackMoveProvider
 import ru.werelaxe.chess.server.service.MoveProvider
+import ru.werelaxe.chess.server.service.RemoteMoveProvider
 import ru.werelaxe.chess.server.ws.ServerEvent
+import java.net.ConnectException
 import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
@@ -504,6 +508,34 @@ class BotGameTest {
             busy.set(false)
             assertEquals(1, services.games.wakeBots())
             assertEquals(1, awaitStoredMoves(live.id, 1))
+        }
+    }
+
+    @Test
+    fun botVersusBotGameWaitsForAnUnreachableEngineServiceWhileAHumansGameIsSearchedHere() {
+        val attempts = AtomicInteger()
+        val unreachable = RemoteMoveProvider(
+            MockEngine { attempts.incrementAndGet(); throw ConnectException("Connection refused") },
+            "http://engine:8081",
+        )
+        val thinks = CopyOnWriteArrayList<Think>()
+        val inProcess = recording(thinks) { ply -> if (ply == 0) normal("e2e4") else null }
+        serverTest(moveProvider = FallbackMoveProvider(unreachable, inProcess)) {
+            val alice = token("alice")
+            // The bot opens against Alice with the in-process engine.
+            val human = botGame(alice, color = ColorChoice.BLACK)
+            assertEquals(1, awaitMoves(alice, human.id, 1).moveCount)
+            assertEquals(listOf(ThinkPriority.HUMAN), thinks.map { it.priority })
+
+            // The game between two bots asks the service, is told to wait and is not searched here.
+            val live = botVersusBotGame()
+            withTimeout(5_000) {
+                while (attempts.get() < 2) delay(10)
+            }
+            delay(200)
+            assertEquals(0, assertNotNull(repositories.games.findById(live.id)).moveCount, "held while the service is unreachable")
+            assertTrue(thinks.none { it.gameId == live.id }, "no in-process search for the held game: $thinks")
+            assertEquals(2, attempts.get(), "one attempt per game, no retry of its own")
         }
     }
 

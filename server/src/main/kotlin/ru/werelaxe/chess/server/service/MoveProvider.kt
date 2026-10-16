@@ -23,7 +23,8 @@ interface MoveProvider : AutoCloseable {
      * [gameId] lets a remote engine cache the replayed position between consecutive requests.
      * [priority] says who waits for the move: [ThinkPriority.HUMAN] when a person is at the
      * board, [ThinkPriority.BOT] in a bot-versus-bot game, which the engine service serves
-     * after the humans and which a busy service may tell to wait ([EngineBusyException]).
+     * after the humans and which a busy or unreachable service tells to wait
+     * ([EngineBusyException]) rather than being searched in this process.
      */
     suspend fun chooseMove(
         gameId: String,
@@ -40,25 +41,30 @@ interface MoveProvider : AutoCloseable {
 
         /**
          * The provider described by [config]: the engine service at `ENGINE_URL` with the
-         * in-process engine as a fallback, or the in-process engine alone when the URL is unset.
+         * in-process engine as a fallback for humans' games, or the in-process engine alone
+         * when the URL is unset.
          * [engines] builds the in-process engine for a level.
          */
         fun fromConfig(
             config: AppConfig,
             engines: (EngineLevel) -> ChessEngine = { ChessEngine(it) },
         ): MoveProvider {
-            val inProcess = InProcessMoveProvider(engines, config.botParallelism)
+            val inProcess = InProcessMoveProvider(engines, config.botParallelism, config.botMaxUniverses)
             val url = config.engineUrl
+            val ceiling = if (config.botMaxUniverses == 0) "none" else config.botMaxUniverses
             if (url == null) {
-                log.info("Computer moves are searched in process, {} at a time", config.botParallelism)
+                log.info("Computer moves are searched in process, {} at a time, with a universe ceiling of {}", config.botParallelism, ceiling)
                 return inProcess
             }
             log.info(
                 "Computer moves come from the engine service at {} (at most {} requests in flight, " +
-                    "overload retried for {} s, a quarter of that for bot-versus-bot games); the in-process engine is the fallback",
+                    "overload retried for {} s, a quarter of that for bot-versus-bot games); the in-process engine is the fallback " +
+                    "for humans' games ({} at a time, with a universe ceiling of {}), a bot-versus-bot game waits for the service",
                 url,
                 config.botRemoteConcurrency,
                 config.engineRetrySeconds,
+                config.botParallelism,
+                ceiling,
             )
             val remote = RemoteMoveProvider(
                 CIO.create(),

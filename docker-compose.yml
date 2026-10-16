@@ -16,6 +16,9 @@ services:
       PORT: "8081"
       # Search threads; empty means the CPUs the container sees (ENGINE_CPUS below).
       ENGINE_PARALLELISM: ${ENGINE_PARALLELISM:-}
+      # An OutOfMemoryError ends the process rather than leaving it half dead; the restart
+      # policy brings it back.
+      JAVA_OPTS: -XX:+ExitOnOutOfMemoryError
     deploy:
       resources:
         limits:
@@ -70,9 +73,12 @@ services:
       ADMIN_TOKEN: ${ADMIN_TOKEN:-}
       # nginx serves the client and the API from one origin, so CORS is disabled.
       CORS_ORIGINS: ""
-      # Computer moves come from the engine service; the API falls back to its own engine
-      # while the service is unavailable.
+      # Computer moves come from the engine service; while it is unavailable the API searches
+      # a person's game itself and holds games between two bots.
       ENGINE_URL: http://engine:8081
+      # An OutOfMemoryError ends the process rather than leaving it half dead; the restart
+      # policy brings it back.
+      JAVA_OPTS: -XX:+ExitOnOutOfMemoryError
     depends_on:
       db:
         condition: service_healthy

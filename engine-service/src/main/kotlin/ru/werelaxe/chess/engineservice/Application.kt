@@ -25,8 +25,10 @@ fun main() {
         exitProcess(1)
     }
     log.info(
-        "Starting the engine service on port {} with {} search threads, {} helper threads, a queue of {} and a budget floor of {}",
+        "Starting the engine service on port {} with {} search threads, {} helper threads, a queue of {}, a budget floor of {} " +
+            "and a universe ceiling of {}",
         config.port, config.parallelism, config.helperThreads, config.queueLimit, config.minBudgetRatio,
+        if (config.maxUniverses == 0) "none" else config.maxUniverses,
     )
     embeddedServer(Netty, port = config.port, host = "0.0.0.0") {
         module(Searcher(config))

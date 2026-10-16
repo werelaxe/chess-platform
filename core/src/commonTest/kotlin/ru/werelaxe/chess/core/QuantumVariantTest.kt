@@ -6,6 +6,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class QuantumVariantTest {
@@ -633,6 +634,41 @@ class QuantumVariantTest {
         assertTrue(state.universes.values.all { it == 1L })
         assertEquals((1 shl 9) - 1, state.history.toMap().keys.sumOf { it.size })
         assertTrue(game.isLegal(normal("e2e4")))
+    }
+
+    @Test
+    fun restrictionToTheMostProbableUniversesKeepsEveryMoveLegal() {
+        // White's king's knight stands on f3 (most likely) or h3, or the queen's knight went to c3.
+        val onF3 = board("rnbqkbnr/pppppppp/8/8/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 1 1")
+        val onH3 = board("rnbqkbnr/pppppppp/8/8/8/7N/PPPPPPPP/RNBQKB1R w KQkq - 1 1")
+        val onC3 = board("rnbqkbnr/pppppppp/8/8/8/2N5/PPPPPPPP/R1BQKBNR w KQkq - 1 1")
+        val universes = linkedMapOf(onF3 to 4L, onH3 to 2L, onC3 to 1L)
+        val full = QuantumState(universes, 3, PositionHistory.EMPTY.plus(universes), split("g1", "f3", "h3"))
+
+        val restricted = full.mostProbable(2)
+        assertEquals(listOf(onF3 to 2L, onH3 to 1L), restricted.universes.entries.map { it.key to it.value }, "the heaviest two, renormalized")
+        assertEquals(full.halfmoveClock, restricted.halfmoveClock)
+        assertEquals(full.history, restricted.history)
+        assertEquals(full.lastMove, restricted.lastMove)
+        assertSame(full, full.mostProbable(3), "no more universes than it has: the state itself")
+        assertFailsWith<IllegalArgumentException> { full.mostProbable(0) }
+
+        // Everything legal in the restriction is legal in the whole position...
+        for (from in Square.ALL) {
+            val targets = QuantumVariant.legalTargets(restricted, from)
+            for (to in targets) assertTrue(QuantumVariant.isLegal(full, GameMove.Normal(from, to)), "$from$to")
+            for (first in targets) {
+                for (second in QuantumVariant.splitSecondTargets(restricted, from, first)) {
+                    assertTrue(QuantumVariant.isLegal(full, GameMove.Split(from, first, second)), "split $from $first $second")
+                }
+            }
+            if (QuantumVariant.canObserve(restricted, from)) assertTrue(QuantumVariant.canObserve(full, from), "observe $from")
+        }
+        // ...while what only the dropped universe allowed is gone.
+        assertTrue(QuantumVariant.isLegal(full, normal("c3e4")))
+        assertFalse(QuantumVariant.isLegal(restricted, normal("c3e4")))
+        assertTrue(QuantumVariant.canObserve(full, sq("g1")))
+        assertFalse(QuantumVariant.canObserve(restricted, sq("g1")))
     }
 
     @Test

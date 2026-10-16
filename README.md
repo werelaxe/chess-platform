@@ -67,14 +67,18 @@ how a change to the manifests alone is applied. Rolling back is `deploy.sh <olde
 workflow run on an older commit. `ci.yml` runs all tests on every push and pull request.
 
 The computer's moves are searched by the `engine` service (`engine-service/`), the only
-CPU-heavy part of the stack: the API asks it over HTTP (`ENGINE_URL`) and falls back to its
-own in-process engine while the service is unavailable, so the engine can be restarted or
-redeployed without stalling a game. The CPU limit of its container (`deploy/k8s/engine.yaml`;
+CPU-heavy part of the stack: the API asks it over HTTP (`ENGINE_URL`) and, for a game with a
+person in it, falls back to its own in-process engine while the service is unavailable, so the
+engine can be restarted or redeployed without stalling anybody's game; a game between two bots
+simply waits for the service. The CPU limit of its container (`deploy/k8s/engine.yaml`;
 `ENGINE_CPUS` in `.env` under docker compose) caps the cores one engine may use, and
 `ENGINE_PARALLELISM` the number of concurrent searches (default: the cores it sees); requests
 beyond that wait in a bounded queue with a shrinking thinking budget and are refused once it is
 full, which the API retries. Moves for people are served before those of bot-versus-bot games,
-and half of the queue is kept for them. In the cluster a HorizontalPodAutoscaler in
+and half of the queue is kept for them. A quantum position of more than `ENGINE_MAX_UNIVERSES`
+universes (default 4096) is searched on its most probable universes only, so that one fog
+position cannot exhaust the engine's memory (the API's own fallback engine does the same,
+`BOT_MAX_UNIVERSES`). In the cluster a HorizontalPodAutoscaler in
 `engine.yaml` adds a second engine pod while the CPU use stays above 75 %; to add capacity
 beyond that, raise its `maxReplicas` (under docker compose: `docker compose up -d --scale
 engine=2`), and the API's requests spread over the pods through the service name.

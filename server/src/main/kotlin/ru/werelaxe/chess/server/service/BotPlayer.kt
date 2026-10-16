@@ -45,8 +45,10 @@ class BotTurn(
  * A move against a human is asked for with [ThinkPriority.HUMAN], a move against another bot
  * with [ThinkPriority.BOT]: the engine service serves the humans first, and a bot-versus-bot
  * game makes no move at all while the human load is [high][HumanLoad.high] or while the
- * service is too busy for it ([EngineBusyException]); it resumes when `GameService.wakeBots`
- * runs at a later matchmaking tick. A human's game is never held.
+ * service is too busy for it or unreachable ([EngineBusyException], which
+ * [FallbackMoveProvider] raises for any failure of the service in such a game: it is never
+ * searched in this process); it resumes when `GameService.wakeBots` runs at a later
+ * matchmaking tick. A human's game is never held: the in-process engine takes over.
  *
  * A game is never searched twice at the same time: a wake-up that arrives while its game is
  * being played is honoured once the current move is done instead of being lost.
@@ -60,7 +62,13 @@ class BotPlayer(
 ) {
     private val log = LoggerFactory.getLogger(BotPlayer::class.java)
 
-    /** An [Error] out of a search (a stack overflow in the engine, say) ends that game's run; it is logged here. */
+    /**
+     * An [Error] out of a search (a stack overflow in the engine, say) ends that game's run
+     * and nothing else; it is logged here. An [OutOfMemoryError] is the exception: the JVM
+     * runs with `-XX:+ExitOnOutOfMemoryError` (docs/ARCHITECTURE.md section 4), so the process
+     * exits before this handler sees it and Kubernetes restarts it, which is intended: a heap
+     * exhausted by one search leaves no process worth keeping.
+     */
     private val crashes = CoroutineExceptionHandler { _, e -> log.error("Bot player crashed", e) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + CoroutineName("bot") + crashes)
 

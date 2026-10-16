@@ -35,6 +35,7 @@ class AppConfigTest {
         assertNull(config.engineUrl)
         assertEquals(30, config.engineRetrySeconds)
         assertEquals(2, config.botParallelism)
+        assertEquals(4096, config.botMaxUniverses)
         assertEquals(64, config.botRemoteConcurrency)
         assertEquals(30, config.gameIdleMinutes)
         // A blank URL is as good as none.
@@ -49,6 +50,7 @@ class AppConfigTest {
                 "ENGINE_URL" to "http://engine:8081",
                 "ENGINE_RETRY_SECONDS" to "5",
                 "BOT_PARALLELISM" to "3",
+                "BOT_MAX_UNIVERSES" to "100",
                 "BOT_REMOTE_CONCURRENCY" to "16",
                 "GAME_IDLE_MINUTES" to "10",
             ),
@@ -56,8 +58,11 @@ class AppConfigTest {
         assertEquals("http://engine:8081", config.engineUrl)
         assertEquals(5, config.engineRetrySeconds)
         assertEquals(3, config.botParallelism)
+        assertEquals(100, config.botMaxUniverses)
         assertEquals(16, config.botRemoteConcurrency)
         assertEquals(10, config.gameIdleMinutes)
+        // Zero switches the ceiling off.
+        assertEquals(0, AppConfig.fromEnvironment(mapOf("JWT_SECRET" to "0123456789abcdef", "BOT_MAX_UNIVERSES" to "0")).botMaxUniverses)
     }
 
     @Test
@@ -67,12 +72,14 @@ class AppConfigTest {
                 "JWT_SECRET" to "0123456789abcdef",
                 "ENGINE_RETRY_SECONDS" to "soon",
                 "BOT_PARALLELISM" to "0",
+                "BOT_MAX_UNIVERSES" to "-1",
                 "BOT_REMOTE_CONCURRENCY" to "-1",
                 "GAME_IDLE_MINUTES" to "",
             ),
         )
         assertEquals(30, config.engineRetrySeconds)
         assertEquals(2, config.botParallelism)
+        assertEquals(4096, config.botMaxUniverses)
         assertEquals(64, config.botRemoteConcurrency)
         assertEquals(30, config.gameIdleMinutes)
     }

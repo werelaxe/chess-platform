@@ -11,6 +11,7 @@ import ru.werelaxe.chess.core.ChessJson
 import ru.werelaxe.chess.core.Game
 import ru.werelaxe.chess.core.GameKind
 import ru.werelaxe.chess.core.GameMove
+import ru.werelaxe.chess.core.QuantumState
 import ru.werelaxe.chess.engine.EngineLevel
 import ru.werelaxe.chess.engine.ThinkPriority
 import ru.werelaxe.chess.engineservice.config.AppConfig
@@ -30,6 +31,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 
 class ThinkTest {
     @Test
@@ -65,6 +67,75 @@ class ThinkTest {
             assertTrue("\"type\":\"observe\"" in body && "\"square\":\"f3\"" in body, body)
             assertFalse("outcome" in body, body)
             assertTrue("\"elapsedMillis\":" in body, body)
+        }
+    }
+
+    /** A split leaves two universes, so a ceiling of one puts the position above it. */
+    private val fog = listOf(split("g1", "f3", "h3"))
+
+    /**
+     * [plies] pawn splits, one pawn after another from the a-file: a pawn nobody touched stands
+     * on its square in every universe, so every split doubles them and the fog has 2^[plies].
+     */
+    private fun pawnFog(plies: Int): List<GameMove> = (0 until plies).map { ply ->
+        val file = "abcdefgh"[ply / 2]
+        if (ply % 2 == 0) split("${file}2", "${file}3", "${file}4") else split("${file}7", "${file}6", "${file}5")
+    }
+
+    @Test
+    fun answersAPositionAboveTheUniverseCeilingWithALegalMove() =
+        serviceTest(AppConfig(parallelism = 1, queueLimit = 1, maxUniverses = 16)) {
+            // 256 universes searched on the 16 most probable: the move must be legal in all 256.
+            val move = think("fog", pawnFog(8), kind = GameKind.QUANTUM, level = EngineLevel.HARD)
+            if (move is GameMove.Observe) assertNull(move.outcome)
+        }
+
+    /** An engine that records the level, the budget and the universes of every search and answers [answer] (1... e5 by default). */
+    private class RecordingEngine(answer: GameMove = normal("e7e5")) {
+        val searches = CopyOnWriteArrayList<Pair<EngineLevel, Duration>>()
+        val universes = CopyOnWriteArrayList<Int>()
+        val engine = Engine { state, level, budget ->
+            searches += level to budget
+            universes += (state as? QuantumState)?.universeCount ?: 0
+            answer
+        }
+    }
+
+    @Test
+    fun searchesAPositionAboveTheUniverseCeilingShallowly() {
+        val recording = RecordingEngine()
+        serviceTest(AppConfig(parallelism = 1, queueLimit = 1, maxUniverses = 4), recording.engine) {
+            // Eight universes above a ceiling of four: the engine sees four of them, at NOVICE within 100 ms.
+            assertEquals(normal("e7e5"), think("fog", pawnFog(3), kind = GameKind.QUANTUM, level = EngineLevel.HARD))
+            assertEquals(listOf(EngineLevel.NOVICE to 100.milliseconds), recording.searches)
+            assertEquals(listOf(4), recording.universes)
+
+            // A quantum position within the ceiling, and classic chess, get the level asked for and the whole position.
+            think("quantum", fog, kind = GameKind.QUANTUM, level = EngineLevel.HARD)
+            think("classic", moves("e2e4"), level = EngineLevel.HARD)
+            val full = EngineLevel.HARD to EngineLevel.HARD.timeBudget
+            assertEquals(listOf(full, full), recording.searches.drop(1))
+            assertEquals(listOf(2, 0), recording.universes.drop(1))
+        }
+    }
+
+    @Test
+    fun aShallowSearchSeesAFewHundredUniversesAtMost() {
+        // Ten pawn splits leave white to move with the king's knight and the f-pawn untouched.
+        val recording = RecordingEngine(answer = normal("g1f3"))
+        serviceTest(AppConfig(parallelism = 1, queueLimit = 1, maxUniverses = 1000), recording.engine) {
+            think("fog", pawnFog(10), kind = GameKind.QUANTUM, level = EngineLevel.HARD)
+            assertEquals(listOf(EngineLevel.NOVICE to 100.milliseconds), recording.searches)
+            assertEquals(listOf(256), recording.universes, "1024 universes, searched on the 256 most probable")
+        }
+    }
+
+    @Test
+    fun aUniverseCeilingOfZeroMeansNoCeiling() {
+        val recording = RecordingEngine()
+        serviceTest(AppConfig(parallelism = 1, queueLimit = 1, maxUniverses = 0), recording.engine) {
+            think("fog", fog, kind = GameKind.QUANTUM, level = EngineLevel.HARD)
+            assertEquals(listOf(EngineLevel.HARD to EngineLevel.HARD.timeBudget), recording.searches)
         }
     }
 
