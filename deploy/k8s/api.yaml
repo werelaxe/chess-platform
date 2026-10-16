@@ -41,12 +41,22 @@ spec:
             # The web nginx serves the client and the API from one origin.
             - {name: CORS_ORIGINS, value: ""}
             - {name: ENGINE_URL, value: "http://engine:8081"}
-            - {name: JAVA_OPTS, value: -XX:MaxRAMPercentage=75}
+            # An OutOfMemoryError ends the process rather than leaving it half dead; Kubernetes
+            # restarts the container.
+            - {name: JAVA_OPTS, value: -XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError}
           ports:
             - {name: http, containerPort: 8080}
           readinessProbe:
             httpGet: {path: /api/health, port: http}
             periodSeconds: 10
+          # The readiness probe only takes a pod out of the Service; a JVM that hangs (an
+          # OutOfMemoryError it survived, say) is replaced only by a liveness probe. Three
+          # failed probes, 20 s apart, restart the container.
+          livenessProbe:
+            httpGet: {path: /api/health, port: http}
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
           resources:
             requests: {cpu: 250m, memory: 512Mi}
             limits: {memory: 2Gi}

@@ -1,5 +1,7 @@
 package ru.werelaxe.chess.engineservice.config
 
+import ru.werelaxe.chess.engine.UniverseCeiling
+
 /** Engine service configuration; see docs/ARCHITECTURE.md section 2.7 for the environment variables. */
 data class AppConfig(
     val port: Int = 8081,
@@ -13,6 +15,12 @@ data class AppConfig(
     val minBudgetRatio: Double = 0.25,
     /** Replayed games kept for the next request of the same game. */
     val cacheSize: Int = 512,
+    /**
+     * A quantum position with more universes than this is searched on its most probable
+     * universes only, shallowly, so that one fog position cannot exhaust the heap
+     * ([UniverseCeiling]); 0 means no ceiling.
+     */
+    val maxUniverses: Int = UniverseCeiling.DEFAULT_MAX_UNIVERSES,
 ) {
     init {
         require(parallelism >= 1) { "parallelism must be at least 1" }
@@ -20,6 +28,7 @@ data class AppConfig(
         require(helperThreads >= 0) { "helperThreads must not be negative" }
         require(minBudgetRatio in 0.0..1.0) { "minBudgetRatio must be between 0 and 1" }
         require(cacheSize >= 0) { "cacheSize must not be negative" }
+        require(maxUniverses >= 0) { "maxUniverses must not be negative" }
     }
 
     /** The environment is unusable; the service refuses to start rather than guess. */
@@ -36,6 +45,7 @@ data class AppConfig(
                     queueLimit = env.int("ENGINE_QUEUE_LIMIT") ?: 4 * parallelism,
                     helperThreads = env.int("ENGINE_HELPER_THREADS") ?: defaultHelperThreads(parallelism),
                     minBudgetRatio = env.double("ENGINE_MIN_BUDGET_RATIO") ?: defaults.minBudgetRatio,
+                    maxUniverses = env.int("ENGINE_MAX_UNIVERSES") ?: defaults.maxUniverses,
                 )
             } catch (e: IllegalArgumentException) {
                 throw ConfigurationException(e.message ?: "Invalid configuration")

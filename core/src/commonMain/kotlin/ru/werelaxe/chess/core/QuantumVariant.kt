@@ -49,6 +49,23 @@ class QuantumState internal constructor(
 
     fun hasKingAnywhere(color: Color): Boolean = universes.keys.any { it.hasKing(color) }
 
+    /**
+     * This distribution restricted to its [count] most probable universes (this very state when
+     * it has no more), with the weights renormalized and the same clock, history and last move.
+     * Every move legal in the restriction is legal here: a normal move or an observation is legal
+     * in a quantum position as soon as some universe allows it, and a split as soon as some
+     * universe allows each of its targets, so a subset of the universes never allows more. The
+     * engine searches a fog of universes it cannot afford through such a restriction.
+     */
+    fun mostProbable(count: Int): QuantumState {
+        require(count >= 1) { "A restriction keeps at least one universe" }
+        if (universes.size <= count) return this
+        val kept = LinkedHashMap<Board, Long>()
+        for ((board, weight) in universes.entries.sortedByDescending { it.value }.take(count)) kept[board] = weight
+        QuantumVariant.divideByGcd(kept)
+        return QuantumState(kept, halfmoveClock, history, lastMove)
+    }
+
     companion object {
         fun initial(): QuantumState = of(Board.initial())
 
@@ -241,7 +258,7 @@ object QuantumVariant : Variant<QuantumState>() {
         return result
     }
 
-    private fun divideByGcd(universes: MutableMap<Board, Long>) {
+    internal fun divideByGcd(universes: MutableMap<Board, Long>) {
         var gcd = 0L
         for (weight in universes.values) gcd = gcd(gcd, weight)
         if (gcd > 1) {

@@ -14,6 +14,7 @@ class AppConfigTest {
         assertEquals(4 * config.parallelism, config.queueLimit)
         assertEquals(maxOf(1, config.parallelism / 2), config.helperThreads)
         assertEquals(0.25, config.minBudgetRatio)
+        assertEquals(4096, config.maxUniverses)
     }
 
     @Test
@@ -25,9 +26,12 @@ class AppConfigTest {
                 "ENGINE_QUEUE_LIMIT" to "5",
                 "ENGINE_HELPER_THREADS" to "0",
                 "ENGINE_MIN_BUDGET_RATIO" to "0.5",
+                "ENGINE_MAX_UNIVERSES" to "100",
             ),
         )
-        assertEquals(AppConfig(port = 9000, parallelism = 3, queueLimit = 5, helperThreads = 0, minBudgetRatio = 0.5), config)
+        assertEquals(AppConfig(port = 9000, parallelism = 3, queueLimit = 5, helperThreads = 0, minBudgetRatio = 0.5, maxUniverses = 100), config)
+        // Zero switches the universe ceiling off.
+        assertEquals(0, AppConfig.fromEnvironment(mapOf("ENGINE_MAX_UNIVERSES" to "0")).maxUniverses)
     }
 
     @Test
@@ -46,5 +50,7 @@ class AppConfigTest {
         assertFailsWith<AppConfig.ConfigurationException> { AppConfig.fromEnvironment(mapOf("ENGINE_QUEUE_LIMIT" to "-1")) }
         assertFailsWith<AppConfig.ConfigurationException> { AppConfig.fromEnvironment(mapOf("ENGINE_HELPER_THREADS" to "-1")) }
         assertFailsWith<AppConfig.ConfigurationException> { AppConfig.fromEnvironment(mapOf("ENGINE_MIN_BUDGET_RATIO" to "1.5")) }
+        assertFailsWith<AppConfig.ConfigurationException> { AppConfig.fromEnvironment(mapOf("ENGINE_MAX_UNIVERSES" to "-1")) }
+        assertFailsWith<AppConfig.ConfigurationException> { AppConfig.fromEnvironment(mapOf("ENGINE_MAX_UNIVERSES" to "many")) }
     }
 }

@@ -89,6 +89,12 @@ Quantum rules (see `docs/RULES.md` for the player-facing text):
 * The move list is the only persistent form of a game; replaying it reproduces the exact
   distribution because observation outcomes are stored inside `Observe` moves.
 
+`QuantumState.mostProbable(count)` is a distribution restricted to its `count` heaviest
+universes (renormalized, with the same clock and history). Every move legal in the restriction
+is legal in the whole distribution, since legality only ever asks for some universe where the
+classical move is legal (for a split, one for each target); the engine searches a fog of
+universes it cannot afford through such a restriction (sections 2.7 and 2.12).
+
 ### 1.3 JSON formats (produced by `ChessJson`)
 
 ```jsonc
@@ -166,6 +172,7 @@ replayed games and the WebSocket subscriber registry; PostgreSQL is the source o
 | `ENGINE_URL` | unset | base URL of the engine service (section 2.7); unset means the in-process engine |
 | `ENGINE_RETRY_SECONDS` | `30` | how long to retry an overloaded engine service before falling back |
 | `BOT_PARALLELISM` | `2` | concurrent in-process searches (fallback only) |
+| `BOT_MAX_UNIVERSES` | `4096` | universes above which an in-process search sees the most probable ones only, the same guard as `ENGINE_MAX_UNIVERSES` (section 2.7); 0 means no ceiling |
 | `BOT_REMOTE_CONCURRENCY` | `64` | concurrent requests to the engine service |
 | `GAME_IDLE_MINUTES` | `30` | idle time after which a cached game is dropped from memory |
 | `ADMIN_TOKEN` | unset | enables the admin API (section 2.11) when set, at least 16 characters |
@@ -391,19 +398,26 @@ on turn at startup and at the start of every matchmaking tick (`GameService.wake
 that an unwatched game between two bots resumes by itself. A wake-up checks the move count cheaply (bot seats are recognised by
 id, from the roster loaded at startup) and, if it is a bot's turn, takes an immutable snapshot
 of the position under the game's lock and asks for a move outside it: normally from the engine
-service (section 2.7) through `ENGINE_URL`, with the in-process engine as a fallback when the
-service is unavailable or `ENGINE_URL` is unset (then at most `BOT_PARALLELISM` searches run
-at a time, default 2). The request carries a priority: `HUMAN` when a person is at the board,
-`BOT` when both seats are bots, and the service serves the humans first. A bot-versus-bot game
-is held instead of searched in two cases: while the human load is high (at least
-`bot.human_games_limit` games with a human being played, section 2.10; checked before every such
-move against a count cached for ten seconds, logged at DEBUG) and when the service stays
-overloaded for a quarter of `ENGINE_RETRY_SECONDS` (`EngineBusyException`, logged at INFO; no
-fallback to the in-process engine, which would load the API exactly when the service is
-busiest). In both cases the game resumes when `GameService.wakeBots` runs at a later
-matchmaking tick. A human's game is never held: an overloaded or unavailable service falls
-back to the in-process engine. A game is never searched twice at the same time, and a wake-up that
-arrives during a search is honoured afterwards. The chosen move goes through the normal move pipeline (`GameService.move`
+service (section 2.7) through `ENGINE_URL`, with the in-process engine as a fallback for a
+human's game when the service is unavailable, and for every game when `ENGINE_URL` is unset
+(in process at most `BOT_PARALLELISM` searches run at a time, default 2). The request carries
+a priority: `HUMAN` when a person is at the board, `BOT` when both seats are bots, and the
+service serves the humans first. A bot-versus-bot game is held instead of searched in two
+cases: while the human load is high (at least `bot.human_games_limit` games with a human being
+played, section 2.10; checked before every such move against a count cached for ten seconds,
+logged at DEBUG) and whenever the service fails to answer it. A service that stays overloaded
+for a quarter of `ENGINE_RETRY_SECONDS` (`RemoteMoveProvider` gives up with an
+`EngineBusyException`), is unreachable (connection refused, a timeout) or answers an error
+(`FallbackMoveProvider` logs these at WARN with the reason and without a stack trace and
+turns them into an `EngineBusyException`) all end the same way: `BotPlayer` logs the wait at
+INFO and the game is not searched in process. Nobody waits at the board, and searching here
+exactly when the service is overloaded or down would load the API with the very searches that
+overloaded or crashed the service. In both cases the game resumes when `GameService.wakeBots`
+runs at a later matchmaking tick. A human's game is never held: an overloaded or unavailable
+service falls back to the in-process engine (logged at WARN), which applies the same universe
+ceiling as the service (`BOT_MAX_UNIVERSES`, section 2.1; the guard is described in 2.7), so
+that a fog position cannot exhaust the API's heap either. A game is never searched twice at the
+same time, and a wake-up that arrives during a search is honoured afterwards. The chosen move goes through the normal move pipeline (`GameService.move`
 with the bot's principal), so observations get their outcome from the server and clients
 receive the usual `move` events. A reply to a human move is delayed so that at least
 `bot.reply_pause_millis` (section 2.11; 700 ms by default) pass after the move (the search time
@@ -463,13 +477,27 @@ scored moves may differ), and `ENGINE_HELPER_THREADS=0` turns the splitting off.
 reports `helpers` and `helpersBusy`.
 
 Configuration: `PORT` (default 8081), `ENGINE_PARALLELISM`, `ENGINE_QUEUE_LIMIT`,
-`ENGINE_HELPER_THREADS`, `ENGINE_MIN_BUDGET_RATIO`. The API uses `ENGINE_URL` (compose: `http://engine:8081`), retries
-503 with backoff for up to `ENGINE_RETRY_SECONDS` (default 30) and falls back to its in-process
-engine after that or on connection errors, so a restart of the service never stalls a game.
-That is the behaviour for a human's move; a bot-versus-bot move retries 503 for a quarter of
-`ENGINE_RETRY_SECONDS` only and then waits for the next matchmaking tick instead of falling
-back (section 2.6), while connection errors and other failures fall back whatever the priority.
-The API keeps at most `BOT_REMOTE_CONCURRENCY` (default 64) requests in flight.
+`ENGINE_HELPER_THREADS`, `ENGINE_MIN_BUDGET_RATIO`, `ENGINE_MAX_UNIVERSES` (default 4096; 0
+means no ceiling). The last one is a memory guard (`UniverseCeiling` in `engine/`, section
+2.12): a quantum search materialises the state after every candidate move at the root, a few
+hundred states of as many boards as the position has universes, before any setting of the
+level is read, so a single fog position of many thousands of universes exhausts the heap at
+`NOVICE` exactly as at `HARD` (which is how the service once died and hung). A replayed
+quantum position with more universes than the ceiling is therefore never searched as it
+stands: the engine sees its 256 most probable universes only (never more than the ceiling),
+at `NOVICE` within 100 ms, so the search allocates a few hundred states of a few hundred
+boards at most, whatever the fog. Every move legal in the restriction is legal in the whole
+position (section 1.2), so the game goes on with a move chosen on the likeliest part of the
+fog rather than with no engine at all. The shallow search is logged at WARN once per search
+performed (a request refused as overloaded logs nothing about it). The API's in-process
+fallback applies the same guard (`BOT_MAX_UNIVERSES`, section 2.1). The API uses `ENGINE_URL`
+(compose: `http://engine:8081`), retries 503 with backoff for up to `ENGINE_RETRY_SECONDS`
+(default 30) and, for a human's move, falls back to its in-process engine after that, as well
+as on connection errors, timeouts and error answers, so a restart of the service never stalls
+a game somebody is waiting at. A bot-versus-bot move retries 503 for a quarter of
+`ENGINE_RETRY_SECONDS` only and never falls back: that failure and any other (connection
+refused, a timeout, an error answer) make the game wait for the next matchmaking tick
+(section 2.6). The API keeps at most `BOT_REMOTE_CONCURRENCY` (default 64) requests in flight.
 
 Games the API keeps in memory (`GameCache`) are dropped not only by the LRU bound but also after
 `GAME_IDLE_MINUTES` (default 30) without activity; they are replayed from the database on the
@@ -772,6 +800,18 @@ the injectable `Random`), so the weaker levels vary their play. Both searches sp
 independent parts of their work (root moves, candidates) over a `SearchParallelism`
 (section 2.7) without changing the scores they find.
 
+The memory of a quantum search is set by the root, not by the level: the candidates (every
+normal move, every outcome of every observation and up to six splits per piece, a few hundred
+in a middlegame) are each materialised as the resulting state, a map of as many boards as the
+position has universes, before anything about the level is consulted, and all of them stay
+reachable until the move is chosen. A position of 8,000 universes thus retains about half a
+gigabyte at `NOVICE` exactly as at `HARD`, and one of some 30,000 does not fit a 1.5 GB heap.
+`UniverseCeiling` is the guard, applied by the engine service (`ENGINE_MAX_UNIVERSES`,
+section 2.7) and by the API's in-process fallback (`BOT_MAX_UNIVERSES`, section 2.1): a
+position above the ceiling is searched through `QuantumState.mostProbable` (section 1.2),
+i.e. on its 256 most probable universes (never more than the ceiling), at `NOVICE` within
+100 ms, which bounds both the memory and the time of the search whatever the fog.
+
 ## 3. Web client (`web`)
 
 Vite + React 19 + TypeScript, router and a small store (zustand). The JS core is a dependency
@@ -838,6 +878,17 @@ cheap), so the API's requests spread over the replicas through the `engine` Serv
 replicas use up to 12 of the single node's 16 cores, leaving the rest to the API, the database
 and the web server; `maxReplicas` is what to raise when nodes are added. The database password
 and the JWT key come from the Secret `chess` (`deploy/k8s/create-secret.sh`).
+
+Both JVM containers run with `-XX:+ExitOnOutOfMemoryError` (in `JAVA_OPTS` next to
+`-XX:MaxRAMPercentage=75`; the Gradle start scripts word-split the variable) and have a
+liveness probe on their health endpoint (every 20 s, 5 s timeout, three failures) besides
+the readiness probe. The two together are what replaces a broken process: a readiness probe
+only takes the pod out of its Service, so a JVM that survived an `OutOfMemoryError` half dead
+(the engine once hung for 19 hours that way, failing readiness thousands of times while
+nothing restarted it) is restarted only by the liveness probe, and the exit on
+`OutOfMemoryError` makes the restart immediate instead of waiting for three failed probes.
+Under compose the same `JAVA_OPTS` and `restart: unless-stopped` do the restarting; the
+compose healthcheck restarts nothing by itself.
 
 nginx serves `index.html` with `Cache-Control: no-cache` and the hashed `/assets/` as
 immutable, hides its version and adds `X-Content-Type-Options`, `X-Frame-Options` and

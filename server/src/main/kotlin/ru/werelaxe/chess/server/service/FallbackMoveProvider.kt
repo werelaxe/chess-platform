@@ -8,11 +8,19 @@ import ru.werelaxe.chess.engine.EngineLevel
 import ru.werelaxe.chess.engine.ThinkPriority
 
 /**
- * Asks [primary] (the engine service) and, when that fails, [fallback] (the in-process
- * engine), so that an unavailable service never stalls a game. Every fallback is logged at
- * WARN with the reason. The one failure that does not fall back is a service that is merely
- * busy for a bot-versus-bot game ([EngineBusyException]): that game waits for the service
- * instead of loading this process when it is busiest, so the exception is passed on.
+ * Asks [primary] (the engine service) and, when that fails for a human's move
+ * ([ThinkPriority.HUMAN]), [fallback] (the in-process engine), so that an unavailable service
+ * never stalls a game somebody is waiting at. Every fallback is logged at WARN with the reason.
+ *
+ * A bot-versus-bot move ([ThinkPriority.BOT]) never falls back: nobody waits at the board, and
+ * searching in this process exactly when the service is overloaded or down would load the API
+ * with the very searches that overloaded or crashed the service (a fog position of thousands
+ * of universes exhausts a heap). A busy service arrives as an [EngineBusyException] already
+ * ([RemoteMoveProvider] raises it once its retries are spent) and is rethrown as it is; any
+ * other failure (a connection error, a timeout, an error answer: [EngineServiceException] and
+ * the like) is logged at WARN without a stack trace and turned into an [EngineBusyException].
+ * Either way [BotPlayer] treats it as "wait for the next matchmaking tick" and logs the wait
+ * at INFO.
  */
 class FallbackMoveProvider(
     private val primary: MoveProvider,
@@ -34,6 +42,11 @@ class FallbackMoveProvider(
         } catch (e: EngineBusyException) {
             throw e
         } catch (e: Exception) {
+            if (priority == ThinkPriority.BOT) {
+                val reason = "Engine service unavailable for bot-versus-bot game $gameId at ply ${moves.size}: $e"
+                log.warn("{}; the game waits", reason)
+                throw EngineBusyException(reason)
+            }
             log.warn("Engine service failed for game {} at ply {}; using the in-process engine: {}", gameId, moves.size, e.toString())
         }
         return fallback.chooseMove(gameId, kind, level, moves, priority)
