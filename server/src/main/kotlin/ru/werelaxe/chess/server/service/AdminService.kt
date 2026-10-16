@@ -23,6 +23,8 @@ import java.time.Clock
 /**
  * What the admin API (docs/ARCHITECTURE.md section 2.11) shows and changes: the overview, the
  * bots and the games. Every change is logged; the settings are handled by [Settings] itself.
+ * The overview's `humanGames` is [humanLoad]'s own count, taken afresh, so that the number the
+ * admin sees is the one the human-load gate judges.
  */
 class AdminService(
     private val users: UserRepository,
@@ -30,6 +32,7 @@ class AdminService(
     private val ratings: RatingRepository,
     private val bots: Bots,
     private val settings: Settings,
+    private val humanLoad: HumanLoad,
     private val gameService: GameService,
     private val clock: Clock,
 ) {
@@ -48,7 +51,7 @@ class AdminService(
                 finished = byPhase[GamePhase.FINISHED] ?: 0,
             ),
             activeBotGames = games.listActiveGamesOf(bots.ids).size,
-            humanGames = games.countActiveGamesWithHumans(bots.ids),
+            humanGames = humanLoad.refresh(),
             settings = settings.effective(),
         )
     }

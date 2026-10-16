@@ -64,7 +64,7 @@ object SettingKeys {
     ) { it.botLiveGamesTarget }
     val HUMAN_GAMES_LIMIT = SettingKey.int(
         "bot.human_games_limit",
-        "Games in progress with a human at or above which bots start no games with each other and bot-versus-bot games wait; 0 switches this off",
+        "Games with a human played within the last 15 minutes at or above which bots start no games with each other and bot-versus-bot games wait; 0 switches this off",
         min = 0,
     ) { it.botHumanGamesLimit }
     val REPLY_PAUSE_MILLIS = SettingKey.long(
@@ -102,6 +102,11 @@ object SettingKeys {
         "Longest pause between matchmaker ticks, in minutes; raised to the shortest when lower",
         min = 1,
     ) { it.botTickMaxMinutes }
+    val STALE_HOURS = SettingKey.int(
+        "game.stale_hours",
+        "Hours without a move after which an active game is finished by abandonment with no rating change; 0 switches this off",
+        min = 0,
+    ) { it.gameStaleHours }
 
     val ALL: List<SettingKey<*>> = listOf(
         MATCHMAKING,
@@ -115,18 +120,19 @@ object SettingKeys {
         INVITATION_TTL_MINUTES,
         TICK_MIN_MINUTES,
         TICK_MAX_MINUTES,
+        STALE_HOURS,
     )
 
     val byName: Map<String, SettingKey<*>> = ALL.associateBy { it.name }
 }
 
 /**
- * The runtime settings of the bots (docs/ARCHITECTURE.md section 2.11): the `settings` table
- * cached in memory, with [config] providing the default of every key without a row. The cache
- * is refreshed every [REFRESH_INTERVAL] by [loop] and right after every write, so a change
- * made on another instance is picked up within a minute. The typed accessors never block:
- * [BotPlayer] reads the pauses before every move and [BotMatchmaker] its tunables at the
- * start of every tick.
+ * The runtime settings (docs/ARCHITECTURE.md section 2.11): the `settings` table cached in
+ * memory, with [config] providing the default of every key without a row. The cache is
+ * refreshed every [REFRESH_INTERVAL] by [loop] and right after every write, so a change made
+ * on another instance is picked up within a minute. The typed accessors never block:
+ * [BotPlayer] reads the pauses before every move, [BotMatchmaker] its tunables at the start
+ * of every tick and [StaleGames] the age of a stale game before every sweep.
  */
 class Settings(
     private val repository: SettingsRepository,
@@ -212,6 +218,10 @@ class Settings(
     /** Never below [tickMin], so that the pause between ticks stays well defined. */
     val tickMax: Duration
         get() = maxOf(tickMin, Duration.ofMinutes(this[SettingKeys.TICK_MAX_MINUTES]))
+
+    /** Idle time after which [StaleGames] finishes an ACTIVE game; zero switches the sweep off. */
+    val staleGameAge: Duration
+        get() = Duration.ofHours(this[SettingKeys.STALE_HOURS].toLong())
 
     /** Every known key with its effective value, default, source and description, in the documented order. */
     fun list(): List<SettingEntry> = SettingKeys.ALL.map { entry(it) }

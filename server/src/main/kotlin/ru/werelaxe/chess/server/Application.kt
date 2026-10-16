@@ -44,6 +44,7 @@ import ru.werelaxe.chess.server.service.MoveProvider
 import ru.werelaxe.chess.server.service.PlayerService
 import ru.werelaxe.chess.server.service.Presence
 import ru.werelaxe.chess.server.service.Settings
+import ru.werelaxe.chess.server.service.StaleGames
 import ru.werelaxe.chess.server.ws.GameHub
 import java.time.Clock
 import java.time.Duration
@@ -73,7 +74,7 @@ fun main() {
     }.start(wait = true)
 }
 
-/** The services behind the routes; tests reach them to drive what no request triggers (the matchmaker). */
+/** The services behind the routes; tests reach them to drive what no request triggers (the matchmaker, the stale sweep). */
 class AppServices(
     val games: GameService,
     val players: PlayerService,
@@ -81,6 +82,7 @@ class AppServices(
     val bots: Bots,
     val settings: Settings,
     val humanLoad: HumanLoad,
+    val staleGames: StaleGames,
 )
 
 /**
@@ -132,12 +134,14 @@ suspend fun Application.module(
         random,
         clock,
     )
+    val staleGames = StaleGames(gameService, repositories.games, settings, clock)
     val adminService = AdminService(
         repositories.users,
         repositories.games,
         repositories.ratings,
         bots,
         settings,
+        humanLoad,
         gameService,
         clock,
     )
@@ -159,6 +163,8 @@ suspend fun Application.module(
     // The loop always runs: `bot.matchmaking` decides at every tick whether it acts, so that
     // matchmaking is paused and resumed through the settings without a restart.
     launch(CoroutineName("bot-matchmaker")) { matchmaker.loop() }
+    // Games their players walked away from are finished by abandonment, whether or not matchmaking is on.
+    launch(CoroutineName("stale-games")) { staleGames.loop() }
 
     configureSerialization()
     configureStatusPages()
@@ -177,5 +183,5 @@ suspend fun Application.module(
         webSocketRoutes(gameService, hub)
         fallbackRoutes()
     }
-    return AppServices(gameService, playerService, matchmaker, bots, settings, humanLoad)
+    return AppServices(gameService, playerService, matchmaker, bots, settings, humanLoad, staleGames)
 }

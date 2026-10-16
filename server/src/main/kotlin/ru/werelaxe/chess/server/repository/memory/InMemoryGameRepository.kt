@@ -126,15 +126,25 @@ class InMemoryGameRepository(private val store: InMemoryStore = InMemoryStore())
         games.values.filter { it.phase == GamePhase.ACTIVE && (it.whiteId in players || it.blackId in players) }
     }
 
+    override suspend fun listActiveGamesUpdatedBefore(before: Instant, limit: Int): List<GameRecord> = store.mutex.withLock {
+        games.values
+            .filter { it.phase == GamePhase.ACTIVE && it.updatedAt < before }
+            .sortedWith(compareBy<GameRecord> { it.updatedAt }.thenBy { it.id })
+            .take(limit)
+    }
+
     override suspend fun countActiveGamesAmong(playerIds: Collection<Long>): Int = store.mutex.withLock {
         val players = playerIds.toSet()
         games.values.count { it.phase == GamePhase.ACTIVE && it.whiteId in players && it.blackId in players }
     }
 
-    override suspend fun countActiveGamesWithHumans(botIds: Collection<Long>): Int = store.mutex.withLock {
-        val bots = botIds.toSet()
-        games.values.count { it.phase == GamePhase.ACTIVE && (it.whiteId !in bots || it.blackId !in bots) }
-    }
+    override suspend fun countActiveGamesWithHumans(botIds: Collection<Long>, updatedSince: Instant): Int =
+        store.mutex.withLock {
+            val bots = botIds.toSet()
+            games.values.count {
+                it.phase == GamePhase.ACTIVE && it.updatedAt >= updatedSince && (it.whiteId !in bots || it.blackId !in bots)
+            }
+        }
 
     override suspend fun countByPhase(): Map<GamePhase, Int> = store.mutex.withLock {
         games.values.groupingBy { it.phase }.eachCount()

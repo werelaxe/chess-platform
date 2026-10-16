@@ -50,6 +50,30 @@ class HumanLoadTest {
     }
 
     @Test
+    fun countsOnlyTheGamesPlayedWithinTheActivityWindow() = serverTest(
+        config = TEST_CONFIG.copy(botHumanGamesLimit = 1),
+        moveProvider = idleBots,
+    ) {
+        val alice = token("alice")
+        val bob = token("bob")
+        val load = services.humanLoad
+        val older = activeGame(alice, bob)
+        clock.advance(Duration.ofMinutes(20))
+        botGame(alice, color = ColorChoice.WHITE)
+        assertEquals(1, load.refresh(), "a game nobody touched for twenty minutes is not being played")
+        assertTrue(load.high())
+
+        clock.advance(Duration.ofMinutes(5))
+        assertEquals(1, load.refresh(), "a game played five minutes ago is")
+        move(alice, older.id, "e2e4")
+        assertEquals(2, load.refresh(), "a move brings the game back")
+
+        clock.advance(HumanLoad.ACTIVITY_WINDOW + Duration.ofMinutes(1))
+        assertEquals(0, load.refresh(), "both games have gone quiet")
+        assertFalse(load.high(), "games their players walked away from keep the gate open")
+    }
+
+    @Test
     fun reusesTheCountForTenSecondsAndJudgesTheLimitAgainstIt() = serverTest(
         config = TEST_CONFIG.copy(botHumanGamesLimit = 2),
         moveProvider = idleBots,

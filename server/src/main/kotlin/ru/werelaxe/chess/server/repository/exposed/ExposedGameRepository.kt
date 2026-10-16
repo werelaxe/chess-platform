@@ -13,6 +13,7 @@ import org.jetbrains.exposed.v1.core.greaterEq
 import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.core.isNotNull
 import org.jetbrains.exposed.v1.core.isNull
+import org.jetbrains.exposed.v1.core.less
 import org.jetbrains.exposed.v1.core.lessEq
 import org.jetbrains.exposed.v1.core.neq
 import org.jetbrains.exposed.v1.core.notInList
@@ -194,6 +195,14 @@ class ExposedGameRepository(private val db: Database) : GameRepository {
         }
     }
 
+    override suspend fun listActiveGamesUpdatedBefore(before: Instant, limit: Int): List<GameRecord> = tx {
+        Games.selectAll()
+            .where { (Games.status eq GamePhase.ACTIVE) and (Games.updatedAt less before.atOffset(ZoneOffset.UTC)) }
+            .orderBy(Games.updatedAt to SortOrder.ASC, Games.id to SortOrder.ASC)
+            .limit(limit)
+            .map { it.toRecord() }
+    }
+
     override suspend fun countActiveGamesAmong(playerIds: Collection<Long>): Int {
         if (playerIds.isEmpty()) return 0
         val ids = playerIds.toSet()
@@ -205,10 +214,11 @@ class ExposedGameRepository(private val db: Database) : GameRepository {
         }
     }
 
-    override suspend fun countActiveGamesWithHumans(botIds: Collection<Long>): Int {
+    override suspend fun countActiveGamesWithHumans(botIds: Collection<Long>, updatedSince: Instant): Int {
         val ids = botIds.toSet()
         return tx {
-            var condition: Op<Boolean> = Games.status eq GamePhase.ACTIVE
+            var condition: Op<Boolean> = (Games.status eq GamePhase.ACTIVE) and
+                (Games.updatedAt greaterEq updatedSince.atOffset(ZoneOffset.UTC))
             // Both seats of an ACTIVE game are taken, so a seat outside the bot ids is a person's.
             if (ids.isNotEmpty()) condition = condition and ((Games.whiteId notInList ids) or (Games.blackId notInList ids))
             Games.selectAll().where(condition).count().toInt()

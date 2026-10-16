@@ -7,8 +7,9 @@ import ru.werelaxe.chess.engine.EngineLevel
 
 /**
  * `GET /api/admin/overview` (docs/ARCHITECTURE.md section 2.11): [activeBotGames] are the games
- * in progress with a bot seat, [humanGames] those with a human seat (the count the human-load
- * gate of section 2.10 judges), and [settings] the effective values by key.
+ * in progress with a bot seat, [humanGames] those with a human seat played within the last
+ * fifteen minutes (the count the human-load gate of section 2.10 judges, taken afresh), and
+ * [settings] the effective values by key.
  */
 @Serializable
 data class AdminOverview(
