@@ -111,6 +111,7 @@ class GameService(
             blackRatingBefore = null,
             createdAt = now,
             updatedAt = now,
+            lastMoveAt = null,
             finishedAt = null,
         )
         val record = if (invitee != null && invitee.isBot) activate(open, invitee, now) else open
@@ -129,8 +130,9 @@ class GameService(
     }
 
     /**
-     * Seats [joiner] in the free seat and starts the game: the rated flag drops for a guest and
-     * both players' ratings in the game's kind are snapshotted.
+     * Seats [joiner] in the free seat and starts the game: the rated flag drops for a guest,
+     * both players' ratings in the game's kind are snapshotted and the idle clock of the stale
+     * sweep starts ([GameRecord.lastMoveAt]).
      */
     private suspend fun activate(record: GameRecord, joiner: User, now: Instant): GameRecord {
         val seated = if (record.whiteId == null) record.copy(whiteId = joiner.id) else record.copy(blackId = joiner.id)
@@ -145,6 +147,7 @@ class GameService(
             whiteRatingBefore = snapshot(whiteId),
             blackRatingBefore = snapshot(blackId),
             updatedAt = now,
+            lastMoveAt = now,
         )
     }
 
@@ -253,6 +256,7 @@ class GameService(
         var updated = record.copy(
             moveCount = ply + 1,
             updatedAt = now,
+            lastMoveAt = now,
             drawOfferedBy = record.drawOfferedBy.takeIf { it == color },
         )
         var rating: RatingUpdate? = null
@@ -319,21 +323,31 @@ class GameService(
             GamePhase.FINISHED -> throw gameFinished()
             GamePhase.ACTIVE -> {
                 val color = record.colorOf(user.id) ?: throw notAPlayer()
-                val now = clock.instant()
-                val updated = record.copy(
-                    phase = GamePhase.FINISHED,
-                    result = GameResult(color.opposite, EndReason.RESIGNATION),
-                    drawOfferedBy = null,
-                    updatedAt = now,
-                    finishedAt = now,
-                )
-                val changes = games.finish(updated, ratingUpdate(updated, color.opposite, now))
-                entry.game = null
-                val dto = toDto(updated, games.moves(id), changes)
-                events.publish(id, ServerEvent.GameUpdated(dto))
-                dto
+                lose(record, color, EndReason.RESIGNATION, entry)
             }
         }
+    }
+
+    /**
+     * Finishes [record] as a loss for [loser] by [reason] (a resignation, or a forfeit by
+     * abandonment), with the rating update of a decided game, a pending draw offer cleared and
+     * the end published to the subscribers; call under the game's lock.
+     */
+    private suspend fun lose(record: GameRecord, loser: Color, reason: EndReason, entry: GameCache.Entry): GameDto {
+        val now = clock.instant()
+        val winner = loser.opposite
+        val updated = record.copy(
+            phase = GamePhase.FINISHED,
+            result = GameResult(winner, reason),
+            drawOfferedBy = null,
+            updatedAt = now,
+            finishedAt = now,
+        )
+        val changes = games.finish(updated, ratingUpdate(updated, winner, now))
+        entry.game = null
+        val dto = toDto(updated, games.moves(record.id), changes)
+        events.publish(record.id, ServerEvent.GameUpdated(dto))
+        return dto
     }
 
     suspend fun draw(user: UserPrincipal, id: String, action: DrawAction): GameDto = cache.locked(id) { entry ->
@@ -398,15 +412,23 @@ class GameService(
     }
 
     /**
-     * Ends an ACTIVE game nobody has touched since [updatedBefore] exactly like [abort] (the
-     * stale sweep of section 2.3); null when the game is gone, not ACTIVE or touched since,
-     * which is checked again under the game's lock so that a move made between a listing and
-     * this call keeps the game alive.
+     * Ends an ACTIVE game in which nobody has moved since [lastMoveBefore] (the stale sweep of
+     * section 2.3). A human on turn (a guest counts) forfeits: the other side wins by
+     * ABANDONMENT with the rating update of a resignation, so that a player who is about to
+     * lose cannot walk away from the game and escape the loss. A bot on turn never walked away
+     * (the engine was down, its move failed, or the human-load gate held it), so the game ends
+     * like [abort]: no winner, no rating change; that covers every game between two bots. Only
+     * moves count as playing: a draw offer touches [GameRecord.updatedAt] but not
+     * [GameRecord.lastMoveAt], or the player on turn could keep a lost game alive by offering
+     * and withdrawing a draw. Null when the game is gone, not ACTIVE or played since, which is
+     * checked again under the game's lock so that a move made between a listing and this call
+     * keeps the game alive.
      */
-    suspend fun abortStale(id: String, updatedBefore: Instant): GameDto? = cache.locked(id) { entry ->
+    suspend fun forfeitStale(id: String, lastMoveBefore: Instant): GameDto? = cache.locked(id) { entry ->
         val record = games.findById(id) ?: return@locked null
-        if (record.phase != GamePhase.ACTIVE || !record.updatedAt.isBefore(updatedBefore)) return@locked null
-        abandon(record, entry)
+        if (record.phase != GamePhase.ACTIVE || record.lastMoveAt?.isBefore(lastMoveBefore) != true) return@locked null
+        val loser = record.sideToMove
+        if (bots.isBot(record.seat(loser))) abandon(record, entry) else lose(record, loser, EndReason.ABANDONMENT, entry)
     }
 
     /**

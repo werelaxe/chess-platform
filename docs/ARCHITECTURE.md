@@ -109,7 +109,8 @@ universes it cannot afford through such a restriction (sections 2.7 and 2.12).
 
 // GameStatus
 {"type":"ongoing"}
-{"type":"finished","winner":"WHITE","reason":"CHECKMATE"}         // winner null = draw
+{"type":"finished","winner":"WHITE","reason":"CHECKMATE"}         // winner null = draw, except with
+                                                                  // ABANDONMENT: no result (section 2.8)
 // reasons: CHECKMATE, STALEMATE, INSUFFICIENT_MATERIAL, FIFTY_MOVE_RULE, THREEFOLD_REPETITION,
 //          KING_CAPTURED, RESIGNATION, DRAW_AGREEMENT, ABANDONMENT
 
@@ -185,7 +186,7 @@ replayed games and the WebSocket subscriber registry; PostgreSQL is the source o
 | `BOT_INVITATION_TTL_MINUTES` | `60` | lifetime of a bot's invitation to a human |
 | `BOT_MAX_ACTIVE_GAMES` | `6` | games in progress per bot above which it sits matchmaking out |
 | `OPEN_GAME_TTL_HOURS` | `24` | age after which a public open game nobody joined is deleted by the matchmaking loop, whoever created it (section 2.10) |
-| `GAME_STALE_HOURS` | `24` | default of `game.stale_hours` (section 2.11): hours without a move after which an `ACTIVE` game is finished by abandonment with no rating change (section 2.3); 0 switches the sweep off |
+| `GAME_STALE_HOURS` | `24` | default of `game.stale_hours` (section 2.11): hours without a move after which a human on turn forfeits an `ACTIVE` game; a bot on turn: no winner, no rating change (section 2.3); 0 switches the sweep off |
 
 Flyway migrations in `server/src/main/resources/db/migration` run at startup.
 
@@ -201,7 +202,7 @@ games(id VARCHAR(16) PK, kind VARCHAR(16), visibility VARCHAR(16), status VARCHA
       invitee_id BIGINT FK users NULL, rated BOOLEAN,
       move_count INT, result_winner VARCHAR(8) NULL, result_reason VARCHAR(32) NULL,
       draw_offered_by VARCHAR(8) NULL, white_rating_before INT NULL, black_rating_before INT NULL,
-      created_at, updated_at, finished_at TIMESTAMPTZ NULL)
+      created_at, updated_at, last_move_at TIMESTAMPTZ NULL, finished_at TIMESTAMPTZ NULL)
 moves(game_id FK games ON DELETE CASCADE, ply INT, move JSONB, created_at TIMESTAMPTZ, PK(game_id, ply))
 ratings(user_id FK users, kind VARCHAR(16), rating INT, games INT, wins INT, draws INT, losses INT,
         peak INT, updated_at TIMESTAMPTZ, PK(user_id, kind))
@@ -236,7 +237,10 @@ rating_after INT, created_at)`. `games` gains `rated BOOLEAN NOT NULL DEFAULT FA
 `invitee_id BIGINT FK users NULL` (the only account allowed to join a WAITING game created
 by invitation) and `white_rating_before` / `black_rating_before INT NULL` (snapshots taken
 when the game becomes ACTIVE). The legacy `games.bot_level` column is dropped; the level of a
-bot game is the `bot_level` of the bot seat.
+bot game is the `bot_level` of the bot seat. `games.last_move_at` is when the game was last
+played: the latest move, or the moment the game became ACTIVE before the first one (null while
+WAITING); the stale sweep (section 2.3) counts idle time from it, not from `updated_at`, which
+a draw offer touches as well.
 
 ### 2.3 HTTP API
 
@@ -318,17 +322,27 @@ response (and the `game` event) carry the DTO with `status: "FINISHED"` and
 `result: {"winner": null, "reason": "ABANDONMENT"}`. Resigning a `FINISHED` game is 409
 `game_finished`.
 
-Stale games: an `ACTIVE` game in which nothing happened for longer than `game.stale_hours`
-(section 2.11; default `GAME_STALE_HOURS`, 24; 0 switches this off) is finished by the server
-as abandoned. `StaleGames` sweeps every ten minutes and finishes every such game, judged by the
-record's `updated_at` (which moves and draw offers alike touch), through the same path as the
-admin abort (section 2.11): `status: "FINISHED"`, `result: {"winner": null, "reason":
-"ABANDONMENT"}`, a pending draw offer cleared, no rating change whatever the move count, and
-the `game` event to its subscribers. A sweep finishes at most 100 games, the longest idle
-first, and leaves the rest to the next one; each candidate is checked again under the game's
-lock, so a move that arrives between the listing and the finish keeps the game alive. Every
-game finished this way is logged at INFO with its idle time. `WAITING` games are not swept
-here: public open games nobody joined expire through the matchmaking loop (section 2.10).
+Stale games: an `ACTIVE` game in which nobody has moved for longer than `game.stale_hours`
+(section 2.11; default `GAME_STALE_HOURS`, 24; 0 switches this off) is forfeited by the player
+on turn. `StaleGames` sweeps every ten minutes and finishes every such game, judged by the
+record's `last_move_at` (the latest move, or the start of the game before the first one), as a
+loss for the side to move (`GameService.forfeitStale`): `status: "FINISHED"`, `result:
+{"winner": <the other colour>, "reason": "ABANDONMENT"}`, the rating update of a resignation
+(section 2.8: none when the game is unrated or ended before both sides had moved), a pending
+draw offer cleared, and the `game` event to its subscribers. Ending such a game without a
+winner would let a player who is about to lose walk away and keep the rating; a guest counts
+as a human here. Only moves count as playing: a draw offer touches `updated_at` but not
+`last_move_at`, or the player on turn could keep a lost game alive forever by offering and
+withdrawing a draw once a day. A game with a bot on turn is the exception: nobody walked away
+from it (the engine was down, the bot's move failed, or the human-load gate of section 2.10
+held it), so it ends like the admin abort (section 2.11), `winner: null` and no rating change
+whatever the move count; this covers every game between two bots, and a human never gains
+rating from a stalled bot. A sweep finishes at most 100 games, the longest idle first, and
+leaves the rest to the next one; each candidate is checked again under the game's lock, so a
+move that arrives between the listing and the finish keeps the game alive. Every game finished
+this way is logged at INFO with who was on turn, whether it was rated and its idle time.
+`WAITING` games are not swept here: public open games nobody joined expire through the
+matchmaking loop (section 2.10).
 
 ```jsonc
 UserRef     {"id": 1, "username": "alice", "name": "Alice", "guest": false, "bot": false, "botLevel": null, "rating": 1512}
@@ -359,7 +373,7 @@ GameDto     GameSummary + "moves": [GameMove, ...]
 2. Check the caller is the player whose color is on turn and the game is `ACTIVE`.
 3. `move = game.resolve(move, random)` (fills observation outcomes), reject if `!game.isLegal(move)`.
 4. `game.apply(move)`; insert the move row with `ply = previous move count`; update
-   `move_count` and `updated_at`; clear `draw_offered_by` unless the mover is the offerer;
+   `move_count`, `updated_at` and `last_move_at`; clear `draw_offered_by` unless the mover is the offerer;
    if `game.status()` is finished, set `status = FINISHED`, `result_*`, `finished_at`.
 5. Broadcast the event to WebSocket subscribers of the game.
 
@@ -521,8 +535,12 @@ registered player or bot without one is shown with the initial 1500.
 A game is rated when it was created with `rated: true`, both seats are non-guest accounts
 (guests only play unrated games; the flag is forced to false when a guest creates or joins)
 and both sides made at least one move before it finished; a game that ends earlier (for
-example a resignation on move one) finishes normally but changes no rating. Draw by agreement,
-stalemate and the other draw reasons score 0.5 each. Ratings are updated inside the same
+example a resignation on move one) finishes normally but changes no rating. A resignation and
+a forfeit by abandonment (the stale sweep of section 2.3) score as a loss for the player who
+resigned or walked away, exactly like a checkmate. Draw by agreement, stalemate and the other
+draw reasons score 0.5 each; a game ended by abandonment without a winner (the admin abort, a
+stale game with a bot on turn, a cancelled invitation) is not a draw and changes no rating
+whatever its length. Ratings are updated inside the same
 transaction that finishes the game and recorded in `rating_changes`; `GameDto.ratingChanges`
 reports `{white: {before, after}, black: {before, after}}` for finished rated games and null
 otherwise (including a rated game whose result did not count, whose `rated` flag stays true).
@@ -667,7 +685,7 @@ all validated on write:
 | `bot.join_after_minutes` | int >= 0 | `BOT_JOIN_AFTER_MINUTES` | how long an open game waits before a bot may join |
 | `bot.invitation_ttl_minutes` | int >= 1 | `BOT_INVITATION_TTL_MINUTES` | expiry of a bot's invitation |
 | `bot.tick_min_minutes` / `bot.tick_max_minutes` | int >= 1 | `BOT_TICK_MIN/MAX_MINUTES` | matchmaker sleep range (max is raised to min when lower) |
-| `game.stale_hours` | int >= 0 | `GAME_STALE_HOURS` | hours without a move after which an `ACTIVE` game is finished by abandonment with no rating change (section 2.3; 0 switches the sweep off) |
+| `game.stale_hours` | int >= 0 | `GAME_STALE_HOURS` | hours without a move after which a human on turn forfeits an `ACTIVE` game; a bot on turn: no winner, no rating change (section 2.3; 0 switches the sweep off) |
 
 A `Settings` service caches the table, refreshes it every minute and immediately after a write,
 and hands typed values to `BotPlayer` (pauses, read before every move), `BotMatchmaker`
@@ -845,7 +863,13 @@ Game page behaviour:
 * Highlights: selected square, legal targets (dot; ring on captures), chosen first split
   target, last move, and the king's cell tinted by `checkProbability`.
 * Game header: players, side to move, status, universe count (quantum), resign / draw buttons,
-  move list, share link for private games.
+  move list, share link for private games. A finished game shows its result line
+  (`src/core/notation.ts`): "White wins by checkmate", "Draw by stalemate", and for a game
+  ended by abandonment without a winner (aborted, cancelled, or a stale game with a bot on turn)
+  "Abandoned" rather than a draw; a forfeited stale game reads "White wins by abandonment".
+  A rated game that changed no rating gets the note "No rating change: the game ended before
+  both sides had moved" (`src/core/ratings.ts`), except one abandoned without a winner, whose
+  rating stays for a different reason.
 
 ## 4. Deployment
 

@@ -110,6 +110,7 @@
     "whiteWins": "Победа белых: {{reason}}",
     "blackWins": "Победа чёрных: {{reason}}",
     "draw": "Ничья: {{reason}}",
+    "abandoned": "Партия не доиграна",
     "reasons": {
       "CHECKMATE": "мат",
       "STALEMATE": "пат",
@@ -119,7 +120,7 @@
       "KING_CAPTURED": "король взят",
       "RESIGNATION": "соперник сдался",
       "DRAW_AGREEMENT": "по соглашению",
-      "ABANDONMENT": "партия отменена"
+      "ABANDONMENT": "соперник покинул партию"
     }
   },
   "counts": {

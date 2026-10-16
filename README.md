@@ -178,8 +178,10 @@ the same library, so the client can show legal moves and apply its own moves ins
 server remains authoritative. The only random element, the outcome of a quantum observation, is
 decided by the server and stored inside the move, which keeps every game fully reproducible.
 A game in which nobody has moved for a day (the `game.stale_hours` setting, 24 hours by
-default) is finished by the server as abandoned: no winner and no rating change, exactly as if
-an administrator had aborted it.
+default) is forfeited by the player on turn: the opponent wins by abandonment, with the same
+rating update as after a resignation, so that walking away from a lost game does not escape
+the loss; a draw offer does not count as a move. Only a game in which a bot is on turn ends
+without a winner and without a rating change, since nobody walked away from it.
 
 The computer player (`engine/`) is an alpha-beta search for classic chess and an expectimax
 search over the universes for quantum chess, both with iterative deepening within the level's

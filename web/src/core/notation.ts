@@ -45,8 +45,14 @@ export function formatMove(move: GameMove): string {
   }
 }
 
-/** Result line such as "White wins by checkmate" or "Draw by stalemate". */
+/**
+ * Result line such as "White wins by checkmate" or "Draw by stalemate". A game that ended by
+ * abandonment without a winner (aborted, cancelled, or a stale game with a bot on turn) reads
+ * "Abandoned": nobody drew it. A player who walked away from a stale game loses it, and that
+ * reads "White wins by abandonment" like any other win.
+ */
 export function formatResult(winner: Color | null, reason: EndReason): string {
+  if (winner === null && reason === "ABANDONMENT") return i18n.t("notation.abandoned");
   const why = i18n.t(`notation.reasons.${reason}`);
   if (winner === null) return i18n.t("notation.draw", { reason: why });
   return i18n.t(winner === "WHITE" ? "notation.whiteWins" : "notation.blackWins", { reason: why });

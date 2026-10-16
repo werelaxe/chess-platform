@@ -58,6 +58,13 @@ describe("formatResult and formatStatus", () => {
     expect(formatResult(null, "DRAW_AGREEMENT")).toBe("Draw by agreement");
   });
 
+  it("does not call a game ended by abandonment a draw", () => {
+    expect(formatResult(null, "ABANDONMENT")).toBe("Abandoned");
+    expect(formatResult("WHITE", "ABANDONMENT")).toBe("White wins by abandonment");
+    expect(formatResult("BLACK", "ABANDONMENT")).toBe("Black wins by abandonment");
+    expect(formatStatus({ type: "finished", winner: null, reason: "ABANDONMENT" })).toBe("Abandoned");
+  });
+
   it("describes statuses", () => {
     expect(formatStatus({ type: "ongoing" })).toBe("In progress");
     expect(formatStatus({ type: "finished", winner: "BLACK", reason: "RESIGNATION" })).toBe("Black wins by resignation");
@@ -67,6 +74,8 @@ describe("formatResult and formatStatus", () => {
     await i18n.changeLanguage("ru");
     expect(formatResult(null, "STALEMATE")).toBe(ru.notation.draw.replace("{{reason}}", ru.notation.reasons.STALEMATE));
     expect(formatResult("WHITE", "CHECKMATE")).toBe(ru.notation.whiteWins.replace("{{reason}}", ru.notation.reasons.CHECKMATE));
+    expect(formatResult(null, "ABANDONMENT")).toBe(ru.notation.abandoned);
+    expect(formatResult("BLACK", "ABANDONMENT")).toBe(ru.notation.blackWins.replace("{{reason}}", ru.notation.reasons.ABANDONMENT));
     expect(formatStatus({ type: "ongoing" })).toBe(ru.notation.inProgress);
   });
 });

@@ -110,6 +110,7 @@
     "whiteWins": "White wins by {{reason}}",
     "blackWins": "Black wins by {{reason}}",
     "draw": "Draw by {{reason}}",
+    "abandoned": "Abandoned",
     "reasons": {
       "CHECKMATE": "checkmate",
       "STALEMATE": "stalemate",

@@ -218,7 +218,7 @@ class CommandTest {
         assertEquals(0, result.statusCode, result.output)
         assertEquals(HttpMethod.Post, api.requests.single().method)
         assertEquals("http://localhost:8080/api/admin/games/aZ3kq9bX7LmN/abort", api.requests.single().url)
-        assertEquals("aborted aZ3kq9bX7LmN: FINISHED 1/2-1/2 ABANDONMENT\n", result.stdout)
+        assertEquals("aborted aZ3kq9bX7LmN: FINISHED * ABANDONMENT\n", result.stdout)
         run("$token games abort bY4lr0cY8MnO").assertFailed("Error: 409 game_over: The game is already over")
         run("$token games abort nothing").assertFailed("Error: 404 not_found: Unknown game 'nothing'")
         val json = run("$token --json games abort cX5ms1dZ9NoP")

@@ -74,8 +74,11 @@ interface GameRepository {
     /** ACTIVE games in which any of [playerIds] holds a seat. */
     suspend fun listActiveGamesOf(playerIds: Collection<Long>): List<GameRecord>
 
-    /** ACTIVE games whose `updated_at` is before [before], the longest idle first (`updated_at ASC, id ASC`). */
-    suspend fun listActiveGamesUpdatedBefore(before: Instant, limit: Int): List<GameRecord>
+    /**
+     * ACTIVE games whose `last_move_at` (the latest move, or the start of the game) is before
+     * [before], the longest idle first (`last_move_at ASC, id ASC`).
+     */
+    suspend fun listActiveGamesLastMovedBefore(before: Instant, limit: Int): List<GameRecord>
 
     /** How many ACTIVE games have both seats held by [playerIds]. */
     suspend fun countActiveGamesAmong(playerIds: Collection<Long>): Int

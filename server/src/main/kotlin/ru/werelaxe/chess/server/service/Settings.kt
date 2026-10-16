@@ -104,7 +104,7 @@ object SettingKeys {
     ) { it.botTickMaxMinutes }
     val STALE_HOURS = SettingKey.int(
         "game.stale_hours",
-        "Hours without a move after which an active game is finished by abandonment with no rating change; 0 switches this off",
+        "Hours without a move after which a human on turn forfeits an active game (a bot on turn: no winner, no rating change); 0 switches this off",
         min = 0,
     ) { it.gameStaleHours }
 

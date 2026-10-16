@@ -24,11 +24,14 @@ export function formatRecord(summary: Pick<RatingSummary, "wins" | "draws" | "lo
 }
 
 /**
- * Whether a finished game deserves the note that it was rated but changed no rating: its
- * result did not count because it ended before both sides had moved (ARCHITECTURE.md 2.8).
- * An invitation cancelled or declined before anyone moved was never played and gets no note.
+ * Whether a finished game deserves the note that it was rated but changed no rating because
+ * it ended before both sides had moved (ARCHITECTURE.md 2.8). A game ended by abandonment
+ * without a winner (an invitation cancelled or declined, an admin abort, a stale game with a
+ * bot on turn) was never decided and changes no rating whatever its length, so the note, which
+ * would explain the missing change by the move count, is not shown for it. A forfeit by
+ * abandonment has a winner and gets the note like a resignation when the result did not count.
  */
-export function endedWithoutRatingChange(game: Pick<GameDto, "status" | "rated" | "ratingChanges" | "result" | "moveCount">): boolean {
+export function endedWithoutRatingChange(game: Pick<GameDto, "status" | "rated" | "ratingChanges" | "result">): boolean {
   if (game.status !== "FINISHED" || !game.rated || game.ratingChanges) return false;
-  return !(game.result?.reason === "ABANDONMENT" && game.moveCount === 0);
+  return !(game.result?.winner === null && game.result.reason === "ABANDONMENT");
 }

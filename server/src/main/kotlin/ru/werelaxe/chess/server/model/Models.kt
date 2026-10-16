@@ -55,7 +55,10 @@ enum class ProfileField {
  * A row of the `games` table; the moves live separately and are the only game state.
  * [inviteeId] is set for an invitation: the only account allowed to join it. [rated] is
  * whether the result counts for the ratings (forced off by a guest seat); the
- * `ratingBefore` snapshots are taken when the game becomes ACTIVE.
+ * `ratingBefore` snapshots are taken when the game becomes ACTIVE. [lastMoveAt] is when the
+ * game was last played: the latest move, or the start of the game before the first one (null
+ * while WAITING); the stale sweep counts idle time from here, so a draw offer, which touches
+ * [updatedAt] like any change, does not keep a game alive.
  */
 data class GameRecord(
     val id: String,
@@ -74,6 +77,7 @@ data class GameRecord(
     val blackRatingBefore: Int?,
     val createdAt: Instant,
     val updatedAt: Instant,
+    val lastMoveAt: Instant?,
     val finishedAt: Instant?,
 ) {
     fun colorOf(userId: Long): Color? = when {

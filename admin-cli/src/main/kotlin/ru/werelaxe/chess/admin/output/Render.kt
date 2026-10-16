@@ -89,7 +89,7 @@ object Render {
         },
     )
 
-    /** One line with a game's id, status and result: `aZ3kq9bX7LmN: FINISHED 1/2-1/2 ABANDONMENT`. */
+    /** One line with a game's id, status and result: `aZ3kq9bX7LmN: FINISHED * ABANDONMENT`. */
     fun status(game: GameSummary): String = "${game.id}: ${game.status} ${result(game)}"
 
     fun settings(settings: List<Setting>): String = Table.render(
@@ -101,7 +101,7 @@ object Render {
     fun timestamp(iso: String): String =
         runCatching { timestamps.format(Instant.parse(iso)) }.getOrDefault(iso)
 
-    private fun result(game: GameSummary) = game.result?.let { "${score(it.winner)} ${it.reason}" } ?: NONE
+    private fun result(game: GameSummary) = game.result?.let { "${score(it.winner, it.reason)} ${it.reason}" } ?: NONE
 
     private fun rating(summary: RatingSummary?) = summary?.rating?.toString() ?: NONE
 
@@ -109,9 +109,11 @@ object Render {
         "${it.rating} (${it.games} rated, ${it.wins} wins, ${it.draws} draws, ${it.losses} losses, peak ${it.peak})"
     } ?: "unrated"
 
-    private fun score(winner: String?) = when (winner) {
-        "WHITE" -> "1-0"
-        "BLACK" -> "0-1"
+    /** The PGN score of a result: a game abandoned without a winner (aborted, cancelled, stale with a bot on turn) is `*`, not a draw. */
+    private fun score(winner: String?, reason: String) = when {
+        winner == "WHITE" -> "1-0"
+        winner == "BLACK" -> "0-1"
+        reason == "ABANDONMENT" -> "*"
         else -> "1/2-1/2"
     }
 }

@@ -251,6 +251,7 @@ class BotGameTest {
                 blackRatingBefore = 1500,
                 createdAt = now,
                 updatedAt = now,
+                lastMoveAt = now,
                 finishedAt = null,
             )
             repositories.games.create(record)
@@ -391,6 +392,7 @@ class BotGameTest {
             blackRatingBefore = 1500,
             createdAt = now,
             updatedAt = now,
+            lastMoveAt = now,
             finishedAt = null,
         )
         games.create(record)
