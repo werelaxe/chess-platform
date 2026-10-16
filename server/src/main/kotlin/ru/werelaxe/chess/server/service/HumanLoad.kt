@@ -51,8 +51,15 @@ class HumanLoad(
     /** Counts now, whatever the age of the cached count, and returns the result. */
     suspend fun refresh(): Int = mutex.withLock { count(clock.instant()) }
 
-    private suspend fun count(now: Instant): Int =
-        games.countActiveGamesWithHumans(bots.ids, now - ACTIVITY_WINDOW).also { cached = Count(it, now) }
+    /**
+     * Counts now without touching the cached count: for the metrics, which observe the gate
+     * and must not decide when it asks the database.
+     */
+    suspend fun countNow(): Int = countAt(clock.instant())
+
+    private suspend fun count(now: Instant): Int = countAt(now).also { cached = Count(it, now) }
+
+    private suspend fun countAt(now: Instant): Int = games.countActiveGamesWithHumans(bots.ids, now - ACTIVITY_WINDOW)
 
     private fun Count.fresh(now: Instant): Boolean = now.isBefore(at + CACHE_TTL)
 

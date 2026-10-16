@@ -5,6 +5,8 @@ import io.ktor.server.application.ApplicationStopping
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.routing.routing
+import io.micrometer.prometheusmetrics.PrometheusConfig
+import io.micrometer.prometheusmetrics.PrometheusMeterRegistry
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -14,6 +16,7 @@ import ru.werelaxe.chess.server.config.AppConfig
 import ru.werelaxe.chess.server.db.DatabaseFactory
 import ru.werelaxe.chess.server.plugins.configureCallLogging
 import ru.werelaxe.chess.server.plugins.configureCors
+import ru.werelaxe.chess.server.plugins.configureMetrics
 import ru.werelaxe.chess.server.plugins.configureRateLimiting
 import ru.werelaxe.chess.server.plugins.configureSecurity
 import ru.werelaxe.chess.server.plugins.configureSerialization
@@ -29,6 +32,7 @@ import ru.werelaxe.chess.server.routes.authRoutes
 import ru.werelaxe.chess.server.routes.fallbackRoutes
 import ru.werelaxe.chess.server.routes.gameRoutes
 import ru.werelaxe.chess.server.routes.healthRoutes
+import ru.werelaxe.chess.server.routes.metricsRoutes
 import ru.werelaxe.chess.server.routes.playerRoutes
 import ru.werelaxe.chess.server.routes.webSocketRoutes
 import ru.werelaxe.chess.server.service.AdminService
@@ -40,6 +44,7 @@ import ru.werelaxe.chess.server.service.GameCache
 import ru.werelaxe.chess.server.service.GameService
 import ru.werelaxe.chess.server.service.HumanLoad
 import ru.werelaxe.chess.server.service.JwtService
+import ru.werelaxe.chess.server.service.Metrics
 import ru.werelaxe.chess.server.service.MoveProvider
 import ru.werelaxe.chess.server.service.PlayerService
 import ru.werelaxe.chess.server.service.Presence
@@ -83,6 +88,7 @@ class AppServices(
     val settings: Settings,
     val humanLoad: HumanLoad,
     val staleGames: StaleGames,
+    val metrics: Metrics,
 )
 
 /**
@@ -145,9 +151,14 @@ suspend fun Application.module(
         gameService,
         clock,
     )
+    // The plugin configures the registry (its filters must precede the first meter), then the gauges go in.
+    val registry = PrometheusMeterRegistry(PrometheusConfig.DEFAULT)
+    configureMetrics(registry)
+    val metrics = Metrics(registry, repositories.games, bots, presence, humanLoad, settings, hub)
     monitor.subscribe(ApplicationStopping) {
         gameService.close()
         moveProvider.close()
+        registry.close()
     }
     // Games a bot was about to move in when the previous instance stopped resume right away.
     gameService.wakeBots()
@@ -165,6 +176,8 @@ suspend fun Application.module(
     launch(CoroutineName("bot-matchmaker")) { matchmaker.loop() }
     // Games their players walked away from are finished by abandonment, whether or not matchmaking is on.
     launch(CoroutineName("stale-games")) { staleGames.loop() }
+    // The gauges of /metrics are recounted in the background, so that a scrape never queries the database.
+    launch(CoroutineName("metrics-refresh")) { metrics.loop() }
 
     configureSerialization()
     configureStatusPages()
@@ -176,6 +189,7 @@ suspend fun Application.module(
 
     routing {
         healthRoutes()
+        metricsRoutes(registry)
         authRoutes(authService)
         gameRoutes(gameService)
         playerRoutes(playerService)
@@ -183,5 +197,5 @@ suspend fun Application.module(
         webSocketRoutes(gameService, hub)
         fallbackRoutes()
     }
-    return AppServices(gameService, playerService, matchmaker, bots, settings, humanLoad, staleGames)
+    return AppServices(gameService, playerService, matchmaker, bots, settings, humanLoad, staleGames, metrics)
 }

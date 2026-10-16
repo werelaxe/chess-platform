@@ -1,0 +1,57 @@
+# The cluster-scoped access of the monitoring (docs/ARCHITECTURE.md section 4.1). This file is
+# NOT part of the kustomization: the Deploy workflow's service account may only change the
+# "chess" namespace (ci/deployer.yaml), so an administrator applies it once, as they do
+# ci/deployer.yaml:
+#   kubectl apply -f deploy/k8s/monitoring-rbac.yaml
+# The ServiceAccounts it binds are created by the kustomization (prometheus.yaml and
+# kube-state-metrics.yaml); the order does not matter.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: chess-prometheus
+rules:
+  # Discovery of the scrape targets (the endpoints of the api and engine Services, the nodes)
+  # and the kubelet metrics, which the kubelet authorizes as a get of nodes/metrics.
+  - apiGroups: [""]
+    resources: [nodes, nodes/metrics, services, endpoints, pods]
+    verbs: [get, list, watch]
+  # The API server's own /metrics, as in the usual Prometheus role; no job scrapes it today.
+  # (Reaching a kubelet through the API server's proxy would need nodes/proxy, not granted.)
+  - nonResourceURLs: [/metrics]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: chess-prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: chess-prometheus
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: chess
+---
+# kube-state-metrics runs with --resources=pods, so watching pods is all it needs.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: chess-kube-state-metrics
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: chess-kube-state-metrics
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: chess-kube-state-metrics
+subjects:
+  - kind: ServiceAccount
+    name: kube-state-metrics
+    namespace: chess

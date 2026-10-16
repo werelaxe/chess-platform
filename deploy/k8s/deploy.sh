@@ -26,6 +26,7 @@ EOF
 
 echo "deploying $tag"
 kubectl apply -k "$release"
-for workload in statefulset/db deployment/engine deployment/api deployment/web; do
+for workload in statefulset/db deployment/engine deployment/api deployment/web \
+    deployment/kube-state-metrics deployment/prometheus deployment/grafana; do
     kubectl -n chess rollout status "$workload" --timeout=5m
 done

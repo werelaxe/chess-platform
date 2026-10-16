@@ -1,6 +1,8 @@
 # What the Deploy workflow may do: apply deploy/k8s and wait for the rollout, in the "chess"
 # namespace only (it cannot read the Secrets). An administrator applies this once through
-# kubeconfig.sh, which also prints the workflow's kubeconfig.
+# kubeconfig.sh, which also prints the workflow's kubeconfig, and re-applies it whenever the
+# rules change (kubectl apply -f deploy/k8s/ci/deployer.yaml), as when the kustomization gains
+# a new kind of object.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -24,6 +26,11 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: [services]
+    verbs: [get, list, watch, create, update, patch]
+  # The monitoring (prometheus.yaml, kube-state-metrics.yaml, grafana.yaml) is configured
+  # through ConfigMaps, stores on a PersistentVolumeClaim and runs as its own ServiceAccounts.
+  - apiGroups: [""]
+    resources: [configmaps, persistentvolumeclaims, serviceaccounts]
     verbs: [get, list, watch, create, update, patch]
   # The Deploy workflow keeps the admin token (a GitHub secret) in the "chess" secret.
   - apiGroups: [""]

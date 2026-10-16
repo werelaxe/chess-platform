@@ -1,0 +1,157 @@
+# Prometheus (docs/ARCHITECTURE.md section 4.1): every 15 s it scrapes the API, every engine
+# replica, the kubelet (node and container CPU and memory) and kube-state-metrics, and keeps
+# two weeks of samples, at most 2 GB, on a 3 Gi volume of the cluster's default storage class
+# (local-path in k3s). Nothing exposes it outside the cluster: Grafana reads it through the
+# Service, and kubectl -n chess port-forward svc/prometheus 9090:9090 opens its own UI. Its
+# ClusterRole (discovery and the kubelet metrics) is in monitoring-rbac.yaml, applied once by
+# an administrator.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+    # Retention is set here rather than with --storage.tsdb.retention.time: Prometheus 3
+    # deprecates the flag, and the config file is reloaded at runtime.
+    storage:
+      tsdb:
+        retention:
+          time: 14d
+          size: 2GB
+    scrape_configs:
+      # The API and the engine serve /metrics on their HTTP port (section 4.1). The targets are
+      # the endpoints of their Services, one per pod, so every engine replica the autoscaler
+      # adds is scraped on its own.
+      - job_name: api
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces: {names: [chess]}
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+            regex: api;http
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+      - job_name: engine
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces: {names: [chess]}
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+            regex: engine;http
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+      # The kubelet of every node, on its own port: /metrics/resource for the node's CPU and
+      # memory (what metrics-server reads too) and /metrics/cadvisor for those of the
+      # containers and the size of the machine. The service account token authenticates
+      # (nodes/metrics in the ClusterRole); the kubelet's certificate is self-signed in k3s,
+      # hence insecure_skip_verify. Only the series the dashboard uses are kept.
+      - job_name: kubelet
+        scheme: https
+        metrics_path: /metrics/resource
+        kubernetes_sd_configs:
+          - role: node
+        authorization:
+          credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        tls_config:
+          insecure_skip_verify: true
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_node_name]
+            target_label: node
+        metric_relabel_configs:
+          - source_labels: [__name__]
+            regex: node_cpu_usage_seconds_total|node_memory_working_set_bytes
+            action: keep
+      - job_name: cadvisor
+        scheme: https
+        metrics_path: /metrics/cadvisor
+        kubernetes_sd_configs:
+          - role: node
+        authorization:
+          credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        tls_config:
+          insecure_skip_verify: true
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_node_name]
+            target_label: node
+        metric_relabel_configs:
+          - source_labels: [__name__]
+            regex: container_cpu_usage_seconds_total|container_memory_working_set_bytes|machine_cpu_cores|machine_memory_bytes
+            action: keep
+      # The limits and requests of the containers and the phase of the pods.
+      - job_name: kube-state-metrics
+        static_configs:
+          - targets: [kube-state-metrics:8080]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: {storage: 3Gi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+spec:
+  replicas: 1
+  # The volume is mounted by one pod at a time.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app: prometheus}
+  template:
+    metadata:
+      labels: {app: prometheus}
+    spec:
+      serviceAccountName: prometheus
+      # The image runs as "nobody"; the group makes the volume writable for it.
+      securityContext:
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.15.0
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            # A changed ConfigMap reaches the pod within a minute or so and is reloaded then.
+            - --config.auto-reload
+            - --storage.tsdb.path=/prometheus
+          ports:
+            - {name: http, containerPort: 9090}
+          readinessProbe:
+            httpGet: {path: /-/ready, port: http}
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 100m, memory: 200Mi}
+            limits: {memory: 1Gi}
+          volumeMounts:
+            - {name: config, mountPath: /etc/prometheus}
+            - {name: data, mountPath: /prometheus}
+      volumes:
+        - name: config
+          configMap: {name: prometheus-config}
+        - name: data
+          persistentVolumeClaim: {claimName: prometheus-data}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+spec:
+  selector: {app: prometheus}
+  ports:
+    - {name: http, port: 9090}
