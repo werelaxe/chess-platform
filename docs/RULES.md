@@ -9,7 +9,9 @@ queen, rook, bishop or knight of the player's choice.
 
 The game ends by checkmate, stalemate (draw), insufficient material (draw), fifty moves by each
 side without a capture or pawn move (draw), threefold repetition of a position (draw),
-resignation or agreement.
+resignation or agreement. In either variant, a game in which nobody moves for 24 hours is
+forfeited by the player whose turn it is; offering a draw does not count as a move. A game
+that stalls on the computer's turn ends without a result instead.
 
 ## Quantum chess
 

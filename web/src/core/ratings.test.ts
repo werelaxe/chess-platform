@@ -38,11 +38,16 @@ describe("ratingIn", () => {
 });
 
 describe("endedWithoutRatingChange", () => {
-  const resignedAtOnce = { status: "FINISHED", rated: true, ratingChanges: null, result: { winner: "BLACK", reason: "RESIGNATION" }, moveCount: 1 } as const;
+  const resignedAtOnce = { status: "FINISHED", rated: true, ratingChanges: null, result: { winner: "BLACK", reason: "RESIGNATION" } } as const;
 
   it("notes a rated game whose result did not count", () => {
     expect(endedWithoutRatingChange(resignedAtOnce)).toBe(true);
-    expect(endedWithoutRatingChange({ ...resignedAtOnce, result: { winner: null, reason: "ABANDONMENT" }, moveCount: 3 })).toBe(true);
+    expect(endedWithoutRatingChange({ ...resignedAtOnce, result: { winner: null, reason: "DRAW_AGREEMENT" } })).toBe(true);
+  });
+
+  it("notes a forfeit by abandonment like a resignation", () => {
+    expect(endedWithoutRatingChange({ ...resignedAtOnce, result: { winner: "BLACK", reason: "ABANDONMENT" } })).toBe(true);
+    expect(endedWithoutRatingChange({ ...resignedAtOnce, result: { winner: "WHITE", reason: "ABANDONMENT" } })).toBe(true);
   });
 
   it("stays quiet for casual games, counted results and games still going", () => {
@@ -51,7 +56,7 @@ describe("endedWithoutRatingChange", () => {
     expect(endedWithoutRatingChange({ ...resignedAtOnce, status: "ACTIVE", result: null })).toBe(false);
   });
 
-  it("stays quiet for an invitation cancelled or declined before anyone moved", () => {
-    expect(endedWithoutRatingChange({ ...resignedAtOnce, result: { winner: null, reason: "ABANDONMENT" }, moveCount: 0 })).toBe(false);
+  it("stays quiet for a game abandoned without a winner: cancelled, aborted, or stale with a bot on turn", () => {
+    expect(endedWithoutRatingChange({ ...resignedAtOnce, result: { winner: null, reason: "ABANDONMENT" } })).toBe(false);
   });
 });

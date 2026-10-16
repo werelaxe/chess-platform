@@ -94,7 +94,7 @@ class RenderTest {
                 game("""{"winner":null,"reason":"ABANDONMENT"}""", black = "null"),
             ),
         ).lines().drop(1)
-        assertEquals(listOf("1-0 CHECKMATE", "1/2-1/2 STALEMATE", "1/2-1/2 ABANDONMENT"), rows.map { it.substringAfter("yes    ").substringBefore("  2026").trim() })
+        assertEquals(listOf("1-0 CHECKMATE", "1/2-1/2 STALEMATE", "* ABANDONMENT"), rows.map { it.substringAfter("yes    ").substringBefore("  2026").trim() })
         assertEquals("-", rows[2].split(Regex("  +"))[4])
     }
 
@@ -104,7 +104,7 @@ class RenderTest {
         val aborted = AdminJson.decodeFromString<GameSummary>(Fixtures.ABORTED_GAME)
         val finished = AdminJson.decodeFromString<GameSummary>(Fixtures.FINISHED_GAME)
         assertEquals("aZ3kq9bX7LmN: ACTIVE -", Render.status(active))
-        assertEquals("aZ3kq9bX7LmN: FINISHED 1/2-1/2 ABANDONMENT", Render.status(aborted))
+        assertEquals("aZ3kq9bX7LmN: FINISHED * ABANDONMENT", Render.status(aborted))
         assertEquals("bY4lr0cY8MnO: FINISHED 0-1 CHECKMATE", Render.status(finished))
     }
 

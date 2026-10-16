@@ -52,6 +52,8 @@ object Games : Table("games") {
     val blackRatingBefore = integer("black_rating_before").nullable()
     val createdAt = timestampWithTimeZone("created_at")
     val updatedAt = timestampWithTimeZone("updated_at")
+    /** The latest move, or the start of the game before the first one; null while WAITING. */
+    val lastMoveAt = timestampWithTimeZone("last_move_at").nullable()
     val finishedAt = timestampWithTimeZone("finished_at").nullable()
 
     override val primaryKey = PrimaryKey(id)

@@ -126,10 +126,10 @@ class InMemoryGameRepository(private val store: InMemoryStore = InMemoryStore())
         games.values.filter { it.phase == GamePhase.ACTIVE && (it.whiteId in players || it.blackId in players) }
     }
 
-    override suspend fun listActiveGamesUpdatedBefore(before: Instant, limit: Int): List<GameRecord> = store.mutex.withLock {
+    override suspend fun listActiveGamesLastMovedBefore(before: Instant, limit: Int): List<GameRecord> = store.mutex.withLock {
         games.values
-            .filter { it.phase == GamePhase.ACTIVE && it.updatedAt < before }
-            .sortedWith(compareBy<GameRecord> { it.updatedAt }.thenBy { it.id })
+            .filter { it.phase == GamePhase.ACTIVE && it.lastMoveAt?.isBefore(before) == true }
+            .sortedWith(compareBy<GameRecord> { it.lastMoveAt }.thenBy { it.id })
             .take(limit)
     }
 

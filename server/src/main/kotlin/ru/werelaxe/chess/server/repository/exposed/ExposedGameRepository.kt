@@ -195,10 +195,10 @@ class ExposedGameRepository(private val db: Database) : GameRepository {
         }
     }
 
-    override suspend fun listActiveGamesUpdatedBefore(before: Instant, limit: Int): List<GameRecord> = tx {
+    override suspend fun listActiveGamesLastMovedBefore(before: Instant, limit: Int): List<GameRecord> = tx {
         Games.selectAll()
-            .where { (Games.status eq GamePhase.ACTIVE) and (Games.updatedAt less before.atOffset(ZoneOffset.UTC)) }
-            .orderBy(Games.updatedAt to SortOrder.ASC, Games.id to SortOrder.ASC)
+            .where { (Games.status eq GamePhase.ACTIVE) and (Games.lastMoveAt less before.atOffset(ZoneOffset.UTC)) }
+            .orderBy(Games.lastMoveAt to SortOrder.ASC, Games.id to SortOrder.ASC)
             .limit(limit)
             .map { it.toRecord() }
     }
@@ -316,6 +316,7 @@ class ExposedGameRepository(private val db: Database) : GameRepository {
         this[Games.blackRatingBefore] = game.blackRatingBefore
         this[Games.createdAt] = game.createdAt.atOffset(ZoneOffset.UTC)
         this[Games.updatedAt] = game.updatedAt.atOffset(ZoneOffset.UTC)
+        this[Games.lastMoveAt] = game.lastMoveAt?.atOffset(ZoneOffset.UTC)
         this[Games.finishedAt] = game.finishedAt?.atOffset(ZoneOffset.UTC)
     }
 
@@ -350,6 +351,7 @@ class ExposedGameRepository(private val db: Database) : GameRepository {
             blackRatingBefore = this[Games.blackRatingBefore],
             createdAt = this[Games.createdAt].toInstant(),
             updatedAt = this[Games.updatedAt].toInstant(),
+            lastMoveAt = this[Games.lastMoveAt]?.toInstant(),
             finishedAt = this[Games.finishedAt]?.toInstant(),
         )
     }
