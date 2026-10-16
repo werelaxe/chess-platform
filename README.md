@@ -90,14 +90,14 @@ and so on.
 
 ## Administration
 
-The operational settings of the bots (whether the matchmaker runs, how many open games the bots
-keep in the lobby, the pauses before a bot moves, the number of games with people above which
-the bots stop playing each other, and so on) live in the `settings` table of the
-database and apply without a restart; the environment variables of docs/ARCHITECTURE.md 2.1 only
-provide their defaults. They are read and changed through the admin API (section 2.11), which
-the API server enables when `ADMIN_TOKEN` (at least 16 characters) is set in its environment;
-every request must carry the token in `X-Admin-Token`. The `admin-cli` module wraps the API as
-the `chess-admin` command:
+The operational settings (whether the matchmaker runs, how many open games the bots keep in
+the lobby, the pauses before a bot moves, the number of games with people above which the
+bots stop playing each other, how long an untouched game lives, and so on) live in the
+`settings` table of the database and apply without a restart; the environment variables of
+docs/ARCHITECTURE.md 2.1 only provide their defaults. They are read and changed through the
+admin API (section 2.11), which the API server enables when `ADMIN_TOKEN` (at least 16
+characters) is set in its environment; every request must carry the token in `X-Admin-Token`.
+The `admin-cli` module wraps the API as the `chess-admin` command:
 
 ```bash
 ./gradlew :admin-cli:installDist
@@ -173,6 +173,9 @@ The server stores only the move list of a game. Both the server and the client r
 the same library, so the client can show legal moves and apply its own moves instantly while the
 server remains authoritative. The only random element, the outcome of a quantum observation, is
 decided by the server and stored inside the move, which keeps every game fully reproducible.
+A game in which nobody has moved for a day (the `game.stale_hours` setting, 24 hours by
+default) is finished by the server as abandoned: no winner and no rating change, exactly as if
+an administrator had aborted it.
 
 The computer player (`engine/`) is an alpha-beta search for classic chess and an expectimax
 search over the universes for quantum chess, both with iterative deepening within the level's
@@ -186,7 +189,8 @@ separately; guests play unrated). The leaderboard and player search live under `
 and every player profile offers an invitation to a game. A roster of bots of different levels
 accepts invitations immediately, keeps a couple of open games waiting in the lobby, joins open
 games that have waited for a while and occasionally challenges recently active players; two
-bots can play each other, and such games are public. When many people are playing (the
+bots can play each other, and such games are public. When many people are playing at the
+moment (games with a move in the last fifteen minutes, counted against the
 `bot.human_games_limit` setting), the bots stop starting games with each other and the ones in
 progress wait, so that the engine serves the people first. See docs/ARCHITECTURE.md sections
 2.8–2.10.

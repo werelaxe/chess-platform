@@ -46,6 +46,7 @@ import ru.werelaxe.chess.server.plugins.ADMIN_TOKEN_HEADER
 import ru.werelaxe.chess.server.repository.memory.InMemoryStore
 import ru.werelaxe.chess.server.service.BotMatchmaker.Action
 import ru.werelaxe.chess.server.service.BotRoster
+import ru.werelaxe.chess.server.service.HumanLoad
 import ru.werelaxe.chess.server.service.MoveProvider
 import ru.werelaxe.chess.server.service.SettingKeys
 import ru.werelaxe.chess.server.ws.ServerEvent
@@ -199,6 +200,11 @@ class AdminTest {
         assertEquals("2", overview.settings["bot.open_games_target"])
         assertEquals("0", overview.settings["bot.live_games_target"])
         assertEquals("true", overview.settings["bot.matchmaking"])
+
+        clock.advance(HumanLoad.ACTIVITY_WINDOW + Duration.ofMinutes(5))
+        val later = adminGet("/overview").body<AdminOverview>()
+        assertEquals(2, later.games.active, "the games are still in progress")
+        assertEquals(0, later.humanGames, "but nobody played them within the activity window: the gate counts none")
     }
 
     @Test
@@ -376,7 +382,7 @@ class AdminTest {
         assertEquals("Bot-versus-bot games the matchmaker keeps in progress; 0 switches this off", setting("bot.live_games_target").description)
         assertEquals("0", setting("bot.human_games_limit").value)
         assertEquals(
-            "Games in progress with a human at or above which bots start no games with each other and bot-versus-bot games wait; 0 switches this off",
+            "Games with a human played within the last 15 minutes at or above which bots start no games with each other and bot-versus-bot games wait; 0 switches this off",
             setting("bot.human_games_limit").description,
         )
         assertEquals("true", setting("bot.matchmaking").value)

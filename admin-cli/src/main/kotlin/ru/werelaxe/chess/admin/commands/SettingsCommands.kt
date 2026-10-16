@@ -32,7 +32,7 @@ class SettingsCommand : CliktCommand(name = "settings") {
     }
 
     override fun help(context: Context) =
-        "Runtime settings of the bots; they live in the database and apply without a restart."
+        "Runtime settings (of the bots, and the age at which an untouched game is finished); they live in the database and apply without a restart."
 
     override fun run() = Unit
 }
@@ -102,7 +102,7 @@ class SettingsHumanGamesLimitCommand : CliktCommand(name = "human-games-limit") 
     private val session by requireObject<Session>()
     private val limit by argument(
         name = "n",
-        help = "Games in progress with a human at or above which bots start no games with each other; 0 switches this off",
+        help = "Games with a human played within the last 15 minutes at or above which bots start no games with each other; 0 switches this off",
     )
         .int()
         .check("must not be negative") { it >= 0 }

@@ -44,6 +44,12 @@ data class AppConfig(
     val botVsBotPauseMillis: Long = 0,
     /** Age after which a public open game nobody joined is deleted by the matchmaking loop (section 2.10). */
     val openGameTtlHours: Long = 24,
+    /**
+     * The default of `game.stale_hours` (section 2.11): hours without a move after which an
+     * ACTIVE game is finished by abandonment with no rating change (section 2.3); 0 switches
+     * the sweep off.
+     */
+    val gameStaleHours: Int = 24,
 ) {
     /** The environment is unusable; the server refuses to start rather than run insecurely. */
     class ConfigurationException(message: String) : RuntimeException(message)
@@ -93,6 +99,7 @@ data class AppConfig(
                 botInvitationTtlMinutes = env.positiveLong("BOT_INVITATION_TTL_MINUTES") ?: defaults.botInvitationTtlMinutes,
                 botMaxActiveGames = env.nonNegativeInt("BOT_MAX_ACTIVE_GAMES") ?: defaults.botMaxActiveGames,
                 openGameTtlHours = env.positiveLong("OPEN_GAME_TTL_HOURS") ?: defaults.openGameTtlHours,
+                gameStaleHours = env.nonNegativeInt("GAME_STALE_HOURS") ?: defaults.gameStaleHours,
             )
         }
 

@@ -394,6 +394,26 @@ class GameService(
     suspend fun abort(id: String): GameDto = cache.locked(id) { entry ->
         val record = games.findById(id) ?: throw ApiException.notFound("Game")
         if (record.phase == GamePhase.FINISHED) throw gameFinished()
+        abandon(record, entry)
+    }
+
+    /**
+     * Ends an ACTIVE game nobody has touched since [updatedBefore] exactly like [abort] (the
+     * stale sweep of section 2.3); null when the game is gone, not ACTIVE or touched since,
+     * which is checked again under the game's lock so that a move made between a listing and
+     * this call keeps the game alive.
+     */
+    suspend fun abortStale(id: String, updatedBefore: Instant): GameDto? = cache.locked(id) { entry ->
+        val record = games.findById(id) ?: return@locked null
+        if (record.phase != GamePhase.ACTIVE || !record.updatedAt.isBefore(updatedBefore)) return@locked null
+        abandon(record, entry)
+    }
+
+    /**
+     * Finishes [record] by abandonment: no winner, no rating change, a pending draw offer
+     * cleared, and the end published to the subscribers; call under the game's lock.
+     */
+    private suspend fun abandon(record: GameRecord, entry: GameCache.Entry): GameDto {
         val now = clock.instant()
         val aborted = record.copy(
             phase = GamePhase.FINISHED,
@@ -404,9 +424,9 @@ class GameService(
         )
         games.finish(aborted, rating = null)
         entry.game = null
-        val dto = toDto(aborted, games.moves(id), emptyList())
-        events.publish(id, ServerEvent.GameUpdated(dto))
-        dto
+        val dto = toDto(aborted, games.moves(record.id), emptyList())
+        events.publish(record.id, ServerEvent.GameUpdated(dto))
+        return dto
     }
 
     /**

@@ -173,11 +173,12 @@ replayed games and the WebSocket subscriber registry; PostgreSQL is the source o
 | `BOT_TICK_MIN_MINUTES` / `BOT_TICK_MAX_MINUTES` | `3` / `10` | pause between matchmaking ticks (the upper bound is raised to the lower one if set below it) |
 | `BOT_OPEN_GAMES_TARGET` | `2` | public open games the bots keep in the lobby (0 switches this off) |
 | `BOT_LIVE_GAMES_TARGET` | `2` | bot-versus-bot games the matchmaker keeps in progress (0 switches this off) |
-| `BOT_HUMAN_GAMES_LIMIT` | `0` | default of `bot.human_games_limit` (section 2.11): games in progress with a human at or above which the bots start no games with each other and bot-versus-bot games wait (section 2.10); 0 switches this off |
+| `BOT_HUMAN_GAMES_LIMIT` | `0` | default of `bot.human_games_limit` (section 2.11): games with a human played within the last fifteen minutes at or above which the bots start no games with each other and bot-versus-bot games wait (section 2.10); 0 switches this off |
 | `BOT_JOIN_AFTER_MINUTES` | `8` | how long an open game waits before a bot may join it |
 | `BOT_INVITATION_TTL_MINUTES` | `60` | lifetime of a bot's invitation to a human |
 | `BOT_MAX_ACTIVE_GAMES` | `6` | games in progress per bot above which it sits matchmaking out |
 | `OPEN_GAME_TTL_HOURS` | `24` | age after which a public open game nobody joined is deleted by the matchmaking loop, whoever created it (section 2.10) |
+| `GAME_STALE_HOURS` | `24` | default of `game.stale_hours` (section 2.11): hours without a move after which an `ACTIVE` game is finished by abandonment with no rating change (section 2.3); 0 switches the sweep off |
 
 Flyway migrations in `server/src/main/resources/db/migration` run at startup.
 
@@ -310,6 +311,18 @@ response (and the `game` event) carry the DTO with `status: "FINISHED"` and
 `result: {"winner": null, "reason": "ABANDONMENT"}`. Resigning a `FINISHED` game is 409
 `game_finished`.
 
+Stale games: an `ACTIVE` game in which nothing happened for longer than `game.stale_hours`
+(section 2.11; default `GAME_STALE_HOURS`, 24; 0 switches this off) is finished by the server
+as abandoned. `StaleGames` sweeps every ten minutes and finishes every such game, judged by the
+record's `updated_at` (which moves and draw offers alike touch), through the same path as the
+admin abort (section 2.11): `status: "FINISHED"`, `result: {"winner": null, "reason":
+"ABANDONMENT"}`, a pending draw offer cleared, no rating change whatever the move count, and
+the `game` event to its subscribers. A sweep finishes at most 100 games, the longest idle
+first, and leaves the rest to the next one; each candidate is checked again under the game's
+lock, so a move that arrives between the listing and the finish keeps the game alive. Every
+game finished this way is logged at INFO with its idle time. `WAITING` games are not swept
+here: public open games nobody joined expire through the matchmaking loop (section 2.10).
+
 ```jsonc
 UserRef     {"id": 1, "username": "alice", "name": "Alice", "guest": false, "bot": false, "botLevel": null, "rating": 1512}
             // "guest"/"bot" omitted when false; "name" null when unset; "rating" is the player's current rating
@@ -383,7 +396,7 @@ service is unavailable or `ENGINE_URL` is unset (then at most `BOT_PARALLELISM` 
 at a time, default 2). The request carries a priority: `HUMAN` when a person is at the board,
 `BOT` when both seats are bots, and the service serves the humans first. A bot-versus-bot game
 is held instead of searched in two cases: while the human load is high (at least
-`bot.human_games_limit` games with a human in progress, section 2.10; checked before every such
+`bot.human_games_limit` games with a human being played, section 2.10; checked before every such
 move against a count cached for ten seconds, logged at DEBUG) and when the service stays
 overloaded for a quarter of `ENGINE_RETRY_SECONDS` (`EngineBusyException`, logged at INFO; no
 fallback to the in-process engine, which would load the API exactly when the service is
@@ -576,10 +589,15 @@ engine's work. The tick then starts no live game, whatever the live target, and 
 game that a bot created (such a game is passed over for the next oldest, as a bot's own game
 is); a human's open game is still joined, open games for humans are still created and humans
 are still invited. The load is high when at least `bot.human_games_limit` (section 2.11;
-default `BOT_HUMAN_GAMES_LIMIT`, 0 switches the gate off) games with a human are in progress:
-`ACTIVE` games with at least one seat that no bot holds, guests included. `HumanLoad` counts
-them at most once every ten seconds (the bot player asks before every bot-versus-bot move, the
-matchmaker once per tick); the admin overview shows the live count as `humanGames`. The bot
+default `BOT_HUMAN_GAMES_LIMIT`, 0 switches the gate off) games with a human are being played:
+`ACTIVE` games with at least one seat that no bot holds, guests included, whose `updated_at`
+lies within the last fifteen minutes (`HumanLoad.ACTIVITY_WINDOW`). The window is what keeps
+the gate honest: a game whose players walked away stays `ACTIVE` until the stale sweep
+finishes it (up to `game.stale_hours`, section 2.3), and counting such games once kept the
+gate closed for a day with nobody at the boards, freezing every bot-versus-bot game.
+`HumanLoad` counts at most once every ten seconds (the bot player asks before every
+bot-versus-bot move, the matchmaker once per tick); the admin overview shows the same count,
+taken afresh, as `humanGames`. The bot
 player holds bot-versus-bot moves under the same condition (section 2.6), so the live games
 already in progress pause too and resume, through the tick's `wakeBots`, once the load has
 dropped below the limit. A tick that held something back says so once at INFO.
@@ -604,27 +622,29 @@ each at INFO.
 
 ### 2.11 Administration: runtime settings, admin API and CLI
 
-Operational knobs of the bots live in the `settings` table (`key VARCHAR(64) PK, value TEXT,
-updated_at TIMESTAMPTZ`) and can be changed at runtime; the environment variables of 2.1 only
-provide the defaults. Known keys, all validated on write:
+Operational knobs (of the bots, and the age at which an untouched game is finished) live in
+the `settings` table (`key VARCHAR(64) PK, value TEXT, updated_at TIMESTAMPTZ`) and can be
+changed at runtime; the environment variables of 2.1 only provide the defaults. Known keys,
+all validated on write:
 
 | key | type | default | meaning |
 |-----|------|---------|---------|
 | `bot.matchmaking` | boolean | `BOT_MATCHMAKING` | the matchmaker loop acts on its ticks (false pauses it) |
 | `bot.open_games_target` | int >= 0 | `BOT_OPEN_GAMES_TARGET` | public open games kept waiting by bots |
 | `bot.live_games_target` | int >= 0 | `BOT_LIVE_GAMES_TARGET` | bot-versus-bot games kept in progress (0 switches this off) |
-| `bot.human_games_limit` | int >= 0 | `BOT_HUMAN_GAMES_LIMIT` | games in progress with a human at or above which bots start no games with each other and bot-versus-bot games wait (section 2.10; 0 switches this off) |
+| `bot.human_games_limit` | int >= 0 | `BOT_HUMAN_GAMES_LIMIT` | games with a human played within the last fifteen minutes at or above which bots start no games with each other and bot-versus-bot games wait (section 2.10; 0 switches this off) |
 | `bot.reply_pause_millis` | int >= 0 | 700 | shortest pause before a bot answers a human |
 | `bot.vs_bot_pause_millis` | int >= 0 | 0 | shortest pause between the moves of two bots |
 | `bot.max_active_games` | int >= 1 | `BOT_MAX_ACTIVE_GAMES` | games one bot plays at once |
 | `bot.join_after_minutes` | int >= 0 | `BOT_JOIN_AFTER_MINUTES` | how long an open game waits before a bot may join |
 | `bot.invitation_ttl_minutes` | int >= 1 | `BOT_INVITATION_TTL_MINUTES` | expiry of a bot's invitation |
 | `bot.tick_min_minutes` / `bot.tick_max_minutes` | int >= 1 | `BOT_TICK_MIN/MAX_MINUTES` | matchmaker sleep range (max is raised to min when lower) |
+| `game.stale_hours` | int >= 0 | `GAME_STALE_HOURS` | hours without a move after which an `ACTIVE` game is finished by abandonment with no rating change (section 2.3; 0 switches the sweep off) |
 
 A `Settings` service caches the table, refreshes it every minute and immediately after a write,
 and hands typed values to `BotPlayer` (pauses, read before every move), `BotMatchmaker`
-(read at the start of every tick) and `HumanLoad` (the limit, read on every check). Unknown
-keys are rejected.
+(read at the start of every tick), `HumanLoad` (the limit, read on every check) and
+`StaleGames` (the age, read before every sweep). Unknown keys are rejected.
 
 The admin API is enabled only when `ADMIN_TOKEN` (at least 16 characters) is set; every request
 must carry `X-Admin-Token` with that value (compared in constant time), otherwise 401
@@ -632,7 +652,8 @@ must carry `X-Admin-Token` with that value (compared in constant time), otherwis
 
 ```
 GET   /api/admin/overview                       -> {users, guests, bots, games: {waiting, active, finished}, activeBotGames, humanGames, settings: {...}}
-                                                   (activeBotGames: games in progress with a bot seat; humanGames: with a human seat, section 2.10)
+                                                   (activeBotGames: games in progress with a bot seat; humanGames: with a human seat and played
+                                                   within the last fifteen minutes, the count the gate of section 2.10 judges)
 GET   /api/admin/bots                           -> {bots: [AdminBot]}      AdminBot = PlayerSummary + {level, legacy, activeGames, totalGames}
 GET   /api/admin/bots/{username}                -> AdminBotDetails: AdminBot + {activeGameList: [GameSummary], recentGames: [GameSummary] (20)}
 POST  /api/admin/bots  {username, displayName, level}  -> 201 AdminBot   (username rules of 2.2, 409 username_taken; the bot joins the roster at once)

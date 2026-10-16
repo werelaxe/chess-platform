@@ -127,6 +127,16 @@ class AppConfigTest {
     }
 
     @Test
+    fun readsTheStaleGameAge() {
+        val base = mapOf("JWT_SECRET" to "0123456789abcdef")
+        assertEquals(24, AppConfig.fromEnvironment(base).gameStaleHours)
+        assertEquals(48, AppConfig.fromEnvironment(base + ("GAME_STALE_HOURS" to "48")).gameStaleHours)
+        assertEquals(0, AppConfig.fromEnvironment(base + ("GAME_STALE_HOURS" to "0")).gameStaleHours, "zero switches the sweep off")
+        assertEquals(24, AppConfig.fromEnvironment(base + ("GAME_STALE_HOURS" to "-1")).gameStaleHours, "a negative age means the default")
+        assertEquals(24, AppConfig.fromEnvironment(base + ("GAME_STALE_HOURS" to "a day")).gameStaleHours)
+    }
+
+    @Test
     fun adminApiIsOffUnlessATokenLongEnoughIsSet() {
         val base = mapOf("JWT_SECRET" to "0123456789abcdef")
         assertNull(AppConfig.fromEnvironment(base).adminToken)
